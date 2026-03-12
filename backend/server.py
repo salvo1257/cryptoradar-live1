@@ -3226,9 +3226,9 @@ async def get_system_health():
     if coinglass_key:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                headers = {"coinglassSecret": coinglass_key}
+                headers = {"CG-API-KEY": coinglass_key, "accept": "application/json"}
                 resp = await client.get(
-                    "https://open-api-v3.coinglass.com/api/futures/funding-rate/info?symbol=BTC",
+                    "https://open-api-v3.coinglass.com/api/futures/openInterest/ohlc-history?symbol=BTCUSDT&exchange=Binance&interval=4h&limit=1",
                     headers=headers
                 )
                 data = resp.json()
