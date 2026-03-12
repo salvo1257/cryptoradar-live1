@@ -196,6 +196,10 @@ Features:
 ## Test Reports
 - `/app/test_reports/iteration_8.json` - Whale & Liquidity Ladder v1.7 (100% pass)
 
+## Documentation
+- `/app/OPERATIONAL_MANUAL.md` - Trader's Guide (how to use signals)
+- `/app/TECHNICAL_MANUAL.md` - System Logic (how the engine works)
+
 ## Key Files
 - `/app/backend/server.py` - All backend logic
 - `/app/frontend/src/components/cards/TradeSignalCard.js` - Trade signal UI
