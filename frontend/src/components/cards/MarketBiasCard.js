@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Target, Globe } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -17,7 +17,7 @@ export function MarketBiasCard() {
     );
   }
 
-  const { bias, confidence, estimated_move, trap_risk, squeeze_probability, next_target, bias_score, analysis_text } = marketBias;
+  const { bias, confidence, estimated_move, trap_risk, squeeze_probability, next_target, bias_score, analysis_text, exchange_consensus } = marketBias;
 
   const BiasIcon = bias === 'BULLISH' ? TrendingUp : bias === 'BEARISH' ? TrendingDown : Minus;
   const biasColor = bias === 'BULLISH' ? 'bullish' : bias === 'BEARISH' ? 'bearish' : 'zinc-400';
@@ -29,6 +29,14 @@ export function MarketBiasCard() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(p);
+  };
+
+  const getConsensusColor = (consensusBias) => {
+    switch (consensusBias) {
+      case 'BULLISH': return 'text-bullish';
+      case 'BEARISH': return 'text-bearish';
+      default: return 'text-zinc-400';
+    }
   };
 
   return (
@@ -93,6 +101,26 @@ export function MarketBiasCard() {
             </div>
           </div>
         </div>
+
+        {/* Exchange Consensus */}
+        {exchange_consensus && Object.keys(exchange_consensus).length > 0 && (
+          <div className="mb-4 p-2 bg-black/20 rounded-sm">
+            <div className="flex items-center gap-1 mb-2">
+              <Globe className="w-3 h-3 text-zinc-500" />
+              <span className="text-[10px] text-zinc-500 uppercase">Exchange Consensus</span>
+            </div>
+            <div className="flex gap-3 justify-around">
+              {Object.entries(exchange_consensus).map(([exchange, exBias]) => (
+                <div key={exchange} className="text-center">
+                  <div className="text-[10px] text-zinc-500">{exchange}</div>
+                  <div className={cn("font-mono text-xs font-bold", getConsensusColor(exBias))}>
+                    {exBias}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Next Target */}
         {next_target > 0 && (

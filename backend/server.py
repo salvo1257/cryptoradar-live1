@@ -64,6 +64,9 @@ class SupportResistanceLevel(BaseModel):
     timeframe: str
     distance_percent: float
     last_touch: Optional[datetime] = None
+    exchanges: Optional[List[str]] = None  # Which exchanges show this level
+    volume_at_level: Optional[float] = None  # Total volume at this level
+    explanation: Optional[str] = None  # What this level means
 
 class MarketBias(BaseModel):
     bias: str
@@ -75,6 +78,7 @@ class MarketBias(BaseModel):
     bias_score: int = 0
     analysis_text: str = ""
     inputs: Dict[str, Any]
+    exchange_consensus: Optional[Dict[str, str]] = None  # Per-exchange bias
 
 class OpenInterest(BaseModel):
     total_oi: float
@@ -101,12 +105,15 @@ class LiquidityCluster(BaseModel):
     distance_percent: float
     side: str
     estimated_value: float
+    exchanges: Optional[List[str]] = None  # Which exchanges contribute
+    explanation: Optional[str] = None  # What this cluster means
 
 class LiquidityDirection(BaseModel):
     direction: str
     next_target: float
     distance_percent: float
     imbalance_ratio: float
+    explanation: Optional[str] = None  # Detailed explanation
 
 class WhaleAlert(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -118,6 +125,9 @@ class WhaleAlert(BaseModel):
     timeframe: str
     timestamp: datetime
     reason: str
+    stop_loss: Optional[float] = None
+    risk_reward: Optional[float] = None
+    exchanges_detected: Optional[List[str]] = None
 
 class PatternDetection(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -129,6 +139,9 @@ class PatternDetection(BaseModel):
     start_price: float
     target_price: float
     timestamp: datetime
+    stop_loss: Optional[float] = None
+    explanation: Optional[str] = None
+    pattern_strength: Optional[str] = None  # "forming", "confirmed", "completed"
 
 class CandlestickPattern(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -146,6 +159,7 @@ class OrderBookAnalysis(BaseModel):
     bid_depth: float
     ask_depth: float
     data_source: str = "Kraken"
+    exchange_comparison: Optional[Dict[str, Any]] = None  # Per-exchange stats
 
 class NewsItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -202,6 +216,8 @@ class TelegramMessage(BaseModel):
 # ============== KRAKEN API HELPERS ==============
 
 KRAKEN_API_URL = "https://api.kraken.com/0/public"
+COINBASE_API_URL = "https://api.exchange.coinbase.com"
+BITSTAMP_API_URL = "https://www.bitstamp.net/api/v2"
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news"
 COINGLASS_API_URL = "https://open-api-v4.coinglass.com/api"
 COINGLASS_API_KEY = os.environ.get('COINGLASS_API_KEY', '')
@@ -220,6 +236,17 @@ market_data_cache = {
     "coinglass_oi_time": None,
     "coinglass_liquidation": None,
     "coinglass_liquidation_time": None,
+    # Multi-exchange caches
+    "coinbase_orderbook": None,
+    "coinbase_orderbook_time": None,
+    "bitstamp_orderbook": None,
+    "bitstamp_orderbook_time": None,
+    "coinbase_ticker": None,
+    "coinbase_ticker_time": None,
+    "bitstamp_ticker": None,
+    "bitstamp_ticker_time": None,
+    "aggregated_orderbook": None,
+    "aggregated_orderbook_time": None,
 }
 CACHE_TTL = 15  # seconds
 ORDERBOOK_CACHE_TTL = 10  # seconds
@@ -345,6 +372,274 @@ async def fetch_kraken_orderbook(count: int = 100):
         logger.error(f"Error fetching Kraken orderbook: {e}")
     return None
 
+# ============== COINBASE API HELPERS ==============
+
+async def fetch_coinbase_ticker():
+    """Fetch current BTC/USD ticker from Coinbase"""
+    try:
+        if market_data_cache["coinbase_ticker"] and market_data_cache["coinbase_ticker_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["coinbase_ticker_time"]).seconds < CACHE_TTL:
+                return market_data_cache["coinbase_ticker"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(f"{COINBASE_API_URL}/products/BTC-USD/ticker")
+            if response.status_code == 200:
+                data = response.json()
+                result = {
+                    "price": float(data.get("price", 0)),
+                    "volume_24h": float(data.get("volume", 0)),
+                    "bid": float(data.get("bid", 0)),
+                    "ask": float(data.get("ask", 0)),
+                    "exchange": "Coinbase"
+                }
+                market_data_cache["coinbase_ticker"] = result
+                market_data_cache["coinbase_ticker_time"] = datetime.now(timezone.utc)
+                return result
+    except Exception as e:
+        logger.error(f"Error fetching Coinbase ticker: {e}")
+    return None
+
+async def fetch_coinbase_orderbook(level: int = 2):
+    """Fetch order book from Coinbase (level 2 = aggregated)"""
+    try:
+        if market_data_cache["coinbase_orderbook"] and market_data_cache["coinbase_orderbook_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["coinbase_orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+                return market_data_cache["coinbase_orderbook"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{COINBASE_API_URL}/products/BTC-USD/book",
+                params={"level": level}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                # Coinbase format: [[price, size, num_orders], ...]
+                orderbook = {
+                    "bids": [[str(b[0]), str(b[1])] for b in data.get("bids", [])[:100]],
+                    "asks": [[str(a[0]), str(a[1])] for a in data.get("asks", [])[:100]],
+                    "exchange": "Coinbase"
+                }
+                market_data_cache["coinbase_orderbook"] = orderbook
+                market_data_cache["coinbase_orderbook_time"] = datetime.now(timezone.utc)
+                return orderbook
+    except Exception as e:
+        logger.error(f"Error fetching Coinbase orderbook: {e}")
+    return None
+
+# ============== BITSTAMP API HELPERS ==============
+
+async def fetch_bitstamp_ticker():
+    """Fetch current BTC/USD ticker from Bitstamp"""
+    try:
+        if market_data_cache["bitstamp_ticker"] and market_data_cache["bitstamp_ticker_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["bitstamp_ticker_time"]).seconds < CACHE_TTL:
+                return market_data_cache["bitstamp_ticker"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(f"{BITSTAMP_API_URL}/ticker/btcusd")
+            if response.status_code == 200:
+                data = response.json()
+                result = {
+                    "price": float(data.get("last", 0)),
+                    "volume_24h": float(data.get("volume", 0)),
+                    "bid": float(data.get("bid", 0)),
+                    "ask": float(data.get("ask", 0)),
+                    "high_24h": float(data.get("high", 0)),
+                    "low_24h": float(data.get("low", 0)),
+                    "exchange": "Bitstamp"
+                }
+                market_data_cache["bitstamp_ticker"] = result
+                market_data_cache["bitstamp_ticker_time"] = datetime.now(timezone.utc)
+                return result
+    except Exception as e:
+        logger.error(f"Error fetching Bitstamp ticker: {e}")
+    return None
+
+async def fetch_bitstamp_orderbook():
+    """Fetch order book from Bitstamp"""
+    try:
+        if market_data_cache["bitstamp_orderbook"] and market_data_cache["bitstamp_orderbook_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["bitstamp_orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+                return market_data_cache["bitstamp_orderbook"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(f"{BITSTAMP_API_URL}/order_book/btcusd")
+            if response.status_code == 200:
+                data = response.json()
+                # Bitstamp format: [[price, amount], ...]
+                orderbook = {
+                    "bids": [[str(b[0]), str(b[1])] for b in data.get("bids", [])[:100]],
+                    "asks": [[str(a[0]), str(a[1])] for a in data.get("asks", [])[:100]],
+                    "exchange": "Bitstamp"
+                }
+                market_data_cache["bitstamp_orderbook"] = orderbook
+                market_data_cache["bitstamp_orderbook_time"] = datetime.now(timezone.utc)
+                return orderbook
+    except Exception as e:
+        logger.error(f"Error fetching Bitstamp orderbook: {e}")
+    return None
+
+# ============== MULTI-EXCHANGE AGGREGATION ==============
+
+async def fetch_all_exchange_orderbooks():
+    """Fetch order books from all exchanges in parallel"""
+    kraken_task = fetch_kraken_orderbook(100)
+    coinbase_task = fetch_coinbase_orderbook(2)
+    bitstamp_task = fetch_bitstamp_orderbook()
+    
+    kraken_ob, coinbase_ob, bitstamp_ob = await asyncio.gather(
+        kraken_task, coinbase_task, bitstamp_task,
+        return_exceptions=True
+    )
+    
+    orderbooks = {}
+    if kraken_ob and not isinstance(kraken_ob, Exception):
+        orderbooks["Kraken"] = kraken_ob
+    if coinbase_ob and not isinstance(coinbase_ob, Exception):
+        orderbooks["Coinbase"] = coinbase_ob
+    if bitstamp_ob and not isinstance(bitstamp_ob, Exception):
+        orderbooks["Bitstamp"] = bitstamp_ob
+    
+    return orderbooks
+
+async def fetch_all_exchange_tickers():
+    """Fetch tickers from all exchanges in parallel"""
+    kraken_task = fetch_kraken_ticker()
+    coinbase_task = fetch_coinbase_ticker()
+    bitstamp_task = fetch_bitstamp_ticker()
+    
+    kraken_t, coinbase_t, bitstamp_t = await asyncio.gather(
+        kraken_task, coinbase_task, bitstamp_task,
+        return_exceptions=True
+    )
+    
+    tickers = {}
+    if kraken_t and not isinstance(kraken_t, Exception):
+        tickers["Kraken"] = {**kraken_t, "exchange": "Kraken"}
+    if coinbase_t and not isinstance(coinbase_t, Exception):
+        tickers["Coinbase"] = coinbase_t
+    if bitstamp_t and not isinstance(bitstamp_t, Exception):
+        tickers["Bitstamp"] = bitstamp_t
+    
+    return tickers
+
+def aggregate_orderbooks(orderbooks: dict) -> dict:
+    """
+    Aggregate order books from multiple exchanges into a unified view.
+    Combines liquidity at similar price levels for a comprehensive market picture.
+    """
+    if not orderbooks:
+        return None
+    
+    # Collect all bids and asks with exchange info
+    all_bids = []
+    all_asks = []
+    exchange_stats = {}
+    
+    for exchange, ob in orderbooks.items():
+        if not ob:
+            continue
+        
+        bids = ob.get("bids", [])
+        asks = ob.get("asks", [])
+        
+        # Calculate exchange depth
+        bid_depth = sum(float(b[0]) * float(b[1]) for b in bids[:50])
+        ask_depth = sum(float(a[0]) * float(a[1]) for a in asks[:50])
+        
+        total = bid_depth + ask_depth
+        exchange_stats[exchange] = {
+            "bid_depth": bid_depth,
+            "ask_depth": ask_depth,
+            "total_depth": total,
+            "bid_count": len(bids),
+            "ask_count": len(asks),
+            "spread": float(asks[0][0]) - float(bids[0][0]) if bids and asks else 0,
+            "imbalance": ((bid_depth - ask_depth) / total * 100) if total > 0 else 0
+        }
+        
+        for b in bids:
+            all_bids.append({
+                "price": float(b[0]),
+                "quantity": float(b[1]),
+                "exchange": exchange
+            })
+        
+        for a in asks:
+            all_asks.append({
+                "price": float(a[0]),
+                "quantity": float(a[1]),
+                "exchange": exchange
+            })
+    
+    # Sort and aggregate
+    all_bids.sort(key=lambda x: x["price"], reverse=True)  # Highest first
+    all_asks.sort(key=lambda x: x["price"])  # Lowest first
+    
+    # Group by price levels (within 0.1% tolerance)
+    def group_by_price(orders, tolerance=0.001):
+        if not orders:
+            return []
+        
+        grouped = []
+        current_group = {
+            "price": orders[0]["price"],
+            "quantity": orders[0]["quantity"],
+            "exchanges": {orders[0]["exchange"]: orders[0]["quantity"]}
+        }
+        
+        for order in orders[1:]:
+            price_diff = abs(order["price"] - current_group["price"]) / current_group["price"]
+            if price_diff <= tolerance:
+                current_group["quantity"] += order["quantity"]
+                if order["exchange"] in current_group["exchanges"]:
+                    current_group["exchanges"][order["exchange"]] += order["quantity"]
+                else:
+                    current_group["exchanges"][order["exchange"]] = order["quantity"]
+            else:
+                grouped.append(current_group)
+                current_group = {
+                    "price": order["price"],
+                    "quantity": order["quantity"],
+                    "exchanges": {order["exchange"]: order["quantity"]}
+                }
+        
+        grouped.append(current_group)
+        return grouped[:100]  # Limit to 100 levels
+    
+    aggregated_bids = group_by_price(all_bids)
+    aggregated_asks = group_by_price(all_asks)
+    
+    # Calculate total market depth
+    total_bid_depth = sum(stats["bid_depth"] for stats in exchange_stats.values())
+    total_ask_depth = sum(stats["ask_depth"] for stats in exchange_stats.values())
+    
+    return {
+        "bids": [[str(b["price"]), str(b["quantity"])] for b in aggregated_bids],
+        "asks": [[str(a["price"]), str(a["quantity"])] for a in aggregated_asks],
+        "exchange_stats": exchange_stats,
+        "total_bid_depth": total_bid_depth,
+        "total_ask_depth": total_ask_depth,
+        "exchanges_active": list(exchange_stats.keys()),
+        "data_source": "Aggregated (Kraken, Coinbase, Bitstamp)"
+    }
+
+async def get_aggregated_orderbook():
+    """Get aggregated order book from all exchanges"""
+    # Check cache
+    if market_data_cache["aggregated_orderbook"] and market_data_cache["aggregated_orderbook_time"]:
+        if (datetime.now(timezone.utc) - market_data_cache["aggregated_orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+            return market_data_cache["aggregated_orderbook"]
+    
+    orderbooks = await fetch_all_exchange_orderbooks()
+    aggregated = aggregate_orderbooks(orderbooks)
+    
+    if aggregated:
+        market_data_cache["aggregated_orderbook"] = aggregated
+        market_data_cache["aggregated_orderbook_time"] = datetime.now(timezone.utc)
+    
+    return aggregated
+
 async def fetch_cryptocompare_news():
     """Fetch real BTC news from CryptoCompare"""
     try:
@@ -445,8 +740,11 @@ async def fetch_binance_orderbook(limit: int = 100):
 
 # ============== ANALYSIS ENGINES ==============
 
-def calculate_support_resistance(candles: List[dict], current_price: float, orderbook: dict = None) -> List[SupportResistanceLevel]:
-    """Calculate support and resistance levels from price data and order book"""
+def calculate_support_resistance_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> List[SupportResistanceLevel]:
+    """
+    Calculate support and resistance levels from price data and aggregated multi-exchange order book.
+    Enhanced with exchange information and detailed explanations.
+    """
     if not candles or len(candles) < 20:
         return []
     
@@ -458,15 +756,24 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
     for i in range(2, len(highs) - 2):
         if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
             distance = ((highs[i] - current_price) / current_price) * 100
-            # Count touches for strength
             touches = sum(1 for h in highs if abs(h - highs[i]) / highs[i] < 0.005)
             strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
+            
+            explanation = f"Price rejected at ${highs[i]:,.0f} on {touches} occasions. "
+            if strength == "strong":
+                explanation += "High probability of rejection if tested again."
+            elif strength == "moderate":
+                explanation += "Likely to see selling pressure here."
+            else:
+                explanation += "May break on strong momentum."
+            
             levels.append(SupportResistanceLevel(
                 price=round(highs[i], 2),
                 level_type="resistance",
                 strength=strength,
                 timeframe="1H",
-                distance_percent=round(distance, 2)
+                distance_percent=round(distance, 2),
+                explanation=explanation
             ))
     
     # Find recent lows (potential support) using pivot detection
@@ -475,32 +782,57 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
             distance = ((lows[i] - current_price) / current_price) * 100
             touches = sum(1 for l in lows if abs(l - lows[i]) / lows[i] < 0.005)
             strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
+            
+            explanation = f"Buyers stepped in at ${lows[i]:,.0f} on {touches} occasions. "
+            if strength == "strong":
+                explanation += "Strong demand zone - high probability of bounce."
+            elif strength == "moderate":
+                explanation += "Likely to see buying interest here."
+            else:
+                explanation += "May break on heavy selling pressure."
+            
             levels.append(SupportResistanceLevel(
                 price=round(lows[i], 2),
                 level_type="support",
                 strength=strength,
                 timeframe="1H",
-                distance_percent=round(distance, 2)
+                distance_percent=round(distance, 2),
+                explanation=explanation
             ))
     
-    # Add order book walls as S/R levels
-    if orderbook:
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
+    # Add order book walls as S/R levels (with multi-exchange info)
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        exchange_stats = aggregated_orderbook.get("exchange_stats", {})
+        active_exchanges = list(exchange_stats.keys())
         
         # Find significant bid walls (support)
         bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
         if bid_volumes:
             avg_bid_vol = sum(v[1] for v in bid_volumes) / len(bid_volumes)
             for price, vol in bid_volumes:
-                if vol > avg_bid_vol * 3:  # Significant wall
+                if vol > avg_bid_vol * 2.5:  # Significant wall
                     distance = ((price - current_price) / current_price) * 100
+                    strength = "strong" if vol > avg_bid_vol * 4 else "moderate"
+                    volume_btc = vol
+                    volume_usd = price * vol
+                    
+                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in buy orders across {len(active_exchanges)} exchanges. "
+                    if strength == "strong":
+                        explanation += "Major support wall - unlikely to break easily."
+                    else:
+                        explanation += "Moderate buying interest at this level."
+                    
                     levels.append(SupportResistanceLevel(
                         price=round(price, 2),
                         level_type="support",
-                        strength="strong" if vol > avg_bid_vol * 5 else "moderate",
-                        timeframe="OrderBook",
-                        distance_percent=round(distance, 2)
+                        strength=strength,
+                        timeframe="Multi-Exchange",
+                        distance_percent=round(distance, 2),
+                        exchanges=active_exchanges,
+                        volume_at_level=round(volume_usd, 0),
+                        explanation=explanation
                     ))
         
         # Find significant ask walls (resistance)
@@ -508,14 +840,27 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
         if ask_volumes:
             avg_ask_vol = sum(v[1] for v in ask_volumes) / len(ask_volumes)
             for price, vol in ask_volumes:
-                if vol > avg_ask_vol * 3:
+                if vol > avg_ask_vol * 2.5:
                     distance = ((price - current_price) / current_price) * 100
+                    strength = "strong" if vol > avg_ask_vol * 4 else "moderate"
+                    volume_btc = vol
+                    volume_usd = price * vol
+                    
+                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in sell orders across {len(active_exchanges)} exchanges. "
+                    if strength == "strong":
+                        explanation += "Major resistance wall - expect strong selling here."
+                    else:
+                        explanation += "Moderate selling pressure at this level."
+                    
                     levels.append(SupportResistanceLevel(
                         price=round(price, 2),
                         level_type="resistance",
-                        strength="strong" if vol > avg_ask_vol * 5 else "moderate",
-                        timeframe="OrderBook",
-                        distance_percent=round(distance, 2)
+                        strength=strength,
+                        timeframe="Multi-Exchange",
+                        distance_percent=round(distance, 2),
+                        exchanges=active_exchanges,
+                        volume_at_level=round(volume_usd, 0),
+                        explanation=explanation
                     ))
     
     # Remove duplicates and sort by distance
@@ -528,6 +873,11 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
             unique_levels.append(level)
     
     return unique_levels[:12]
+
+# Keep old function for backward compatibility
+def calculate_support_resistance(candles: List[dict], current_price: float, orderbook: dict = None) -> List[SupportResistanceLevel]:
+    """Calculate support and resistance levels from price data and order book"""
+    return calculate_support_resistance_enhanced(candles, current_price, orderbook)
 
 def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> MarketBias:
     """Calculate market bias from multiple indicators including real order book"""
@@ -678,6 +1028,19 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
     
     analysis_text = " ".join(analysis_parts) if analysis_parts else "Analyzing market conditions..."
     
+    # Generate per-exchange consensus if aggregated data available
+    exchange_consensus = None
+    if orderbook and orderbook.get("exchange_stats"):
+        exchange_consensus = {}
+        for exchange, stats in orderbook["exchange_stats"].items():
+            ex_imbalance = ((stats["bid_depth"] - stats["ask_depth"]) / stats["total_depth"] * 100) if stats["total_depth"] > 0 else 0
+            if ex_imbalance > 10:
+                exchange_consensus[exchange] = "BULLISH"
+            elif ex_imbalance < -10:
+                exchange_consensus[exchange] = "BEARISH"
+            else:
+                exchange_consensus[exchange] = "NEUTRAL"
+    
     return MarketBias(
         bias=bias,
         confidence=round(confidence, 1),
@@ -694,11 +1057,12 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
             "orderbook_score": ob_score,
             "rsi": round(rsi, 1),
             "orderbook_imbalance": round(ob_imbalance, 2)
-        }
+        },
+        exchange_consensus=exchange_consensus
     )
 
 def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
-    """Detect chart patterns in price data"""
+    """Detect chart patterns in price data with detailed explanations"""
     if not candles or len(candles) < 30:
         return []
     
@@ -721,6 +1085,7 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
         if price_diff_pct < 1.5 and h2[0] - h1[0] >= 5:  # Within 1.5% and separated
             neckline = min(lows[h1[0]:h2[0]]) if h1[0] < h2[0] else min(lows)
             target = neckline - (h1[1] - neckline)
+            stop_loss = h2[1] * 1.01  # 1% above second top
             patterns.append(PatternDetection(
                 pattern="Double Top",
                 direction="BEARISH",
@@ -729,7 +1094,10 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
                 timeframe="1H",
                 start_price=h1[1],
                 target_price=round(target, 2),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(timezone.utc),
+                stop_loss=round(stop_loss, 2),
+                explanation=f"M-shaped reversal pattern. Two failed attempts to break ${h1[1]:,.0f}. Neckline at ${neckline:,.0f}. Break below neckline confirms bearish target.",
+                pattern_strength="confirmed" if current_price < neckline else "forming"
             ))
     
     # Double Bottom Detection (look for W pattern)
@@ -745,6 +1113,7 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
         if price_diff_pct < 1.5 and l2[0] - l1[0] >= 5:
             neckline = max(highs[l1[0]:l2[0]]) if l1[0] < l2[0] else max(highs)
             target = neckline + (neckline - l1[1])
+            stop_loss = l2[1] * 0.99  # 1% below second bottom
             patterns.append(PatternDetection(
                 pattern="Double Bottom",
                 direction="BULLISH",
@@ -753,7 +1122,10 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
                 timeframe="1H",
                 start_price=l1[1],
                 target_price=round(target, 2),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(timezone.utc),
+                stop_loss=round(stop_loss, 2),
+                explanation=f"W-shaped reversal pattern. Two successful defenses of ${l1[1]:,.0f}. Neckline at ${neckline:,.0f}. Break above neckline confirms bullish target.",
+                pattern_strength="confirmed" if current_price > neckline else "forming"
             ))
     
     # Bull Flag Detection
@@ -768,6 +1140,7 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
         
         if pole_move > 3 and flag_range < 2:
             target = current_price + (pole_end - pole_start)
+            stop_loss = flag_low * 0.99
             patterns.append(PatternDetection(
                 pattern="Bull Flag",
                 direction="BULLISH",
@@ -776,7 +1149,10 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
                 timeframe="1H",
                 start_price=pole_start,
                 target_price=round(target, 2),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(timezone.utc),
+                stop_loss=round(stop_loss, 2),
+                explanation=f"Strong {pole_move:.1f}% rally followed by consolidation. Flag pattern suggests continuation. Expect breakout to ${target:,.0f}.",
+                pattern_strength="forming"
             ))
     
     # Bear Flag Detection
@@ -791,6 +1167,7 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
         
         if pole_move > 3 and flag_range < 2:
             target = current_price - (pole_start - pole_end)
+            stop_loss = flag_high * 1.01
             patterns.append(PatternDetection(
                 pattern="Bear Flag",
                 direction="BEARISH",
@@ -799,7 +1176,10 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
                 timeframe="1H",
                 start_price=pole_start,
                 target_price=round(target, 2),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(timezone.utc),
+                stop_loss=round(stop_loss, 2),
+                explanation=f"Sharp {pole_move:.1f}% decline followed by consolidation. Bear flag suggests continuation lower. Target ${target:,.0f}.",
+                pattern_strength="forming"
             ))
     
     # Triangle Detection
@@ -819,7 +1199,9 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
                 timeframe="1H",
                 start_price=closes[-20],
                 target_price=round(current_price * 1.025, 2),
-                timestamp=datetime.now(timezone.utc)
+                timestamp=datetime.now(timezone.utc),
+                explanation="Converging highs and lows forming triangle. Breakout direction uncertain - wait for confirmation. Usually breaks in trend direction.",
+                pattern_strength="forming"
             ))
     
     return patterns
@@ -975,13 +1357,18 @@ def analyze_orderbook(orderbook: dict, current_price: float) -> OrderBookAnalysi
         data_source="Kraken"
     )
 
-def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None) -> tuple:
-    """Generate liquidity cluster data from order book analysis"""
+def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> tuple:
+    """Generate liquidity cluster data from aggregated multi-exchange order book analysis"""
     clusters = []
     
-    if orderbook:
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
+    # Get active exchanges from aggregated data
+    active_exchanges = None
+    if aggregated_orderbook and aggregated_orderbook.get("exchange_stats"):
+        active_exchanges = list(aggregated_orderbook["exchange_stats"].keys())
+    
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
         
         # Calculate average volumes to identify significant levels
         bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
@@ -995,12 +1382,24 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
                 if vol > avg_bid_vol * 1.5:  # Above average
                     distance = ((price - current_price) / current_price) * 100
                     strength = "high" if vol > avg_bid_vol * 3 else "medium" if vol > avg_bid_vol * 2 else "low"
+                    value_usd = price * vol
+                    
+                    explanation = f"${value_usd:,.0f} in buy orders at this level. "
+                    if strength == "high":
+                        explanation += "Major demand zone - price likely to bounce here."
+                    elif strength == "medium":
+                        explanation += "Moderate support - watch for buyer reaction."
+                    else:
+                        explanation += "Minor support level."
+                    
                     clusters.append(LiquidityCluster(
                         price=round(price, 2),
                         strength=strength,
                         distance_percent=round(distance, 2),
                         side="below",
-                        estimated_value=round(price * vol, 0)
+                        estimated_value=round(value_usd, 0),
+                        exchanges=active_exchanges,
+                        explanation=explanation
                     ))
         
         if ask_volumes:
@@ -1011,12 +1410,24 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
                 if vol > avg_ask_vol * 1.5:
                     distance = ((price - current_price) / current_price) * 100
                     strength = "high" if vol > avg_ask_vol * 3 else "medium" if vol > avg_ask_vol * 2 else "low"
+                    value_usd = price * vol
+                    
+                    explanation = f"${value_usd:,.0f} in sell orders at this level. "
+                    if strength == "high":
+                        explanation += "Major supply zone - strong resistance expected."
+                    elif strength == "medium":
+                        explanation += "Moderate resistance - sellers may defend this level."
+                    else:
+                        explanation += "Minor resistance level."
+                    
                     clusters.append(LiquidityCluster(
                         price=round(price, 2),
                         strength=strength,
                         distance_percent=round(distance, 2),
                         side="above",
-                        estimated_value=round(price * vol, 0)
+                        estimated_value=round(value_usd, 0),
+                        exchanges=active_exchanges,
+                        explanation=explanation
                     ))
     
     # Also add historical S/R levels as potential liquidity zones
@@ -1034,7 +1445,8 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
                         strength="medium",
                         distance_percent=round(distance, 2),
                         side="above",
-                        estimated_value=0
+                        estimated_value=0,
+                        explanation=f"Recent high at ${h:,.0f}. Price was rejected here previously - potential stop-loss cluster."
                     ))
         
         # Recent support levels
@@ -1047,7 +1459,8 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
                         strength="medium",
                         distance_percent=round(distance, 2),
                         side="below",
-                        estimated_value=0
+                        estimated_value=0,
+                        explanation=f"Recent low at ${l:,.0f}. Buyers defended this level previously - potential liquidation zone."
                     ))
     
     # Calculate liquidity direction based on order book imbalance
@@ -1060,12 +1473,15 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
     if above_value > below_value * 1.3 or len(above_clusters) > len(below_clusters) * 1.5:
         direction = "UP"
         next_target = min(c.price for c in above_clusters) if above_clusters else current_price
+        dir_explanation = f"More liquidity above current price (${above_value:,.0f} sell orders vs ${below_value:,.0f} buy orders). Price tends to seek liquidity - expect move upward to hunt stops."
     elif below_value > above_value * 1.3 or len(below_clusters) > len(above_clusters) * 1.5:
         direction = "DOWN"
         next_target = max(c.price for c in below_clusters) if below_clusters else current_price
+        dir_explanation = f"More liquidity below current price (${below_value:,.0f} buy orders vs ${above_value:,.0f} sell orders). Price tends to seek liquidity - expect move downward to hunt stops."
     else:
         direction = "BALANCED"
         next_target = current_price
+        dir_explanation = "Balanced liquidity distribution. No clear direction - market may consolidate until imbalance develops."
     
     imbalance_ratio = (above_value / below_value) if below_value > 0 else 1.0
     
@@ -1073,7 +1489,8 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
         direction=direction,
         next_target=round(next_target, 2),
         distance_percent=round(((next_target - current_price) / current_price) * 100, 2),
-        imbalance_ratio=round(imbalance_ratio, 2)
+        imbalance_ratio=round(imbalance_ratio, 2),
+        explanation=dir_explanation
     )
     
     # Remove duplicates and limit results
@@ -1087,14 +1504,24 @@ def generate_liquidity_clusters(candles: List[dict], current_price: float, order
     
     return unique_clusters[:12], liq_direction
 
-def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: dict = None) -> List[WhaleAlert]:
-    """Generate whale alert signals based on volume and order book analysis"""
+# Keep old function for backward compatibility
+def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None) -> tuple:
+    """Generate liquidity cluster data from order book analysis"""
+    return generate_liquidity_clusters_enhanced(candles, current_price, orderbook)
+
+def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> List[WhaleAlert]:
+    """Generate whale alert signals based on volume and multi-exchange order book analysis"""
     if not candles or len(candles) < 20:
         return []
     
     alerts = []
     volumes = [c["volume"] for c in candles[-30:]]
     avg_volume = sum(volumes) / len(volumes) if volumes else 0
+    
+    # Get active exchanges if available
+    exchanges_detected = None
+    if aggregated_orderbook and aggregated_orderbook.get("exchange_stats"):
+        exchanges_detected = list(aggregated_orderbook["exchange_stats"].keys())
     
     # Detect volume spikes
     for i in range(-7, 0):
@@ -1114,6 +1541,15 @@ def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: 
                 target = entry * (1 + move_pct / 100)
                 confidence = min(85, 60 + (volume_ratio - 2) * 8)
                 
+                # Calculate stop loss and risk/reward
+                recent_low = min(c["low"] for c in candles[-10:])
+                recent_high = max(c["high"] for c in candles[-10:])
+                stop_loss = recent_low * 0.995 if is_bullish else recent_high * 1.005
+                
+                risk = abs(entry - stop_loss)
+                reward = abs(target - entry)
+                risk_reward = reward / risk if risk > 0 else 0
+                
                 alerts.append(WhaleAlert(
                     signal=signal,
                     entry=round(entry, 2),
@@ -1122,38 +1558,67 @@ def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: 
                     estimated_move=round(move_pct, 2),
                     timeframe="1H",
                     timestamp=datetime.fromtimestamp(c["time"], tz=timezone.utc),
-                    reason=f"Volume spike detected ({volume_ratio:.1f}x average). {'Buying' if is_bullish else 'Selling'} pressure."
+                    reason=f"Volume spike detected ({volume_ratio:.1f}x average). {'Institutional buying' if is_bullish else 'Institutional selling'} pressure identified.",
+                    stop_loss=round(stop_loss, 2),
+                    risk_reward=round(risk_reward, 2),
+                    exchanges_detected=exchanges_detected
                 ))
     
-    # Detect large order book imbalances
-    if orderbook:
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
+    # Detect large order book imbalances from aggregated data
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
         
         bid_depth = sum([float(b[0]) * float(b[1]) for b in bids[:20]])
         ask_depth = sum([float(a[0]) * float(a[1]) for a in asks[:20]])
         
         imbalance = ((bid_depth - ask_depth) / (bid_depth + ask_depth) * 100) if (bid_depth + ask_depth) > 0 else 0
         
-        if abs(imbalance) > 25:
+        if abs(imbalance) > 20:  # Lowered threshold with aggregated data
             is_bullish = imbalance > 0
             signal = "LONG" if is_bullish else "SHORT"
-            move_pct = abs(imbalance) / 15
+            move_pct = abs(imbalance) / 12
             if not is_bullish:
                 move_pct = -move_pct
+            
+            target = current_price * (1 + move_pct / 100)
+            
+            # Calculate stop loss
+            atr = sum(c["high"] - c["low"] for c in candles[-14:]) / 14 if len(candles) >= 14 else current_price * 0.01
+            stop_loss = current_price - atr if is_bullish else current_price + atr
+            
+            risk = abs(current_price - stop_loss)
+            reward = abs(target - current_price)
+            risk_reward = reward / risk if risk > 0 else 0
+            
+            # Count how many exchanges agree
+            exchange_stats = aggregated_orderbook.get("exchange_stats", {})
+            agreeing_exchanges = 0
+            for ex, stats in exchange_stats.items():
+                ex_imbalance = ((stats["bid_depth"] - stats["ask_depth"]) / stats["total_depth"] * 100) if stats["total_depth"] > 0 else 0
+                if (is_bullish and ex_imbalance > 10) or (not is_bullish and ex_imbalance < -10):
+                    agreeing_exchanges += 1
             
             alerts.append(WhaleAlert(
                 signal=signal,
                 entry=round(current_price, 2),
-                target=round(current_price * (1 + move_pct / 100), 2),
-                confidence=round(min(80, 55 + abs(imbalance) / 2), 1),
+                target=round(target, 2),
+                confidence=round(min(85, 55 + abs(imbalance) / 2 + agreeing_exchanges * 5), 1),
                 estimated_move=round(move_pct, 2),
                 timeframe="Current",
                 timestamp=datetime.now(timezone.utc),
-                reason=f"Order book imbalance: {imbalance:.1f}%. Heavy {'buying' if is_bullish else 'selling'} pressure detected."
+                reason=f"Multi-exchange imbalance: {imbalance:.1f}%. {agreeing_exchanges}/{len(exchange_stats)} exchanges show {'buying' if is_bullish else 'selling'} pressure.",
+                stop_loss=round(stop_loss, 2),
+                risk_reward=round(risk_reward, 2),
+                exchanges_detected=exchanges_detected
             ))
     
     return alerts[-5:]
+
+# Keep old function for backward compatibility
+def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: dict = None) -> List[WhaleAlert]:
+    """Generate whale alert signals based on volume and order book analysis"""
+    return generate_whale_alerts_enhanced(candles, current_price, orderbook)
 
 # ============== COINGLASS API HELPERS ==============
 
@@ -1453,72 +1918,92 @@ async def get_candles(
 
 @api_router.get("/market/bias")
 async def get_market_bias(interval: str = Query(default="1h")):
-    """Get market bias analysis with real order book data"""
+    """Get market bias analysis with aggregated multi-exchange order book data"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 60)
     
     candles = await fetch_kraken_ohlc(kraken_interval)
-    orderbook = await fetch_kraken_orderbook(100)
+    aggregated_orderbook = await get_aggregated_orderbook()
     
-    bias = calculate_market_bias(candles, orderbook)
+    bias = calculate_market_bias(candles, aggregated_orderbook)
     return bias
 
 @api_router.get("/support-resistance")
 async def get_support_resistance(interval: str = Query(default="1h")):
-    """Get support and resistance levels from price data and order book"""
+    """Get support and resistance levels from price data and aggregated multi-exchange order book"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 60)
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
-    orderbook = await fetch_kraken_orderbook(100)
+    aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    levels = calculate_support_resistance(candles, current_price, orderbook)
-    return {"levels": levels, "current_price": current_price, "data_source": "Kraken"}
+    levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook)
+    
+    # Get data source info
+    active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
+    
+    return {
+        "levels": levels, 
+        "current_price": current_price, 
+        "data_source": f"Aggregated ({', '.join(active_exchanges)})"
+    }
 
 @api_router.get("/liquidity")
 async def get_liquidity(interval: str = Query(default="1h")):
-    """Get liquidity clusters from order book analysis"""
+    """Get liquidity clusters from aggregated multi-exchange order book analysis"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 60)
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
-    orderbook = await fetch_kraken_orderbook(100)
+    aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    clusters, direction = generate_liquidity_clusters(candles, current_price, orderbook)
+    clusters, direction = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook)
+    
+    # Get data source info
+    active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
+    
     return {
         "clusters": clusters, 
         "direction": direction, 
         "current_price": current_price,
-        "data_source": "Kraken OrderBook"
+        "data_source": f"Aggregated ({', '.join(active_exchanges)})",
+        "exchange_stats": aggregated_orderbook.get("exchange_stats") if aggregated_orderbook else None
     }
 
 @api_router.get("/whale-alerts")
 async def get_whale_alerts(interval: str = Query(default="1h")):
-    """Get whale alert signals from volume and order book analysis"""
+    """Get whale alert signals from volume and aggregated multi-exchange order book analysis"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 60)
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
-    orderbook = await fetch_kraken_orderbook(100)
+    aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    alerts = generate_whale_alerts(candles, current_price, orderbook)
-    return {"alerts": alerts, "data_source": "Kraken"}
+    alerts = generate_whale_alerts_enhanced(candles, current_price, aggregated_orderbook)
+    
+    # Get data source info
+    active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
+    
+    return {
+        "alerts": alerts, 
+        "data_source": f"Aggregated ({', '.join(active_exchanges)})"
+    }
 
 @api_router.get("/patterns")
 async def get_patterns(interval: str = Query(default="1h")):
-    """Get detected chart patterns"""
+    """Get detected chart patterns with detailed explanations"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 60)
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_patterns(candles)
-    return {"patterns": patterns}
+    return {"patterns": patterns, "data_source": "Kraken OHLC"}
 
 @api_router.get("/candlesticks")
 async def get_candlestick_patterns(interval: str = Query(default="1h")):
@@ -1528,17 +2013,102 @@ async def get_candlestick_patterns(interval: str = Query(default="1h")):
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_candlestick_patterns(candles)
-    return {"patterns": patterns}
+    return {"patterns": patterns, "data_source": "Kraken OHLC"}
 
 @api_router.get("/orderbook")
 async def get_orderbook_analysis():
-    """Get real order book analysis from Kraken"""
-    orderbook = await fetch_kraken_orderbook(100)
+    """Get aggregated order book analysis from multiple exchanges"""
+    aggregated_orderbook = await get_aggregated_orderbook()
     ticker = await fetch_kraken_ticker()
     current_price = ticker["price"] if ticker else 0
     
-    analysis = analyze_orderbook(orderbook, current_price)
-    return analysis
+    if not aggregated_orderbook:
+        # Fallback to Kraken only
+        orderbook = await fetch_kraken_orderbook(100)
+        analysis = analyze_orderbook(orderbook, current_price)
+        return analysis
+    
+    # Build analysis from aggregated data
+    bids = aggregated_orderbook.get("bids", [])
+    asks = aggregated_orderbook.get("asks", [])
+    
+    # Find largest walls
+    bid_walls = [(float(b[0]), float(b[1])) for b in bids]
+    bid_walls_sorted = sorted(bid_walls, key=lambda x: x[1], reverse=True)
+    top_bid = bid_walls_sorted[0] if bid_walls_sorted else (0, 0)
+    
+    ask_walls = [(float(a[0]), float(a[1])) for a in asks]
+    ask_walls_sorted = sorted(ask_walls, key=lambda x: x[1], reverse=True)
+    top_ask = ask_walls_sorted[0] if ask_walls_sorted else (0, 0)
+    
+    bid_depth = aggregated_orderbook.get("total_bid_depth", 0)
+    ask_depth = aggregated_orderbook.get("total_ask_depth", 0)
+    
+    total_depth = bid_depth + ask_depth
+    imbalance = ((bid_depth - ask_depth) / total_depth * 100) if total_depth > 0 else 0
+    
+    if imbalance > 15:
+        direction = "bullish"
+    elif imbalance < -15:
+        direction = "bearish"
+    else:
+        direction = "balanced"
+    
+    active_exchanges = aggregated_orderbook.get("exchanges_active", [])
+    
+    return OrderBookAnalysis(
+        top_bid_wall={"price": round(top_bid[0], 2), "quantity": round(top_bid[1], 4)},
+        top_ask_wall={"price": round(top_ask[0], 2), "quantity": round(top_ask[1], 4)},
+        imbalance=round(imbalance, 2),
+        imbalance_direction=direction,
+        bid_depth=round(bid_depth, 2),
+        ask_depth=round(ask_depth, 2),
+        data_source=f"Aggregated ({', '.join(active_exchanges)})",
+        exchange_comparison=aggregated_orderbook.get("exchange_stats")
+    )
+
+@api_router.get("/exchange-comparison")
+async def get_exchange_comparison():
+    """Get per-exchange comparison of order book data and market metrics"""
+    tickers = await fetch_all_exchange_tickers()
+    orderbooks = await fetch_all_exchange_orderbooks()
+    
+    comparison = {}
+    
+    for exchange, ticker in tickers.items():
+        comparison[exchange] = {
+            "price": ticker.get("price", 0),
+            "bid": ticker.get("bid", 0),
+            "ask": ticker.get("ask", 0),
+            "spread": ticker.get("ask", 0) - ticker.get("bid", 0) if ticker.get("ask") and ticker.get("bid") else 0,
+            "volume_24h": ticker.get("volume_24h", 0),
+        }
+        
+        # Add orderbook stats
+        if exchange in orderbooks and orderbooks[exchange]:
+            ob = orderbooks[exchange]
+            bids = ob.get("bids", [])
+            asks = ob.get("asks", [])
+            
+            bid_depth = sum(float(b[0]) * float(b[1]) for b in bids[:30])
+            ask_depth = sum(float(a[0]) * float(a[1]) for a in asks[:30])
+            total = bid_depth + ask_depth
+            
+            comparison[exchange]["bid_depth"] = round(bid_depth, 2)
+            comparison[exchange]["ask_depth"] = round(ask_depth, 2)
+            comparison[exchange]["imbalance"] = round(((bid_depth - ask_depth) / total * 100) if total > 0 else 0, 2)
+            
+            if comparison[exchange]["imbalance"] > 10:
+                comparison[exchange]["bias"] = "BULLISH"
+            elif comparison[exchange]["imbalance"] < -10:
+                comparison[exchange]["bias"] = "BEARISH"
+            else:
+                comparison[exchange]["bias"] = "NEUTRAL"
+    
+    return {
+        "exchanges": comparison,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 @api_router.get("/open-interest")
 async def get_open_interest():

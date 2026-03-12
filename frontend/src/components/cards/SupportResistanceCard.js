@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { HelpCircle, ArrowUp, ArrowDown, Globe } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -7,7 +7,7 @@ import { ScrollArea } from '../ui/scroll-area';
 
 export function SupportResistanceCard({ compact = false }) {
   const { t, supportResistance, learnMode } = useApp();
-  const { levels = [], current_price = 0 } = supportResistance || {};
+  const { levels = [], current_price = 0, data_source = '' } = supportResistance || {};
 
   const supports = levels.filter(l => l.level_type === 'support').slice(0, compact ? 3 : 5);
   const resistances = levels.filter(l => l.level_type === 'resistance').slice(0, compact ? 3 : 5);
@@ -19,12 +19,66 @@ export function SupportResistanceCard({ compact = false }) {
     }).format(p);
   };
 
+  const formatVolume = (v) => {
+    if (!v) return '';
+    if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
+    if (v >= 1000) return `$${(v / 1000).toFixed(0)}K`;
+    return `$${v.toFixed(0)}`;
+  };
+
   const getStrengthColor = (strength) => {
     switch (strength) {
       case 'strong': return 'text-white';
       case 'moderate': return 'text-zinc-300';
       default: return 'text-zinc-500';
     }
+  };
+
+  const LevelRow = ({ level, type }) => {
+    const isBullish = type === 'support';
+    const colorClass = isBullish ? 'bullish' : 'bearish';
+    
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div 
+              className={cn(
+                "flex flex-col py-2 px-2 rounded-sm cursor-help",
+                `bg-${colorClass}/5 border-l-2 border-${colorClass}`
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className={cn("font-mono text-sm", getStrengthColor(level.strength))}>
+                  ${formatPrice(level.price)}
+                </span>
+                <div className="flex items-center gap-2">
+                  {level.volume_at_level && (
+                    <span className="text-xs text-zinc-400 font-mono">
+                      {formatVolume(level.volume_at_level)}
+                    </span>
+                  )}
+                  <span className={cn("text-xs font-mono", isBullish ? "text-bullish" : "text-bearish")}>
+                    {isBullish ? '' : '+'}{level.distance_percent?.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+              {level.exchanges && level.exchanges.length > 0 && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Globe className="w-2.5 h-2.5 text-zinc-500" />
+                  <span className="text-[10px] text-zinc-500">{level.exchanges.join(', ')}</span>
+                </div>
+              )}
+            </div>
+          </TooltipTrigger>
+          {level.explanation && (
+            <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
+              <p className="text-xs">{level.explanation}</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
+    );
   };
 
   return (
@@ -46,9 +100,7 @@ export function SupportResistanceCard({ compact = false }) {
             </TooltipProvider>
           )}
         </div>
-        <span className="font-mono text-xs text-zinc-500">
-          ${formatPrice(current_price)}
-        </span>
+        {data_source && <span className="text-xs text-zinc-500 font-mono">{data_source}</span>}
       </div>
 
       {/* Content */}
@@ -62,25 +114,7 @@ export function SupportResistanceCard({ compact = false }) {
             </div>
             <div className="space-y-1">
               {resistances.length > 0 ? resistances.map((level, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex items-center justify-between py-1.5 px-2 bg-bearish/5 border-l-2 border-bearish rounded-sm"
-                >
-                  <span className={cn("font-mono text-sm", getStrengthColor(level.strength))}>
-                    ${formatPrice(level.price)}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-bearish font-mono">
-                      +{Math.abs(level.distance_percent).toFixed(2)}%
-                    </span>
-                    <span className={cn(
-                      "text-xs uppercase",
-                      level.strength === 'strong' ? "text-white" : "text-zinc-500"
-                    )}>
-                      {level.strength}
-                    </span>
-                  </div>
-                </div>
+                <LevelRow key={idx} level={level} type="resistance" />
               )) : (
                 <div className="text-xs text-zinc-500 text-center py-2">No resistance levels</div>
               )}
@@ -104,25 +138,7 @@ export function SupportResistanceCard({ compact = false }) {
             </div>
             <div className="space-y-1">
               {supports.length > 0 ? supports.map((level, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex items-center justify-between py-1.5 px-2 bg-bullish/5 border-l-2 border-bullish rounded-sm"
-                >
-                  <span className={cn("font-mono text-sm", getStrengthColor(level.strength))}>
-                    ${formatPrice(level.price)}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-bullish font-mono">
-                      {level.distance_percent.toFixed(2)}%
-                    </span>
-                    <span className={cn(
-                      "text-xs uppercase",
-                      level.strength === 'strong' ? "text-white" : "text-zinc-500"
-                    )}>
-                      {level.strength}
-                    </span>
-                  </div>
-                </div>
+                <LevelRow key={idx} level={level} type="support" />
               )) : (
                 <div className="text-xs text-zinc-500 text-center py-2">No support levels</div>
               )}
