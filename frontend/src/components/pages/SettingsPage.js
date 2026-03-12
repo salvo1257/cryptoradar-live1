@@ -216,6 +216,56 @@ export function SettingsPage() {
           />
         </div>
       </div>
+
+      {/* Documentation Downloads */}
+      <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4 space-y-4">
+        <h2 className="font-heading font-semibold text-lg">{t('documentation')}</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          {language === 'it' ? 'Scarica i manuali e le guide per CryptoRadar' : 'Download manuals and guides for CryptoRadar'}
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <a 
+            href={language === 'it' ? "/MANUALE_OPERATIVO_IT.pdf" : "/OPERATIONAL_MANUAL.pdf"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-3 bg-crypto-bg border border-crypto-border rounded-sm hover:border-bullish transition-colors"
+            data-testid="download-operational-manual"
+          >
+            <span className="text-bullish">📖</span>
+            <span className="text-sm">{language === 'it' ? 'Manuale Operativo' : 'Operational Manual'}</span>
+          </a>
+          <a 
+            href={language === 'it' ? "/MANUALE_TECNICO_IT.pdf" : "/TECHNICAL_MANUAL.pdf"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-3 bg-crypto-bg border border-crypto-border rounded-sm hover:border-bullish transition-colors"
+            data-testid="download-technical-manual"
+          >
+            <span className="text-bullish">⚙️</span>
+            <span className="text-sm">{language === 'it' ? 'Manuale Tecnico' : 'Technical Manual'}</span>
+          </a>
+          <a 
+            href="/PRODUCTION_DEPLOYMENT.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-3 bg-crypto-bg border border-crypto-border rounded-sm hover:border-bullish transition-colors"
+            data-testid="download-deployment-guide"
+          >
+            <span className="text-bullish">🚀</span>
+            <span className="text-sm">{language === 'it' ? 'Guida Deployment' : 'Deployment Guide'}</span>
+          </a>
+          <a 
+            href={`${process.env.REACT_APP_BACKEND_URL}/api/system/health`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-3 bg-crypto-bg border border-crypto-border rounded-sm hover:border-bullish transition-colors"
+            data-testid="system-health-link"
+          >
+            <span className="text-bullish">💚</span>
+            <span className="text-sm">System Health Check</span>
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

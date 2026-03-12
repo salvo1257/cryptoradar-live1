@@ -3292,6 +3292,72 @@ async def get_system_health():
     
     return health
 
+@api_router.get("/system/ready")
+async def get_system_ready():
+    """
+    Deployment readiness check - returns simple OK/NOT_READY status.
+    Use this for load balancer health checks.
+    """
+    try:
+        # Quick MongoDB ping
+        await db.command("ping")
+        
+        # Quick Kraken check
+        ticker = await fetch_kraken_ticker()
+        if ticker and ticker.get("price", 0) > 0:
+            return {
+                "ready": True,
+                "status": "OK",
+                "btc_price": ticker["price"],
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+    
+    return JSONResponse(
+        status_code=503,
+        content={
+            "ready": False,
+            "status": "NOT_READY",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+
+@api_router.get("/system/config")
+async def get_system_config():
+    """
+    Returns current system configuration (without sensitive data).
+    Useful for verifying deployment settings.
+    """
+    return {
+        "version": "1.7.0",
+        "environment": {
+            "mongodb_configured": bool(os.environ.get("MONGO_URL")),
+            "coinglass_configured": bool(os.environ.get("COINGLASS_API_KEY")),
+            "telegram_configured": bool(os.environ.get("TELEGRAM_BOT_TOKEN")),
+            "cryptocompare_configured": bool(os.environ.get("CRYPTOCOMPARE_API_KEY")),
+        },
+        "features": {
+            "trade_signal": True,
+            "whale_activity": True,
+            "liquidity_ladder": True,
+            "signal_history": True,
+            "news_feed": True,
+            "multi_language": True
+        },
+        "data_sources": {
+            "market_data": ["Kraken", "Coinbase", "Bitstamp"],
+            "derivatives": ["CoinGlass"],
+            "news": "Market-generated (fallback active)"
+        },
+        "cache_ttl": {
+            "ticker": CACHE_TTL,
+            "orderbook": ORDERBOOK_CACHE_TTL,
+            "news": NEWS_CACHE_TTL,
+            "coinglass": COINGLASS_CACHE_TTL
+        }
+    }
+
 
 @api_router.get("/market/status")
 async def get_market_status():
@@ -4149,6 +4215,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Verify critical connections on startup"""
+    logger.info("=" * 50)
+    logger.info("CryptoRadar v1.7 - Starting up...")
+    logger.info("=" * 50)
+    
+    # Check MongoDB
+    try:
+        await db.command("ping")
+        logger.info("✅ MongoDB: Connected")
+    except Exception as e:
+        logger.error(f"❌ MongoDB: Connection failed - {e}")
+    
+    # Check Kraken
+    try:
+        ticker = await fetch_kraken_ticker()
+        if ticker and ticker.get("price", 0) > 0:
+            logger.info(f"✅ Kraken API: Connected (BTC: ${ticker['price']:,.2f})")
+        else:
+            logger.warning("⚠️ Kraken API: No data received")
+    except Exception as e:
+        logger.error(f"❌ Kraken API: {e}")
+    
+    # Check CoinGlass
+    coinglass_key = os.environ.get("COINGLASS_API_KEY", "")
+    if coinglass_key:
+        logger.info("✅ CoinGlass: API key configured")
+    else:
+        logger.warning("⚠️ CoinGlass: No API key - derivatives data limited")
+    
+    logger.info("=" * 50)
+    logger.info("CryptoRadar startup complete!")
+    logger.info("=" * 50)
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    logger.info("CryptoRadar shutting down...")
     client.close()
+    logger.info("MongoDB connection closed")

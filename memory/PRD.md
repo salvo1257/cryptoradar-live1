@@ -3,8 +3,12 @@
 
 ## 🚀 DEPLOYMENT READINESS: ✅ VERIFIED (2026-03-12)
 - System Health Endpoint: `/api/system/health` - All APIs OK
-- All PDF manuals downloadable
+- Readiness Endpoint: `/api/system/ready` - For load balancer health checks
+- Config Endpoint: `/api/system/config` - Configuration verification
+- All 6 PDF manuals downloadable
 - Dashboard fully operational in Italian
+- Startup checks implemented with logging
+- Auto-restart configured via Supervisor
 
 ## Original Problem Statement
 Build CryptoRadar - a professional BTC market intelligence dashboard that reads multiple market signals and summarizes the market situation for Bitcoin.
