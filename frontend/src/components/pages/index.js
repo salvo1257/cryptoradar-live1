@@ -1,0 +1,11 @@
+export { DashboardPage } from './DashboardPage';
+export { SupportResistancePage } from './SupportResistancePage';
+export { WhaleAlertsPage } from './WhaleAlertsPage';
+export { LiquidityPage } from './LiquidityPage';
+export { PatternsPage } from './PatternsPage';
+export { CandlesticksPage } from './CandlesticksPage';
+export { NewsPage } from './NewsPage';
+export { AlertsPage } from './AlertsPage';
+export { AlertHistoryPage } from './AlertHistoryPage';
+export { NotesPage } from './NotesPage';
+export { SettingsPage } from './SettingsPage';
