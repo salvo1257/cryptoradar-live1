@@ -1,8 +1,9 @@
 import React from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle, Info, Zap } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { ScrollArea } from '../ui/scroll-area';
+import { Badge } from '../ui/badge';
 
 export function NewsCard({ compact = false }) {
   const { t, news } = useApp();
@@ -18,11 +19,35 @@ export function NewsCard({ compact = false }) {
     return date.toLocaleDateString();
   };
 
+  const getSentimentIcon = (sentiment) => {
+    switch (sentiment) {
+      case 'bullish': return TrendingUp;
+      case 'bearish': return TrendingDown;
+      default: return Minus;
+    }
+  };
+
   const getSentimentColor = (sentiment) => {
     switch (sentiment) {
       case 'bullish': return 'text-bullish';
       case 'bearish': return 'text-bearish';
       default: return 'text-zinc-400';
+    }
+  };
+
+  const getImportanceIcon = (importance) => {
+    switch (importance) {
+      case 'high': return Zap;
+      case 'medium': return AlertCircle;
+      default: return Info;
+    }
+  };
+
+  const getImportanceStyles = (importance) => {
+    switch (importance) {
+      case 'high': return 'border-l-yellow-500 bg-yellow-500/5';
+      case 'medium': return 'border-l-blue-500 bg-blue-500/5';
+      default: return 'border-l-zinc-600 bg-zinc-800/30';
     }
   };
 
@@ -36,38 +61,69 @@ export function NewsCard({ compact = false }) {
 
       {/* Content */}
       <div className="p-4">
-        <ScrollArea className={compact ? "h-[200px]" : "h-[350px]"}>
+        <ScrollArea className={compact ? "h-[200px]" : "h-[400px]"}>
           {news.length > 0 ? (
             <div className="space-y-3">
-              {news.map((item, idx) => (
-                <a
-                  key={idx}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block p-3 bg-crypto-surface/50 rounded-sm border border-transparent hover:border-crypto-border transition-all group"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <h4 className="text-sm font-medium group-hover:text-white transition-colors line-clamp-2">
+              {news.map((item, idx) => {
+                const SentimentIcon = getSentimentIcon(item.sentiment);
+                const ImportanceIcon = getImportanceIcon(item.importance);
+                
+                return (
+                  <a
+                    key={idx}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      "block p-3 rounded-sm border-l-2 transition-all group hover:bg-white/5",
+                      getImportanceStyles(item.importance)
+                    )}
+                  >
+                    {/* Header row */}
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <ImportanceIcon className={cn(
+                          "w-4 h-4 flex-shrink-0",
+                          item.importance === 'high' ? "text-yellow-500" : 
+                          item.importance === 'medium' ? "text-blue-400" : "text-zinc-500"
+                        )} />
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-xs font-mono px-1.5 py-0",
+                            getSentimentColor(item.sentiment),
+                            item.sentiment === 'bullish' && "border-bullish/30",
+                            item.sentiment === 'bearish' && "border-bearish/30"
+                          )}
+                        >
+                          <SentimentIcon className="w-3 h-3 mr-1" />
+                          {item.sentiment}
+                        </Badge>
+                      </div>
+                      <ExternalLink className="w-3 h-3 text-zinc-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    
+                    {/* Title */}
+                    <h4 className="text-sm font-medium group-hover:text-white transition-colors line-clamp-2 mb-2">
                       {item.title}
                     </h4>
-                    <ExternalLink className="w-3 h-3 text-zinc-500 flex-shrink-0 mt-1" />
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 text-xs">
-                    <span className="text-zinc-500">{item.source}</span>
-                    <span className="text-zinc-600">•</span>
-                    <span className="text-zinc-500">{formatTime(item.timestamp)}</span>
-                    {item.sentiment && (
-                      <>
-                        <span className="text-zinc-600">•</span>
-                        <span className={cn("uppercase font-mono", getSentimentColor(item.sentiment))}>
-                          {item.sentiment}
-                        </span>
-                      </>
+                    
+                    {/* Description */}
+                    {item.description && !compact && (
+                      <p className="text-xs text-zinc-500 line-clamp-2 mb-2">
+                        {item.description}
+                      </p>
                     )}
-                  </div>
-                </a>
-              ))}
+                    
+                    {/* Footer */}
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <span>{item.source}</span>
+                      <span className="text-zinc-600">•</span>
+                      <span>{formatTime(item.timestamp)}</span>
+                    </div>
+                  </a>
+                );
+              })}
             </div>
           ) : (
             <div className="flex items-center justify-center h-32 text-zinc-500 text-sm">

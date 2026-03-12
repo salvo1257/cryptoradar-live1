@@ -120,6 +120,14 @@ class CryptoRadarAPITester:
         """Test news endpoint"""
         return self.run_test("News", "GET", "news")
     
+    def test_open_interest(self):
+        """Test Open Interest endpoint (new feature)"""
+        return self.run_test("Open Interest", "GET", "open-interest")
+    
+    def test_funding_rate(self):
+        """Test Funding Rate endpoint (new feature)"""
+        return self.run_test("Funding Rate", "GET", "funding-rate")
+    
     def test_alerts_crud(self):
         """Test alerts CRUD operations"""
         # Get existing alerts
@@ -402,8 +410,8 @@ class CryptoRadarAPITester:
         return True
 
     def test_news_sentiment_analysis(self):
-        """Test that news includes sentiment analysis"""
-        print("\n🔍 Testing News Sentiment Analysis...")
+        """Test that news includes sentiment analysis and new enhancement fields"""
+        print("\n🔍 Testing News Sentiment Analysis & Enhancements...")
         
         success, data = self.run_test("News - Sentiment Analysis", "GET", "news")
         if success and isinstance(data, dict):
@@ -414,17 +422,154 @@ class CryptoRadarAPITester:
                 return True
                 
             sentiments_found = set()
+            importance_levels = set()
+            has_descriptions = 0
+            
             for item in news_items:
                 sentiment = item.get('sentiment')
+                importance = item.get('importance')
+                description = item.get('description')
+                
                 if sentiment:
                     sentiments_found.add(sentiment)
+                if importance:
+                    importance_levels.add(importance)
+                if description:
+                    has_descriptions += 1
                     
             if len(sentiments_found) == 0:
                 self.log_result("News Sentiment Check", False, None, "No sentiment found in news items")
                 return False
                 
+            if len(importance_levels) == 0:
+                self.log_result("News Importance Check", False, None, "No importance levels found in news items")
+                return False
+                
             print(f"   ✅ Found sentiments: {list(sentiments_found)}")
+            print(f"   ✅ Found importance levels: {list(importance_levels)}")
+            print(f"   ✅ Items with descriptions: {has_descriptions}/{len(news_items)}")
             print(f"   ✅ Total news items: {len(news_items)}")
+        
+        return True
+
+    def test_market_bias_enhancements(self):
+        """Test enhanced Market Bias with next_target and analysis_text"""
+        print("\n🔍 Testing Market Bias Enhancements...")
+        
+        success, data = self.run_test("Market Bias - Enhancements", "GET", "market/bias")
+        if success and isinstance(data, dict):
+            next_target = data.get('next_target')
+            analysis_text = data.get('analysis_text')
+            
+            if next_target is None:
+                self.log_result("Market Bias Next Target Check", False, None, "Missing next_target field")
+                return False
+                
+            if analysis_text is None:
+                self.log_result("Market Bias Analysis Text Check", False, None, "Missing analysis_text field")
+                return False
+                
+            if not isinstance(next_target, (int, float)) or next_target <= 0:
+                self.log_result("Market Bias Next Target Validity Check", False, None, f"Invalid next_target: {next_target}")
+                return False
+                
+            if not isinstance(analysis_text, str) or len(analysis_text.strip()) == 0:
+                self.log_result("Market Bias Analysis Text Validity Check", False, None, f"Invalid analysis_text: {analysis_text}")
+                return False
+                
+            print(f"   ✅ Next Target: ${next_target:,.2f}")
+            print(f"   ✅ Analysis Text: {analysis_text[:50]}...")
+        
+        return True
+
+    def test_open_interest_data_structure(self):
+        """Test Open Interest data structure and simulated data"""
+        print("\n🔍 Testing Open Interest Data Structure...")
+        
+        success, data = self.run_test("Open Interest - Data Structure", "GET", "open-interest")
+        if success and isinstance(data, dict):
+            required_fields = ['total_oi', 'change_1h', 'change_4h', 'change_24h', 'trend', 'exchanges', 'signal', 'data_source']
+            
+            missing_fields = []
+            for field in required_fields:
+                if field not in data:
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                self.log_result("Open Interest Required Fields Check", False, None, f"Missing fields: {missing_fields}")
+                return False
+                
+            # Validate exchanges structure
+            exchanges = data.get('exchanges', [])
+            if not isinstance(exchanges, list) or len(exchanges) == 0:
+                self.log_result("Open Interest Exchanges Check", False, None, "Exchanges should be a non-empty list")
+                return False
+                
+            # Check first exchange structure
+            first_exchange = exchanges[0]
+            if not all(key in first_exchange for key in ['name', 'oi', 'share']):
+                self.log_result("Open Interest Exchange Structure Check", False, None, "Exchange missing required keys")
+                return False
+                
+            # Validate data source indicates simulation
+            data_source = data.get('data_source', '')
+            if 'Simulated' not in data_source or 'CoinGlass' not in data_source:
+                self.log_result("Open Interest Data Source Check", False, None, f"Expected simulated CoinGlass source, got: {data_source}")
+                return False
+                
+            print(f"   ✅ Total OI: {data.get('total_oi')}B")
+            print(f"   ✅ Trend: {data.get('trend')}")
+            print(f"   ✅ Exchanges count: {len(exchanges)}")
+            print(f"   ✅ Data source: {data_source}")
+        
+        return True
+
+    def test_funding_rate_data_structure(self):
+        """Test Funding Rate data structure and simulated data"""
+        print("\n🔍 Testing Funding Rate Data Structure...")
+        
+        success, data = self.run_test("Funding Rate - Data Structure", "GET", "funding-rate")
+        if success and isinstance(data, dict):
+            required_fields = ['current_rate', 'annualized_rate', 'payer', 'sentiment', 'signal_text', 'data_source']
+            
+            missing_fields = []
+            for field in required_fields:
+                if field not in data:
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                self.log_result("Funding Rate Required Fields Check", False, None, f"Missing fields: {missing_fields}")
+                return False
+                
+            # Validate payer values
+            payer = data.get('payer')
+            if payer not in ['longs', 'shorts']:
+                self.log_result("Funding Rate Payer Check", False, None, f"Invalid payer: {payer}")
+                return False
+                
+            # Validate sentiment values
+            sentiment = data.get('sentiment')
+            if sentiment not in ['bullish', 'bearish', 'neutral']:
+                self.log_result("Funding Rate Sentiment Check", False, None, f"Invalid sentiment: {sentiment}")
+                return False
+                
+            # Validate data source indicates simulation
+            data_source = data.get('data_source', '')
+            if 'Simulated' not in data_source or 'CoinGlass' not in data_source:
+                self.log_result("Funding Rate Data Source Check", False, None, f"Expected simulated CoinGlass source, got: {data_source}")
+                return False
+                
+            current_rate = data.get('current_rate')
+            annualized_rate = data.get('annualized_rate')
+            overcrowded = data.get('overcrowded')
+            
+            print(f"   ✅ Current Rate: {current_rate:.4f}%")
+            print(f"   ✅ Annualized: {annualized_rate:.2f}%")
+            print(f"   ✅ Payer: {payer}")
+            print(f"   ✅ Sentiment: {sentiment}")
+            if overcrowded:
+                print(f"   ⚠️  Overcrowded: {overcrowded}")
+            print(f"   ✅ Data source: {data_source}")
         
         return True
 
@@ -453,6 +598,10 @@ class CryptoRadarAPITester:
         # Content endpoints
         self.test_news()
         
+        # NEW: Enhanced feature endpoints
+        self.test_open_interest()
+        self.test_funding_rate()
+        
         # CRUD operations (fix expected status codes)
         self.test_alerts_crud()
         self.test_notes_crud()
@@ -474,6 +623,15 @@ class CryptoRadarAPITester:
         self.test_liquidity_orderbook_clusters()
         self.test_whale_alerts_real_volume()
         self.test_news_sentiment_analysis()
+        
+        # NEW: Enhanced feature validation tests
+        print("\n" + "=" * 60)
+        print("🔍 ENHANCED FEATURE VALIDATION TESTS")
+        print("=" * 60)
+        
+        self.test_market_bias_enhancements()
+        self.test_open_interest_data_structure()
+        self.test_funding_rate_data_structure()
         
         # Print summary
         print("\n" + "=" * 60)

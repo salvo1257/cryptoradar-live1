@@ -71,7 +71,29 @@ class MarketBias(BaseModel):
     estimated_move: float
     trap_risk: str
     squeeze_probability: float
+    next_target: float = 0
+    bias_score: int = 0
+    analysis_text: str = ""
     inputs: Dict[str, Any]
+
+class OpenInterest(BaseModel):
+    total_oi: float
+    change_1h: float
+    change_4h: float
+    change_24h: float
+    trend: str  # "increasing", "decreasing", "stable"
+    exchanges: List[Dict[str, Any]]
+    signal: str
+    data_source: str = "Simulated (CoinGlass pending)"
+
+class FundingRate(BaseModel):
+    current_rate: float
+    annualized_rate: float
+    payer: str  # "longs" or "shorts"
+    sentiment: str  # "bullish", "bearish", "neutral"
+    overcrowded: Optional[str] = None  # "longs", "shorts", or None
+    signal_text: str
+    data_source: str = "Simulated (CoinGlass pending)"
 
 class LiquidityCluster(BaseModel):
     price: float
@@ -132,6 +154,8 @@ class NewsItem(BaseModel):
     url: str
     timestamp: datetime
     sentiment: Optional[str] = None
+    importance: str = "medium"  # "high", "medium", "low"
+    description: Optional[str] = None
     image_url: Optional[str] = None
 
 class PriceAlert(BaseModel):
@@ -344,8 +368,9 @@ async def fetch_cryptocompare_news():
                         
                         # Determine sentiment from title keywords
                         title_lower = title.lower()
-                        bullish_words = ["surge", "rally", "bullish", "soar", "gain", "rise", "high", "record", "pump", "buy", "up"]
-                        bearish_words = ["crash", "drop", "bearish", "fall", "decline", "low", "dump", "sell", "fear", "down"]
+                        bullish_words = ["surge", "rally", "bullish", "soar", "gain", "rise", "high", "record", "pump", "buy", "up", "etf", "adoption"]
+                        bearish_words = ["crash", "drop", "bearish", "fall", "decline", "low", "dump", "sell", "fear", "down", "plunge", "warn"]
+                        high_importance_words = ["sec", "etf", "regulation", "fed", "billion", "whale", "record", "breaking"]
                         
                         if any(word in title_lower for word in bullish_words):
                             sentiment = "bullish"
@@ -354,6 +379,17 @@ async def fetch_cryptocompare_news():
                         else:
                             sentiment = "neutral"
                         
+                        # Determine importance
+                        if any(word in title_lower for word in high_importance_words):
+                            importance = "high"
+                        elif sentiment != "neutral":
+                            importance = "medium"
+                        else:
+                            importance = "low"
+                        
+                        # Get description/body
+                        description = item.get("body", "")[:200] + "..." if item.get("body") else None
+                        
                         news_items.append({
                             "id": str(item.get("id", uuid.uuid4())),
                             "title": title,
@@ -361,6 +397,8 @@ async def fetch_cryptocompare_news():
                             "url": item.get("url", ""),
                             "timestamp": datetime.fromtimestamp(item.get("published_on", 0), tz=timezone.utc),
                             "sentiment": sentiment,
+                            "importance": importance,
+                            "description": description,
                             "image_url": item.get("imageurl", None)
                         })
                         
@@ -601,12 +639,47 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
     # Squeeze probability (low volatility = high squeeze probability)
     squeeze_prob = max(0, min(80, (1 - (volatility_ratio / 3)) * 100)) if volatility_ratio < 3 else 0
     
+    # Calculate next target based on S/R levels
+    next_target = current_price
+    if bias == "BULLISH":
+        # Look for nearest resistance
+        recent_high = max(highs[-20:]) if len(highs) >= 20 else current_price * 1.02
+        next_target = recent_high if recent_high > current_price else current_price * 1.02
+    elif bias == "BEARISH":
+        # Look for nearest support
+        recent_low = min(lows[-20:]) if len(lows) >= 20 else current_price * 0.98
+        next_target = recent_low if recent_low < current_price else current_price * 0.98
+    
+    # Generate analysis text
+    analysis_parts = []
+    if bias == "BULLISH":
+        if ob_imbalance > 10:
+            analysis_parts.append("Strong buying pressure in order book.")
+        if rsi > 50:
+            analysis_parts.append("Momentum favors bulls.")
+        if squeeze_prob > 40:
+            analysis_parts.append(f"Short squeeze probability at {squeeze_prob:.0f}%.")
+    elif bias == "BEARISH":
+        if ob_imbalance < -10:
+            analysis_parts.append("Heavy selling pressure detected.")
+        if rsi < 50:
+            analysis_parts.append("Momentum favors bears.")
+        if squeeze_prob > 40:
+            analysis_parts.append(f"Long squeeze probability at {squeeze_prob:.0f}%.")
+    else:
+        analysis_parts.append("Market indecision. Wait for clearer signals.")
+    
+    analysis_text = " ".join(analysis_parts) if analysis_parts else "Analyzing market conditions..."
+    
     return MarketBias(
         bias=bias,
         confidence=round(confidence, 1),
         estimated_move=round(estimated_move, 2),
         trap_risk=trap_risk,
         squeeze_probability=round(squeeze_prob, 1),
+        next_target=round(next_target, 2),
+        bias_score=total_score,
+        analysis_text=analysis_text,
         inputs={
             "trend_score": trend_score,
             "volume_score": volume_score,
@@ -1075,6 +1148,91 @@ def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: 
     
     return alerts[-5:]
 
+def generate_open_interest(current_price: float, candles: List[dict] = None) -> OpenInterest:
+    """Generate simulated Open Interest data (CoinGlass integration pending)"""
+    import random
+    
+    # Simulate OI based on price action
+    base_oi = 35.5  # Billion USD
+    
+    # Random variations
+    change_1h = random.uniform(-2.5, 2.5)
+    change_4h = random.uniform(-5, 5)
+    change_24h = random.uniform(-8, 8)
+    
+    # Determine trend based on changes
+    if change_24h > 3:
+        trend = "increasing"
+        signal = "Increasing OI suggests new positions being opened. If price rising, bullish continuation likely."
+    elif change_24h < -3:
+        trend = "decreasing"
+        signal = "Decreasing OI indicates positions being closed. Potential trend exhaustion."
+    else:
+        trend = "stable"
+        signal = "Stable OI shows market consolidation. Watch for breakout."
+    
+    # Simulated exchange distribution
+    exchanges = [
+        {"name": "Binance", "oi": round(base_oi * 0.45, 2), "share": 45},
+        {"name": "OKX", "oi": round(base_oi * 0.20, 2), "share": 20},
+        {"name": "Bybit", "oi": round(base_oi * 0.18, 2), "share": 18},
+        {"name": "Bitget", "oi": round(base_oi * 0.10, 2), "share": 10},
+        {"name": "Others", "oi": round(base_oi * 0.07, 2), "share": 7},
+    ]
+    
+    return OpenInterest(
+        total_oi=round(base_oi, 2),
+        change_1h=round(change_1h, 2),
+        change_4h=round(change_4h, 2),
+        change_24h=round(change_24h, 2),
+        trend=trend,
+        exchanges=exchanges,
+        signal=signal,
+        data_source="Simulated (CoinGlass pending)"
+    )
+
+def generate_funding_rate(orderbook: dict = None) -> FundingRate:
+    """Generate simulated Funding Rate data (CoinGlass integration pending)"""
+    import random
+    
+    # Base funding rate (typically -0.01% to 0.03%)
+    base_rate = random.uniform(-0.015, 0.035)
+    
+    # Annualized (rate * 3 * 365)
+    annualized = base_rate * 3 * 365
+    
+    # Determine payer and sentiment
+    if base_rate > 0.02:
+        payer = "longs"
+        sentiment = "bullish"
+        overcrowded = "longs"
+        signal_text = "Longs are overcrowded. High funding rate suggests potential long squeeze risk."
+    elif base_rate > 0:
+        payer = "longs"
+        sentiment = "bullish"
+        overcrowded = None
+        signal_text = "Positive funding indicates bullish sentiment. Longs paying shorts."
+    elif base_rate < -0.01:
+        payer = "shorts"
+        sentiment = "bearish"
+        overcrowded = "shorts"
+        signal_text = "Shorts are overcrowded. Negative funding suggests potential short squeeze."
+    else:
+        payer = "shorts" if base_rate < 0 else "longs"
+        sentiment = "neutral"
+        overcrowded = None
+        signal_text = "Neutral funding rate. Market is balanced between longs and shorts."
+    
+    return FundingRate(
+        current_rate=round(base_rate, 4),
+        annualized_rate=round(annualized, 2),
+        payer=payer,
+        sentiment=sentiment,
+        overcrowded=overcrowded,
+        signal_text=signal_text,
+        data_source="Simulated (CoinGlass pending)"
+    )
+
 # ============== API ROUTES ==============
 
 @api_router.get("/health")
@@ -1220,6 +1378,28 @@ async def get_orderbook_analysis():
     """Get real order book analysis from Kraken"""
     orderbook = await fetch_kraken_orderbook(100)
     ticker = await fetch_kraken_ticker()
+    current_price = ticker["price"] if ticker else 0
+    
+    analysis = analyze_orderbook(orderbook, current_price)
+    return analysis
+
+@api_router.get("/open-interest")
+async def get_open_interest():
+    """Get Open Interest data (simulated until CoinGlass integration)"""
+    ticker = await fetch_kraken_ticker()
+    candles = await fetch_kraken_ohlc(60)
+    current_price = ticker["price"] if ticker else 0
+    
+    oi = generate_open_interest(current_price, candles)
+    return oi
+
+@api_router.get("/funding-rate")
+async def get_funding_rate():
+    """Get Funding Rate data (simulated until CoinGlass integration)"""
+    orderbook = await fetch_kraken_orderbook(100)
+    
+    funding = generate_funding_rate(orderbook)
+    return funding
     current_price = ticker["price"] if ticker else 0
     
     analysis = analyze_orderbook(orderbook, current_price)

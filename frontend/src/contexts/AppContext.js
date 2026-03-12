@@ -238,6 +238,8 @@ export function AppProvider({ children }) {
   const [patterns, setPatterns] = useState([]);
   const [candlestickPatterns, setCandlestickPatterns] = useState([]);
   const [orderBook, setOrderBook] = useState(null);
+  const [openInterest, setOpenInterest] = useState(null);
+  const [fundingRate, setFundingRate] = useState(null);
   const [news, setNews] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [alertHistory, setAlertHistory] = useState([]);
@@ -273,13 +275,15 @@ export function AppProvider({ children }) {
 
   const fetchAnalysisData = useCallback(async () => {
     try {
-      const [srRes, liqRes, whaleRes, patternRes, candlePatternRes, obRes] = await Promise.all([
+      const [srRes, liqRes, whaleRes, patternRes, candlePatternRes, obRes, oiRes, frRes] = await Promise.all([
         axios.get(`${API_URL}/support-resistance`, { params: { interval: timeframe } }),
         axios.get(`${API_URL}/liquidity`, { params: { interval: timeframe } }),
         axios.get(`${API_URL}/whale-alerts`, { params: { interval: timeframe } }),
         axios.get(`${API_URL}/patterns`, { params: { interval: timeframe } }),
         axios.get(`${API_URL}/candlesticks`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/orderbook`)
+        axios.get(`${API_URL}/orderbook`),
+        axios.get(`${API_URL}/open-interest`),
+        axios.get(`${API_URL}/funding-rate`)
       ]);
       
       setSupportResistance(srRes.data);
@@ -288,6 +292,8 @@ export function AppProvider({ children }) {
       setPatterns(patternRes.data.patterns || []);
       setCandlestickPatterns(candlePatternRes.data.patterns || []);
       setOrderBook(obRes.data);
+      setOpenInterest(oiRes.data);
+      setFundingRate(frRes.data);
     } catch (error) {
       console.error('Error fetching analysis data:', error);
     }
@@ -526,6 +532,8 @@ export function AppProvider({ children }) {
     patterns,
     candlestickPatterns,
     orderBook,
+    openInterest,
+    fundingRate,
     news,
     alerts,
     alertHistory,
