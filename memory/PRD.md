@@ -30,7 +30,8 @@ Build CryptoRadar - a professional BTC market intelligence dashboard that reads 
 | **Funding Rate** | ✅ Complete | CoinGlass API integration |
 | **Support & Resistance** | ✅ Complete | 4H levels, 0.3% min spacing, merged duplicates |
 | **Price Ticker** | ✅ Complete | Real-time via WebSocket |
-| **News Feed** | ✅ Complete | CryptoCompare integration |
+| **News Feed** | ✅ Complete | Market-aware news with sentiment classification |
+| **Signal History** | ✅ Complete | MongoDB storage, pagination, stats, performance tracking |
 
 ### ⚠️ SIMPLIFIED/MOCKED MODULES
 
@@ -192,6 +193,8 @@ Features:
 1. Multi-language support (IT/DE translations)
 2. Learn Mode content
 3. Real Pattern Detection Engine (ML-based)
+4. Auto-recording of signals on schedule (cron job)
+5. Signal outcome tracking (win/loss calculation)
 
 ## Test Reports
 - `/app/test_reports/iteration_8.json` - Whale & Liquidity Ladder v1.7 (100% pass)

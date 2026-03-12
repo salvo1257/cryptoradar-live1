@@ -1,56 +1,364 @@
-import React from 'react';
-import { useApp } from '../../contexts/AppContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function AlertHistoryPage() {
-  const { t, alertHistory } = useApp();
+  const [signals, setSignals] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [directionFilter, setDirectionFilter] = useState('all');
+  const [recording, setRecording] = useState(false);
 
-  const formatPrice = (p) => {
-    return new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(p);
+  const fetchHistory = useCallback(async () => {
+    try {
+      setLoading(true);
+      const filterParam = directionFilter !== 'all' ? `&direction=${directionFilter}` : '';
+      const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`);
+      const data = await response.json();
+      setSignals(data.signals || []);
+      setTotalPages(data.total_pages || 1);
+      setTotalCount(data.total_count || 0);
+    } catch (error) {
+      console.error('Error fetching signal history:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, directionFilter]);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/signal-history/stats`);
+      const data = await response.json();
+      setStats(data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, []);
+
+  const recordCurrentSignal = async () => {
+    try {
+      setRecording(true);
+      const response = await fetch(`${API_URL}/api/signal-history/record`, { method: 'POST' });
+      const data = await response.json();
+      if (data.recorded) {
+        fetchHistory();
+        fetchStats();
+      }
+    } catch (error) {
+      console.error('Error recording signal:', error);
+    } finally {
+      setRecording(false);
+    }
   };
 
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString();
+  useEffect(() => {
+    fetchHistory();
+    fetchStats();
+  }, [fetchHistory, fetchStats]);
+
+  const getDirectionConfig = (direction) => {
+    switch (direction) {
+      case 'LONG':
+        return { icon: TrendingUp, color: 'text-bullish', bg: 'bg-bullish/10', border: 'border-bullish/30' };
+      case 'SHORT':
+        return { icon: TrendingDown, color: 'text-bearish', bg: 'bg-bearish/10', border: 'border-bearish/30' };
+      default:
+        return { icon: MinusCircle, color: 'text-zinc-400', bg: 'bg-zinc-800', border: 'border-zinc-600' };
+    }
+  };
+
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatPrice = (price) => {
+    return price?.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
   };
 
   return (
-    <div className="p-4 space-y-4" data-testid="alert-history-page">
+    <div className="space-y-6" data-testid="alert-history-page">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="font-heading text-2xl font-bold tracking-tight">{t('alertHistory')}</h1>
+        <div className="flex items-center gap-3">
+          <History className="w-6 h-6 text-crypto-accent" />
+          <div>
+            <h1 className="text-2xl font-heading font-bold">Signal History</h1>
+            <p className="text-sm text-zinc-500">Track past trade signals and analyze performance</p>
+          </div>
+        </div>
+        <Button
+          onClick={recordCurrentSignal}
+          disabled={recording}
+          className="bg-crypto-accent hover:bg-crypto-accent/80"
+          data-testid="record-signal-btn"
+        >
+          {recording ? (
+            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Zap className="w-4 h-4 mr-2" />
+          )}
+          Record Current Signal
+        </Button>
       </div>
-      
-      <div className="space-y-2">
-        {alertHistory.length > 0 ? (
-          alertHistory.map((alert) => (
-            <div 
-              key={alert.id}
-              className={cn(
-                "flex items-center justify-between p-4 bg-crypto-card/60 border border-crypto-border rounded-sm opacity-60",
-                alert.condition === 'above' ? "border-l-2 border-l-bullish" : "border-l-2 border-l-bearish"
-              )}
-            >
-              <div>
-                <div className="font-mono text-lg">${formatPrice(alert.price)}</div>
-                <div className="text-xs text-zinc-500">
-                  {t(alert.condition)} - Triggered
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-zinc-500">Triggered at</div>
-                <div className="text-sm font-mono">{formatDate(alert.triggered_at || alert.created_at)}</div>
-              </div>
-            </div>
-          ))
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+            <div className="text-xs text-zinc-500 uppercase mb-1">Total Signals</div>
+            <div className="text-2xl font-mono font-bold">{stats.total_signals || 0}</div>
+          </div>
+          <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+            <div className="text-xs text-zinc-500 uppercase mb-1">Last 24H</div>
+            <div className="text-2xl font-mono font-bold text-crypto-accent">{stats.signals_24h || 0}</div>
+          </div>
+          <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+            <div className="text-xs text-zinc-500 uppercase mb-1">LONG Signals</div>
+            <div className="text-2xl font-mono font-bold text-bullish">{stats.by_direction?.LONG || 0}</div>
+          </div>
+          <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+            <div className="text-xs text-zinc-500 uppercase mb-1">SHORT Signals</div>
+            <div className="text-2xl font-mono font-bold text-bearish">{stats.by_direction?.SHORT || 0}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Filter className="w-4 h-4 text-zinc-500" />
+          <Select value={directionFilter} onValueChange={(val) => { setDirectionFilter(val); setPage(1); }}>
+            <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
+              <SelectValue placeholder="Filter" />
+            </SelectTrigger>
+            <SelectContent className="bg-crypto-surface border-crypto-border">
+              <SelectItem value="all">All Signals</SelectItem>
+              <SelectItem value="LONG">LONG Only</SelectItem>
+              <SelectItem value="SHORT">SHORT Only</SelectItem>
+              <SelectItem value="NO TRADE">NO TRADE</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-zinc-500">
+          <span>{totalCount} signals</span>
+          <Button variant="ghost" size="sm" onClick={fetchHistory} data-testid="refresh-history-btn">
+            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Signal List */}
+      <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <RefreshCw className="w-6 h-6 text-crypto-accent animate-spin" />
+          </div>
+        ) : signals.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
+            <History className="w-12 h-12 mb-3 opacity-30" />
+            <p>No signals recorded yet</p>
+            <p className="text-xs mt-1">Click "Record Current Signal" to start tracking</p>
+          </div>
         ) : (
-          <div className="flex items-center justify-center h-32 text-zinc-500 text-sm bg-crypto-card/30 rounded-sm border border-crypto-border">
-            No alert history
+          <div className="divide-y divide-crypto-border">
+            {signals.map((signal, idx) => {
+              const config = getDirectionConfig(signal.direction);
+              const Icon = config.icon;
+              
+              return (
+                <div 
+                  key={signal.signal_id || idx}
+                  className="p-4 hover:bg-white/5 transition-colors"
+                  data-testid={`signal-entry-${idx}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    {/* Left: Direction & Basic Info */}
+                    <div className="flex items-start gap-3">
+                      <div className={cn("p-2 rounded-sm", config.bg)}>
+                        <Icon className={cn("w-5 h-5", config.color)} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge className={cn("font-mono text-xs", config.bg, config.color, config.border)}>
+                            {signal.direction}
+                          </Badge>
+                          <span className="text-xs text-zinc-500">{signal.setup_type}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="flex items-center gap-1 text-zinc-400">
+                            <Clock className="w-3 h-3" />
+                            {formatTime(signal.timestamp)}
+                          </span>
+                          <span className="font-mono">
+                            BTC: {formatPrice(signal.btc_price)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Key Metrics */}
+                    <div className="flex items-center gap-6 text-sm">
+                      <div className="text-center">
+                        <div className="text-xs text-zinc-500">Confidence</div>
+                        <div className={cn(
+                          "font-mono font-bold",
+                          signal.confidence >= 70 ? "text-bullish" :
+                          signal.confidence >= 50 ? "text-yellow-400" : "text-zinc-400"
+                        )}>
+                          {signal.confidence?.toFixed(0)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-zinc-500">Est. Move</div>
+                        <div className={cn(
+                          "font-mono font-bold",
+                          signal.estimated_move > 0 ? "text-bullish" : "text-bearish"
+                        )}>
+                          {signal.estimated_move > 0 ? '+' : ''}{signal.estimated_move?.toFixed(2)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-zinc-500">R:R</div>
+                        <div className="font-mono font-bold">
+                          {signal.risk_reward_ratio?.toFixed(1)}:1
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expanded Details */}
+                  {signal.direction !== 'NO TRADE' && (
+                    <div className="mt-3 pt-3 border-t border-white/5">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                        <div>
+                          <span className="text-zinc-500">Entry Zone:</span>
+                          <div className="font-mono">
+                            {formatPrice(signal.entry_zone_low)} - {formatPrice(signal.entry_zone_high)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500 flex items-center gap-1">
+                            <Shield className="w-3 h-3" /> Stop Loss:
+                          </span>
+                          <div className="font-mono text-bearish">
+                            {formatPrice(signal.stop_loss)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500 flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Target 1:
+                          </span>
+                          <div className="font-mono text-bullish">
+                            {formatPrice(signal.target_1)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-zinc-500">Target 2:</span>
+                          <div className="font-mono text-bullish">
+                            {formatPrice(signal.target_2)}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Context Tags */}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {signal.market_bias && (
+                          <Badge variant="outline" className="text-[10px] bg-crypto-surface/50">
+                            Bias: {signal.market_bias}
+                          </Badge>
+                        )}
+                        {signal.whale_direction && (
+                          <Badge variant="outline" className="text-[10px] bg-crypto-surface/50">
+                            Whale: {signal.whale_direction}
+                          </Badge>
+                        )}
+                        {signal.liquidity_direction && (
+                          <Badge variant="outline" className="text-[10px] bg-crypto-surface/50">
+                            Liquidity: {signal.liquidity_direction}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 p-4 border-t border-crypto-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              data-testid="prev-page-btn"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Previous
+            </Button>
+            <span className="text-sm text-zinc-500">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              data-testid="next-page-btn"
+            >
+              Next
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
           </div>
         )}
       </div>
+
+      {/* Stats Details */}
+      {stats && stats.averages_by_direction && Object.keys(stats.averages_by_direction).length > 0 && (
+        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-crypto-accent" />
+            <h3 className="font-heading font-semibold">Performance Statistics</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Object.entries(stats.averages_by_direction).map(([direction, data]) => {
+              const config = getDirectionConfig(direction);
+              return (
+                <div key={direction} className={cn("p-3 rounded-sm border", config.bg, config.border)}>
+                  <div className={cn("font-mono font-bold mb-2", config.color)}>{direction}</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-zinc-500">Avg Confidence:</span>
+                      <div className="font-mono">{data.avg_confidence}%</div>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Avg R:R:</span>
+                      <div className="font-mono">{data.avg_risk_reward}:1</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
