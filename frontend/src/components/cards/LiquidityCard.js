@@ -7,7 +7,7 @@ import { Progress } from '../ui/progress';
 
 export function LiquidityCard({ compact = false }) {
   const { t, liquidity, learnMode } = useApp();
-  const { clusters = [], direction } = liquidity || {};
+  const { clusters = [], direction, data_source } = liquidity || {};
 
   const aboveClusters = clusters.filter(c => c.side === 'above').slice(0, compact ? 3 : 5);
   const belowClusters = clusters.filter(c => c.side === 'below').slice(0, compact ? 3 : 5);
@@ -43,6 +43,7 @@ export function LiquidityCard({ compact = false }) {
             </TooltipProvider>
           )}
         </div>
+        {data_source && <span className="text-xs text-zinc-500 font-mono">{data_source}</span>}
       </div>
 
       {/* Content */}

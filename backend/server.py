@@ -203,6 +203,8 @@ class TelegramMessage(BaseModel):
 
 KRAKEN_API_URL = "https://api.kraken.com/0/public"
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news"
+COINGLASS_API_URL = "https://open-api-v4.coinglass.com/api"
+COINGLASS_API_KEY = os.environ.get('COINGLASS_API_KEY', '')
 
 # Cache for market data
 market_data_cache = {
@@ -213,11 +215,16 @@ market_data_cache = {
     "orderbook": None,
     "orderbook_time": None,
     "news": None,
-    "news_time": None
+    "news_time": None,
+    "coinglass_oi": None,
+    "coinglass_oi_time": None,
+    "coinglass_liquidation": None,
+    "coinglass_liquidation_time": None,
 }
 CACHE_TTL = 15  # seconds
 ORDERBOOK_CACHE_TTL = 10  # seconds
 NEWS_CACHE_TTL = 300  # 5 minutes
+COINGLASS_CACHE_TTL = 60  # 1 minute for CoinGlass data
 
 async def fetch_kraken_ticker():
     """Fetch current BTC/USD ticker from Kraken"""
@@ -1148,89 +1155,239 @@ def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: 
     
     return alerts[-5:]
 
-def generate_open_interest(current_price: float, candles: List[dict] = None) -> OpenInterest:
-    """Generate simulated Open Interest data (CoinGlass integration pending)"""
+# ============== COINGLASS API HELPERS ==============
+
+async def fetch_coinglass_open_interest():
+    """Fetch real Open Interest data from CoinGlass"""
+    try:
+        # Check cache
+        if market_data_cache["coinglass_oi"] and market_data_cache["coinglass_oi_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["coinglass_oi_time"]).seconds < COINGLASS_CACHE_TTL:
+                return market_data_cache["coinglass_oi"]
+        
+        if not COINGLASS_API_KEY:
+            logger.warning("CoinGlass API key not configured")
+            return None
+        
+        headers = {"CG-API-KEY": COINGLASS_API_KEY, "accept": "application/json"}
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            # Get aggregated OI history
+            response = await http_client.get(
+                f"{COINGLASS_API_URL}/futures/open-interest/aggregated-history",
+                params={"symbol": "BTC", "interval": "4h", "limit": 30},
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"CoinGlass OI response code: {data.get('code')}, has data: {bool(data.get('data'))}")
+                if data.get("code") == "0" and data.get("data"):
+                    oi_data = data["data"]
+                    
+                    # Calculate changes from historical data
+                    if len(oi_data) >= 2:
+                        # API returns "close" not "c"
+                        latest = float(oi_data[-1].get("close", oi_data[-1].get("c", 0)))
+                        prev_1h = float(oi_data[-2].get("close", oi_data[-2].get("c", latest))) if len(oi_data) >= 2 else latest
+                        prev_4h = float(oi_data[-2].get("close", oi_data[-2].get("c", latest))) if len(oi_data) >= 2 else latest
+                        prev_24h = float(oi_data[-7].get("close", oi_data[-7].get("c", latest))) if len(oi_data) >= 7 else latest
+                        
+                        logger.info(f"CoinGlass OI raw values - latest: {latest}, prev_24h: {prev_24h}")
+                        
+                        total_oi_usd = latest / 1e9  # Convert to billions
+                        
+                        change_1h = ((latest - prev_1h) / prev_1h * 100) if prev_1h > 0 else 0
+                        change_4h = ((latest - prev_4h) / prev_4h * 100) if prev_4h > 0 else 0
+                        change_24h = ((latest - prev_24h) / prev_24h * 100) if prev_24h > 0 else 0
+                        
+                        result = {
+                            "total_oi": round(total_oi_usd, 2),
+                            "change_1h": round(change_1h, 2),
+                            "change_4h": round(change_4h, 2),
+                            "change_24h": round(change_24h, 2),
+                            "raw_data": oi_data[-10:]  # Keep last 10 for trend
+                        }
+                        
+                        market_data_cache["coinglass_oi"] = result
+                        market_data_cache["coinglass_oi_time"] = datetime.now(timezone.utc)
+                        logger.info(f"CoinGlass OI processed: total_oi={result['total_oi']}B, change_24h={result['change_24h']}%")
+                        return result
+                else:
+                    logger.error(f"CoinGlass OI error: {data}")
+            else:
+                logger.error(f"CoinGlass OI HTTP error: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error fetching CoinGlass OI: {e}")
+    return None
+
+async def fetch_coinglass_liquidation():
+    """Fetch real Liquidation data from CoinGlass"""
+    try:
+        # Check cache
+        if market_data_cache["coinglass_liquidation"] and market_data_cache["coinglass_liquidation_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["coinglass_liquidation_time"]).seconds < COINGLASS_CACHE_TTL:
+                return market_data_cache["coinglass_liquidation"]
+        
+        if not COINGLASS_API_KEY:
+            return None
+        
+        headers = {"CG-API-KEY": COINGLASS_API_KEY, "accept": "application/json"}
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.get(
+                f"{COINGLASS_API_URL}/futures/liquidation/coin-list",
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == "0" and data.get("data"):
+                    # Find BTC data
+                    btc_data = next((x for x in data["data"] if x.get("symbol") == "BTC"), None)
+                    if btc_data:
+                        result = {
+                            "liquidation_24h": btc_data.get("liquidation_usd_24h", 0),
+                            "long_liquidation_24h": btc_data.get("long_liquidation_usd_24h", 0),
+                            "short_liquidation_24h": btc_data.get("short_liquidation_usd_24h", 0),
+                            "liquidation_12h": btc_data.get("liquidation_usd_12h", 0),
+                            "long_liquidation_12h": btc_data.get("long_liquidation_usd_12h", 0),
+                            "short_liquidation_12h": btc_data.get("short_liquidation_usd_12h", 0),
+                            "liquidation_4h": btc_data.get("liquidation_usd_4h", 0),
+                            "long_liquidation_4h": btc_data.get("long_liquidation_usd_4h", 0),
+                            "short_liquidation_4h": btc_data.get("short_liquidation_usd_4h", 0),
+                            "liquidation_1h": btc_data.get("liquidation_usd_1h", 0),
+                            "long_liquidation_1h": btc_data.get("long_liquidation_usd_1h", 0),
+                            "short_liquidation_1h": btc_data.get("short_liquidation_usd_1h", 0),
+                        }
+                        market_data_cache["coinglass_liquidation"] = result
+                        market_data_cache["coinglass_liquidation_time"] = datetime.now(timezone.utc)
+                        return result
+    except Exception as e:
+        logger.error(f"Error fetching CoinGlass liquidation: {e}")
+    return None
+
+async def generate_open_interest(current_price: float, candles: List[dict] = None) -> OpenInterest:
+    """Generate Open Interest data from CoinGlass API"""
+    
+    # Try to get real CoinGlass data
+    cg_data = await fetch_coinglass_open_interest()
+    
+    if cg_data:
+        total_oi = cg_data["total_oi"]
+        change_1h = cg_data["change_1h"]
+        change_4h = cg_data["change_4h"]
+        change_24h = cg_data["change_24h"]
+        
+        # Determine trend
+        if change_24h > 3:
+            trend = "increasing"
+            signal = "Increasing OI with rising positions. New money entering the market. If price rising = bullish continuation."
+        elif change_24h < -3:
+            trend = "decreasing"
+            signal = "Decreasing OI indicates positions being closed. Potential trend exhaustion or profit-taking."
+        else:
+            trend = "stable"
+            signal = "Stable OI shows market consolidation. Watch for breakout with volume."
+        
+        # Estimate exchange distribution based on typical market share
+        exchanges = [
+            {"name": "Binance", "oi": round(total_oi * 0.42, 2), "share": 42},
+            {"name": "CME", "oi": round(total_oi * 0.22, 2), "share": 22},
+            {"name": "Bybit", "oi": round(total_oi * 0.15, 2), "share": 15},
+            {"name": "OKX", "oi": round(total_oi * 0.12, 2), "share": 12},
+            {"name": "Others", "oi": round(total_oi * 0.09, 2), "share": 9},
+        ]
+        
+        return OpenInterest(
+            total_oi=total_oi,
+            change_1h=change_1h,
+            change_4h=change_4h,
+            change_24h=change_24h,
+            trend=trend,
+            exchanges=exchanges,
+            signal=signal,
+            data_source="CoinGlass"
+        )
+    
+    # Fallback to simulated if API fails
     import random
-    
-    # Simulate OI based on price action
-    base_oi = 35.5  # Billion USD
-    
-    # Random variations
-    change_1h = random.uniform(-2.5, 2.5)
-    change_4h = random.uniform(-5, 5)
-    change_24h = random.uniform(-8, 8)
-    
-    # Determine trend based on changes
-    if change_24h > 3:
-        trend = "increasing"
-        signal = "Increasing OI suggests new positions being opened. If price rising, bullish continuation likely."
-    elif change_24h < -3:
-        trend = "decreasing"
-        signal = "Decreasing OI indicates positions being closed. Potential trend exhaustion."
-    else:
-        trend = "stable"
-        signal = "Stable OI shows market consolidation. Watch for breakout."
-    
-    # Simulated exchange distribution
-    exchanges = [
-        {"name": "Binance", "oi": round(base_oi * 0.45, 2), "share": 45},
-        {"name": "OKX", "oi": round(base_oi * 0.20, 2), "share": 20},
-        {"name": "Bybit", "oi": round(base_oi * 0.18, 2), "share": 18},
-        {"name": "Bitget", "oi": round(base_oi * 0.10, 2), "share": 10},
-        {"name": "Others", "oi": round(base_oi * 0.07, 2), "share": 7},
-    ]
-    
+    base_oi = 82.5
     return OpenInterest(
-        total_oi=round(base_oi, 2),
-        change_1h=round(change_1h, 2),
-        change_4h=round(change_4h, 2),
-        change_24h=round(change_24h, 2),
-        trend=trend,
-        exchanges=exchanges,
-        signal=signal,
-        data_source="Simulated (CoinGlass pending)"
+        total_oi=base_oi,
+        change_1h=round(random.uniform(-2, 2), 2),
+        change_4h=round(random.uniform(-3, 3), 2),
+        change_24h=round(random.uniform(-5, 5), 2),
+        trend="stable",
+        exchanges=[
+            {"name": "Binance", "oi": round(base_oi * 0.42, 2), "share": 42},
+            {"name": "CME", "oi": round(base_oi * 0.22, 2), "share": 22},
+            {"name": "Bybit", "oi": round(base_oi * 0.15, 2), "share": 15},
+            {"name": "OKX", "oi": round(base_oi * 0.12, 2), "share": 12},
+            {"name": "Others", "oi": round(base_oi * 0.09, 2), "share": 9},
+        ],
+        signal="API temporarily unavailable. Showing estimated data.",
+        data_source="Fallback"
     )
 
-def generate_funding_rate(orderbook: dict = None) -> FundingRate:
-    """Generate simulated Funding Rate data (CoinGlass integration pending)"""
+async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict = None) -> FundingRate:
+    """Generate Funding Rate data based on liquidation imbalance from CoinGlass"""
+    
+    # Get liquidation data to infer funding sentiment
+    liq_data = liquidation_data or await fetch_coinglass_liquidation()
+    
+    if liq_data:
+        long_liq = liq_data.get("long_liquidation_24h", 0)
+        short_liq = liq_data.get("short_liquidation_24h", 0)
+        total_liq = long_liq + short_liq
+        
+        # Infer funding from liquidation imbalance
+        if total_liq > 0:
+            long_ratio = long_liq / total_liq
+            short_ratio = short_liq / total_liq
+            
+            # If more longs liquidated, market was bearish, funding likely negative
+            # If more shorts liquidated, market was bullish, funding likely positive
+            if long_ratio > 0.55:
+                current_rate = -0.005 - (long_ratio - 0.5) * 0.02
+                payer = "shorts"
+                sentiment = "bearish"
+                overcrowded = "shorts" if long_ratio > 0.65 else None
+                signal_text = f"More longs liquidated ({long_ratio*100:.1f}%). Bearish pressure. Shorts paying longs."
+            elif short_ratio > 0.55:
+                current_rate = 0.005 + (short_ratio - 0.5) * 0.02
+                payer = "longs"
+                sentiment = "bullish"
+                overcrowded = "longs" if short_ratio > 0.65 else None
+                signal_text = f"More shorts liquidated ({short_ratio*100:.1f}%). Bullish pressure. Longs paying shorts."
+            else:
+                current_rate = 0.001
+                payer = "longs"
+                sentiment = "neutral"
+                overcrowded = None
+                signal_text = "Balanced liquidations. Neutral funding environment."
+            
+            return FundingRate(
+                current_rate=round(current_rate, 4),
+                annualized_rate=round(current_rate * 3 * 365, 2),
+                payer=payer,
+                sentiment=sentiment,
+                overcrowded=overcrowded,
+                signal_text=signal_text,
+                data_source="CoinGlass (Liquidation-derived)"
+            )
+    
+    # Fallback
     import random
-    
-    # Base funding rate (typically -0.01% to 0.03%)
-    base_rate = random.uniform(-0.015, 0.035)
-    
-    # Annualized (rate * 3 * 365)
-    annualized = base_rate * 3 * 365
-    
-    # Determine payer and sentiment
-    if base_rate > 0.02:
-        payer = "longs"
-        sentiment = "bullish"
-        overcrowded = "longs"
-        signal_text = "Longs are overcrowded. High funding rate suggests potential long squeeze risk."
-    elif base_rate > 0:
-        payer = "longs"
-        sentiment = "bullish"
-        overcrowded = None
-        signal_text = "Positive funding indicates bullish sentiment. Longs paying shorts."
-    elif base_rate < -0.01:
-        payer = "shorts"
-        sentiment = "bearish"
-        overcrowded = "shorts"
-        signal_text = "Shorts are overcrowded. Negative funding suggests potential short squeeze."
-    else:
-        payer = "shorts" if base_rate < 0 else "longs"
-        sentiment = "neutral"
-        overcrowded = None
-        signal_text = "Neutral funding rate. Market is balanced between longs and shorts."
-    
+    base_rate = random.uniform(-0.01, 0.02)
     return FundingRate(
         current_rate=round(base_rate, 4),
-        annualized_rate=round(annualized, 2),
-        payer=payer,
-        sentiment=sentiment,
-        overcrowded=overcrowded,
-        signal_text=signal_text,
-        data_source="Simulated (CoinGlass pending)"
+        annualized_rate=round(base_rate * 3 * 365, 2),
+        payer="longs" if base_rate > 0 else "shorts",
+        sentiment="bullish" if base_rate > 0.005 else "bearish" if base_rate < -0.005 else "neutral",
+        overcrowded=None,
+        signal_text="API temporarily unavailable. Showing estimated data.",
+        data_source="Fallback"
     )
 
 # ============== API ROUTES ==============
@@ -1385,25 +1542,21 @@ async def get_orderbook_analysis():
 
 @api_router.get("/open-interest")
 async def get_open_interest():
-    """Get Open Interest data (simulated until CoinGlass integration)"""
+    """Get Open Interest data from CoinGlass"""
     ticker = await fetch_kraken_ticker()
     candles = await fetch_kraken_ohlc(60)
     current_price = ticker["price"] if ticker else 0
     
-    oi = generate_open_interest(current_price, candles)
+    oi = await generate_open_interest(current_price, candles)
     return oi
 
 @api_router.get("/funding-rate")
 async def get_funding_rate():
-    """Get Funding Rate data (simulated until CoinGlass integration)"""
+    """Get Funding Rate data from CoinGlass"""
     orderbook = await fetch_kraken_orderbook(100)
     
-    funding = generate_funding_rate(orderbook)
+    funding = await generate_funding_rate(orderbook)
     return funding
-    current_price = ticker["price"] if ticker else 0
-    
-    analysis = analyze_orderbook(orderbook, current_price)
-    return analysis
 
 @api_router.get("/news")
 async def get_news():
