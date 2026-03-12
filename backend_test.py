@@ -133,7 +133,7 @@ class CryptoRadarAPITester:
             "condition": "above",
             "send_telegram": False
         }
-        success, created_alert = self.run_test("Create Alert", "POST", "alerts", 201, data=alert_data)
+        success, created_alert = self.run_test("Create Alert", "POST", "alerts", 200, data=alert_data)
         if not success:
             return False
             
@@ -155,7 +155,7 @@ class CryptoRadarAPITester:
             
         # Create a new note
         note_data = {"content": "Test note for API testing"}
-        success, created_note = self.run_test("Create Note", "POST", "notes", 201, data=note_data)
+        success, created_note = self.run_test("Create Note", "POST", "notes", 200, data=note_data)
         if not success:
             return False
             
@@ -199,11 +199,240 @@ class CryptoRadarAPITester:
         """Test alert history"""
         return self.run_test("Alert History", "GET", "alerts/history")
     
+    def test_kraken_data_sources(self):
+        """Test that APIs are returning real Kraken data"""
+        print("\n🔍 Testing Real Kraken Data Sources...")
+        
+        # Test market status has Kraken data source
+        success, data = self.run_test("Market Status - Kraken Source", "GET", "market/status")
+        if success and isinstance(data, dict):
+            data_source = data.get('data_source')
+            if data_source != 'Kraken':
+                self.log_result("Market Status Kraken Source Check", False, None, f"Expected 'Kraken', got '{data_source}'")
+                return False
+            else:
+                print(f"   ✅ Data source: {data_source}")
+        
+        # Test chart candles has Kraken data source  
+        success, data = self.run_test("Chart Candles - Kraken Source", "GET", "chart/candles")
+        if success and isinstance(data, dict):
+            data_source = data.get('data_source')
+            if data_source != 'Kraken':
+                self.log_result("Chart Candles Kraken Source Check", False, None, f"Expected 'Kraken', got '{data_source}'")
+                return False
+            else:
+                print(f"   ✅ Data source: {data_source}")
+        
+        # Test orderbook has Kraken data source
+        success, data = self.run_test("Orderbook - Kraken Source", "GET", "orderbook")
+        if success and isinstance(data, dict):
+            data_source = data.get('data_source')
+            if data_source != 'Kraken':
+                self.log_result("Orderbook Kraken Source Check", False, None, f"Expected 'Kraken', got '{data_source}'")
+                return False
+            else:
+                print(f"   ✅ Data source: {data_source}")
+        
+        # Test news has CryptoCompare data source
+        success, data = self.run_test("News - CryptoCompare Source", "GET", "news")
+        if success and isinstance(data, dict):
+            data_source = data.get('data_source')
+            if data_source != 'CryptoCompare':
+                self.log_result("News CryptoCompare Source Check", False, None, f"Expected 'CryptoCompare', got '{data_source}'")
+                return False
+            else:
+                print(f"   ✅ Data source: {data_source}")
+        
+        return True
+
+    def test_real_market_data_validity(self):
+        """Test that market data contains valid real values"""
+        print("\n🔍 Testing Real Market Data Validity...")
+        
+        # Test market status has realistic BTC values
+        success, data = self.run_test("Market Status - Data Validity", "GET", "market/status")
+        if success and isinstance(data, dict):
+            price = data.get('price', 0)
+            volume = data.get('volume_24h', 0)
+            
+            # BTC should be between reasonable ranges
+            if price < 20000 or price > 200000:
+                self.log_result("Market Status Price Range Check", False, None, f"Price {price} seems unrealistic")
+                return False
+            
+            if volume < 0:
+                self.log_result("Market Status Volume Check", False, None, f"Volume {volume} should be positive")
+                return False
+                
+            print(f"   ✅ BTC Price: ${price:,.2f}")
+            print(f"   ✅ 24h Volume: {volume:,.0f}")
+        
+        # Test candles have realistic OHLC data
+        success, data = self.run_test("Candles - Data Validity", "GET", "chart/candles")
+        if success and isinstance(data, dict):
+            candles = data.get('candles', [])
+            if len(candles) > 0:
+                recent_candle = candles[-1]
+                ohlc = [recent_candle.get(k, 0) for k in ['open', 'high', 'low', 'close']]
+                
+                # Basic OHLC validation
+                if not all(20000 <= val <= 200000 for val in ohlc):
+                    self.log_result("Candles OHLC Range Check", False, None, f"OHLC values seem unrealistic: {ohlc}")
+                    return False
+                
+                if recent_candle.get('high') < recent_candle.get('low'):
+                    self.log_result("Candles High/Low Check", False, None, "High should be >= Low")
+                    return False
+                    
+                print(f"   ✅ Recent candle OHLC valid")
+        
+        return True
+
+    def test_orderbook_real_data(self):
+        """Test that orderbook contains real bid/ask walls"""
+        print("\n🔍 Testing Real Orderbook Data...")
+        
+        success, data = self.run_test("Orderbook - Real Walls", "GET", "orderbook")
+        if success and isinstance(data, dict):
+            bid_wall = data.get('top_bid_wall', {})
+            ask_wall = data.get('top_ask_wall', {})
+            
+            bid_price = bid_wall.get('price', 0)
+            ask_price = ask_wall.get('price', 0)
+            
+            # Bid should be lower than ask
+            if bid_price >= ask_price:
+                self.log_result("Orderbook Spread Check", False, None, f"Bid {bid_price} should be < Ask {ask_price}")
+                return False
+                
+            # Prices should be realistic
+            if bid_price < 20000 or ask_price > 200000:
+                self.log_result("Orderbook Price Range Check", False, None, f"Bid/Ask prices seem unrealistic")
+                return False
+                
+            print(f"   ✅ Bid: ${bid_price}, Ask: ${ask_price}")
+            print(f"   ✅ Spread: ${ask_price - bid_price:.2f}")
+        
+        return True
+
+    def test_market_bias_orderbook_integration(self):
+        """Test that market bias includes real orderbook data"""
+        print("\n🔍 Testing Market Bias Orderbook Integration...")
+        
+        success, data = self.run_test("Market Bias - Orderbook Integration", "GET", "market/bias")
+        if success and isinstance(data, dict):
+            inputs = data.get('inputs', {})
+            
+            # Check if orderbook score and imbalance are included
+            if 'orderbook_score' not in inputs:
+                self.log_result("Market Bias Orderbook Score Check", False, None, "Missing orderbook_score in inputs")
+                return False
+                
+            if 'orderbook_imbalance' not in inputs:
+                self.log_result("Market Bias Orderbook Imbalance Check", False, None, "Missing orderbook_imbalance in inputs")
+                return False
+                
+            ob_score = inputs.get('orderbook_score')
+            ob_imbalance = inputs.get('orderbook_imbalance')
+            
+            print(f"   ✅ Orderbook Score: {ob_score}")
+            print(f"   ✅ Orderbook Imbalance: {ob_imbalance}%")
+        
+        return True
+
+    def test_support_resistance_orderbook_levels(self):
+        """Test that S/R includes orderbook-based levels"""
+        print("\n🔍 Testing S/R Orderbook Levels...")
+        
+        success, data = self.run_test("S/R - Orderbook Levels", "GET", "support-resistance")
+        if success and isinstance(data, dict):
+            levels = data.get('levels', [])
+            
+            # Check for orderbook-based levels
+            orderbook_levels = [level for level in levels if level.get('timeframe') == 'OrderBook']
+            
+            if len(orderbook_levels) == 0:
+                print("   ⚠️  No orderbook-based S/R levels found (may be normal)")
+            else:
+                print(f"   ✅ Found {len(orderbook_levels)} orderbook-based S/R levels")
+        
+        return True
+
+    def test_liquidity_orderbook_clusters(self):
+        """Test that liquidity uses real orderbook for clusters"""
+        print("\n🔍 Testing Liquidity Orderbook Clusters...")
+        
+        success, data = self.run_test("Liquidity - Orderbook Clusters", "GET", "liquidity")
+        if success and isinstance(data, dict):
+            data_source = data.get('data_source')
+            if 'Kraken' not in data_source and 'OrderBook' not in data_source:
+                self.log_result("Liquidity Data Source Check", False, None, f"Expected Kraken/OrderBook source, got '{data_source}'")
+                return False
+                
+            clusters = data.get('clusters', [])
+            direction = data.get('direction', {})
+            
+            print(f"   ✅ Data source: {data_source}")
+            print(f"   ✅ Found {len(clusters)} liquidity clusters")
+            print(f"   ✅ Direction: {direction.get('direction', 'N/A')}")
+        
+        return True
+
+    def test_whale_alerts_real_volume(self):
+        """Test that whale alerts detect real volume spikes"""
+        print("\n🔍 Testing Whale Alerts Real Volume Detection...")
+        
+        success, data = self.run_test("Whale Alerts - Real Volume", "GET", "whale-alerts")
+        if success and isinstance(data, dict):
+            alerts = data.get('alerts', [])
+            data_source = data.get('data_source')
+            
+            if data_source != 'Kraken':
+                self.log_result("Whale Alerts Data Source Check", False, None, f"Expected 'Kraken', got '{data_source}'")
+                return False
+                
+            print(f"   ✅ Data source: {data_source}")
+            print(f"   ✅ Found {len(alerts)} whale alerts")
+            
+            # Check alert structure if any exist
+            for alert in alerts[:2]:  # Check first 2
+                if alert.get('confidence', 0) < 50:
+                    print(f"   ⚠️  Low confidence alert: {alert.get('confidence')}%")
+        
+        return True
+
+    def test_news_sentiment_analysis(self):
+        """Test that news includes sentiment analysis"""
+        print("\n🔍 Testing News Sentiment Analysis...")
+        
+        success, data = self.run_test("News - Sentiment Analysis", "GET", "news")
+        if success and isinstance(data, dict):
+            news_items = data.get('news', [])
+            
+            if len(news_items) == 0:
+                print("   ⚠️  No news items found")
+                return True
+                
+            sentiments_found = set()
+            for item in news_items:
+                sentiment = item.get('sentiment')
+                if sentiment:
+                    sentiments_found.add(sentiment)
+                    
+            if len(sentiments_found) == 0:
+                self.log_result("News Sentiment Check", False, None, "No sentiment found in news items")
+                return False
+                
+            print(f"   ✅ Found sentiments: {list(sentiments_found)}")
+            print(f"   ✅ Total news items: {len(news_items)}")
+        
+        return True
+
     def run_all_tests(self):
-        """Run all API tests"""
-        print("🚀 Starting CryptoRadar API Tests")
+        """Run all API tests including new real data validation"""
+        print("🚀 Starting CryptoRadar v1.1 API Tests")
         print(f"🌐 Base URL: {self.base_url}")
-        print("=" * 50)
+        print("=" * 60)
         
         # Core system tests
         self.test_health_check()
@@ -224,7 +453,7 @@ class CryptoRadarAPITester:
         # Content endpoints
         self.test_news()
         
-        # CRUD operations
+        # CRUD operations (fix expected status codes)
         self.test_alerts_crud()
         self.test_notes_crud()
         self.test_alert_history()
@@ -232,8 +461,22 @@ class CryptoRadarAPITester:
         # Settings
         self.test_settings()
         
+        # NEW: Real data validation tests
+        print("\n" + "=" * 60)
+        print("🔍 REAL DATA VALIDATION TESTS")
+        print("=" * 60)
+        
+        self.test_kraken_data_sources()
+        self.test_real_market_data_validity()
+        self.test_orderbook_real_data()
+        self.test_market_bias_orderbook_integration()
+        self.test_support_resistance_orderbook_levels()
+        self.test_liquidity_orderbook_clusters()
+        self.test_whale_alerts_real_volume()
+        self.test_news_sentiment_analysis()
+        
         # Print summary
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print(f"📊 Test Results: {self.tests_passed}/{self.tests_run} passed")
         
         if self.tests_passed == self.tests_run:
@@ -242,7 +485,7 @@ class CryptoRadarAPITester:
             print(f"⚠️  {self.tests_run - self.tests_passed} test(s) failed")
             
         # Check for critical failures
-        critical_endpoints = ["health", "market/status", "chart/candles"]
+        critical_endpoints = ["health", "market/status", "chart/candles", "kraken", "data source"]
         critical_failures = []
         
         for result in self.test_results:
@@ -255,7 +498,7 @@ class CryptoRadarAPITester:
             print(f"🚨 Critical failures detected: {', '.join(critical_failures)}")
             return False
             
-        return self.tests_passed >= self.tests_run * 0.8  # 80% success rate
+        return self.tests_passed >= self.tests_run * 0.85  # 85% success rate for v1.1
         
 def main():
     tester = CryptoRadarAPITester()

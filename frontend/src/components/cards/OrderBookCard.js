@@ -33,7 +33,12 @@ export function OrderBookCard() {
     <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="orderbook-card">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('orderBook')}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('orderBook')}</h3>
+          {orderBook?.data_source && (
+            <span className="text-xs text-zinc-500 font-mono">({orderBook.data_source})</span>
+          )}
+        </div>
         <span className={cn(
           "px-2 py-0.5 rounded-sm text-xs font-mono font-bold uppercase",
           orderBook.imbalance_direction === 'bullish' && "bg-bullish/10 text-bullish border border-bullish/20",

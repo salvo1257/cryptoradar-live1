@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 
 const API_URL = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const WS_URL = process.env.REACT_APP_BACKEND_URL?.replace('https://', 'wss://').replace('http://', 'ws://') + '/api/ws/price';
 
 const AppContext = createContext(null);
 
@@ -244,6 +245,9 @@ export function AppProvider({ children }) {
   const [settings, setSettings] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('LIVE');
   const [isLoading, setIsLoading] = useState(true);
+  const [dataSource, setDataSource] = useState('Kraken');
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
   const t = useCallback((key) => {
     return translations[language]?.[key] || translations.en[key] || key;
@@ -441,6 +445,68 @@ export function AppProvider({ children }) {
     return () => clearInterval(interval);
   }, [fetchMarketData]);
 
+  // WebSocket connection for real-time price updates
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    
+    try {
+      wsRef.current = new WebSocket(WS_URL);
+      
+      wsRef.current.onopen = () => {
+        console.log('WebSocket connected for real-time prices');
+        setConnectionStatus('LIVE');
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'price_update' && message.data) {
+            setMarketStatus(prev => ({
+              ...prev,
+              price: message.data.price,
+              price_change_percent_24h: message.data.change_24h,
+              high_24h: message.data.high_24h,
+              low_24h: message.data.low_24h,
+              volume_24h: message.data.volume_24h,
+              status: 'LIVE',
+              timestamp: message.data.timestamp
+            }));
+          }
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e);
+        }
+      };
+      
+      wsRef.current.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionStatus('DELAYED');
+        // Attempt to reconnect after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('DELAYED');
+      };
+    } catch (error) {
+      console.error('Failed to connect WebSocket:', error);
+    }
+  }, []);
+
+  // Connect WebSocket on mount
+  useEffect(() => {
+    connectWebSocket();
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [connectWebSocket]);
+
   const value = {
     // State
     language,
@@ -467,6 +533,7 @@ export function AppProvider({ children }) {
     settings,
     connectionStatus,
     isLoading,
+    dataSource,
     // Functions
     t,
     refreshAll,

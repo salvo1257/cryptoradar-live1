@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -23,7 +23,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Create the main app
-app = FastAPI(title="CryptoRadar API", version="1.0.0")
+app = FastAPI(title="CryptoRadar API", version="1.1.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -47,6 +47,7 @@ class MarketStatus(BaseModel):
     volume_24h: float
     status: str = "LIVE"
     timestamp: datetime
+    data_source: str = "Kraken"
 
 class CandleData(BaseModel):
     time: int
@@ -122,6 +123,7 @@ class OrderBookAnalysis(BaseModel):
     imbalance_direction: str
     bid_depth: float
     ask_depth: float
+    data_source: str = "Kraken"
 
 class NewsItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -130,6 +132,7 @@ class NewsItem(BaseModel):
     url: str
     timestamp: datetime
     sentiment: Optional[str] = None
+    image_url: Optional[str] = None
 
 class PriceAlert(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -172,148 +175,233 @@ class Settings(BaseModel):
 class TelegramMessage(BaseModel):
     message: str
 
-# ============== CRYPTO API HELPERS ==============
+# ============== KRAKEN API HELPERS ==============
 
-COINGECKO_API_URL = "https://api.coingecko.com/api/v3"
+KRAKEN_API_URL = "https://api.kraken.com/0/public"
+CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news"
 
 # Cache for market data
 market_data_cache = {
     "ticker": None,
     "ticker_time": None,
     "candles": {},
-    "candles_time": {}
+    "candles_time": {},
+    "orderbook": None,
+    "orderbook_time": None,
+    "news": None,
+    "news_time": None
 }
-CACHE_TTL = 30  # seconds
+CACHE_TTL = 15  # seconds
+ORDERBOOK_CACHE_TTL = 10  # seconds
+NEWS_CACHE_TTL = 300  # 5 minutes
 
-async def fetch_coingecko_ticker():
-    """Fetch current BTC/USD ticker from CoinGecko"""
+async def fetch_kraken_ticker():
+    """Fetch current BTC/USD ticker from Kraken"""
     try:
         # Check cache
         if market_data_cache["ticker"] and market_data_cache["ticker_time"]:
             if (datetime.now(timezone.utc) - market_data_cache["ticker_time"]).seconds < CACHE_TTL:
                 return market_data_cache["ticker"]
         
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{COINGECKO_API_URL}/coins/bitcoin",
-                params={
-                    "localization": "false",
-                    "tickers": "false",
-                    "market_data": "true",
-                    "community_data": "false",
-                    "developer_data": "false"
-                }
-            )
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(f"{KRAKEN_API_URL}/Ticker", params={"pair": "XBTUSD"})
             if response.status_code == 200:
                 data = response.json()
-                market = data.get("market_data", {})
+                if data.get("error") and len(data["error"]) > 0:
+                    logger.error(f"Kraken API error: {data['error']}")
+                    return None
+                
+                ticker = data["result"]["XXBTZUSD"]
+                # Kraken ticker format: a=ask, b=bid, c=last trade, v=volume, p=vwap, t=trades, l=low, h=high, o=open
+                current_price = float(ticker["c"][0])
+                open_price = float(ticker["o"])
+                price_change = current_price - open_price
+                price_change_percent = (price_change / open_price) * 100 if open_price > 0 else 0
+                
                 result = {
-                    "price": float(market.get("current_price", {}).get("usd", 0)),
-                    "price_change_24h": float(market.get("price_change_24h", 0)),
-                    "price_change_percent_24h": float(market.get("price_change_percentage_24h", 0)),
-                    "high_24h": float(market.get("high_24h", {}).get("usd", 0)),
-                    "low_24h": float(market.get("low_24h", {}).get("usd", 0)),
-                    "volume_24h": float(market.get("total_volume", {}).get("usd", 0)),
+                    "price": current_price,
+                    "price_change_24h": price_change,
+                    "price_change_percent_24h": price_change_percent,
+                    "high_24h": float(ticker["h"][1]),  # [1] is 24h
+                    "low_24h": float(ticker["l"][1]),
+                    "volume_24h": float(ticker["v"][1]),
+                    "bid": float(ticker["b"][0]),
+                    "ask": float(ticker["a"][0]),
                 }
                 # Update cache
                 market_data_cache["ticker"] = result
                 market_data_cache["ticker_time"] = datetime.now(timezone.utc)
                 return result
     except Exception as e:
-        logger.error(f"Error fetching CoinGecko ticker: {e}")
+        logger.error(f"Error fetching Kraken ticker: {e}")
     return None
 
-async def fetch_coingecko_ohlc(days: int = 7):
-    """Fetch OHLC candlestick data from CoinGecko"""
-    cache_key = f"ohlc_{days}"
+async def fetch_kraken_ohlc(interval: int = 60, since: int = None):
+    """Fetch OHLC candlestick data from Kraken
+    interval: 1, 5, 15, 30, 60 (1h), 240 (4h), 1440 (1d), 10080 (1w), 21600 (15d)
+    """
+    cache_key = f"ohlc_{interval}"
     try:
         # Check cache
         if cache_key in market_data_cache["candles"] and cache_key in market_data_cache["candles_time"]:
             if (datetime.now(timezone.utc) - market_data_cache["candles_time"][cache_key]).seconds < CACHE_TTL * 2:
                 return market_data_cache["candles"][cache_key]
         
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{COINGECKO_API_URL}/coins/bitcoin/ohlc",
-                params={"vs_currency": "usd", "days": days}
-            )
+        params = {"pair": "XBTUSD", "interval": interval}
+        if since:
+            params["since"] = since
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.get(f"{KRAKEN_API_URL}/OHLC", params=params)
             if response.status_code == 200:
                 data = response.json()
+                if data.get("error") and len(data["error"]) > 0:
+                    logger.error(f"Kraken OHLC error: {data['error']}")
+                    return None
+                
+                ohlc_data = data["result"]["XXBTZUSD"]
                 candles = []
-                for k in data:
+                for k in ohlc_data:
+                    # Kraken OHLC: [time, open, high, low, close, vwap, volume, count]
                     candles.append({
-                        "time": int(k[0] / 1000),
+                        "time": int(k[0]),
                         "open": float(k[1]),
                         "high": float(k[2]),
                         "low": float(k[3]),
                         "close": float(k[4]),
-                        "volume": 0,  # OHLC endpoint doesn't include volume
+                        "volume": float(k[6]),
                     })
+                
                 # Update cache
                 market_data_cache["candles"][cache_key] = candles
                 market_data_cache["candles_time"][cache_key] = datetime.now(timezone.utc)
                 return candles
     except Exception as e:
-        logger.error(f"Error fetching CoinGecko OHLC: {e}")
+        logger.error(f"Error fetching Kraken OHLC: {e}")
     return None
 
-async def fetch_market_chart(days: int = 7):
-    """Fetch market chart data from CoinGecko for volume info"""
+async def fetch_kraken_orderbook(count: int = 100):
+    """Fetch real order book from Kraken"""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(
-                f"{COINGECKO_API_URL}/coins/bitcoin/market_chart",
-                params={"vs_currency": "usd", "days": days, "interval": "hourly" if days <= 7 else "daily"}
+        # Check cache
+        if market_data_cache["orderbook"] and market_data_cache["orderbook_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+                return market_data_cache["orderbook"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{KRAKEN_API_URL}/Depth",
+                params={"pair": "XBTUSD", "count": count}
             )
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                if data.get("error") and len(data["error"]) > 0:
+                    logger.error(f"Kraken orderbook error: {data['error']}")
+                    return None
+                
+                book = data["result"]["XXBTZUSD"]
+                # Kraken format: [[price, volume, timestamp], ...]
+                orderbook = {
+                    "bids": [[str(b[0]), str(b[1])] for b in book["bids"]],
+                    "asks": [[str(a[0]), str(a[1])] for a in book["asks"]]
+                }
+                
+                # Update cache
+                market_data_cache["orderbook"] = orderbook
+                market_data_cache["orderbook_time"] = datetime.now(timezone.utc)
+                return orderbook
     except Exception as e:
-        logger.error(f"Error fetching market chart: {e}")
+        logger.error(f"Error fetching Kraken orderbook: {e}")
     return None
 
-def generate_mock_orderbook(current_price: float):
-    """Generate simulated order book data"""
-    import random
-    bids = []
-    asks = []
-    
-    for i in range(20):
-        bid_price = current_price * (1 - 0.001 * (i + 1) - random.random() * 0.001)
-        ask_price = current_price * (1 + 0.001 * (i + 1) + random.random() * 0.001)
-        bid_qty = random.uniform(0.5, 5.0)
-        ask_qty = random.uniform(0.5, 5.0)
-        bids.append([str(round(bid_price, 2)), str(round(bid_qty, 4))])
-        asks.append([str(round(ask_price, 2)), str(round(ask_qty, 4))])
-    
-    return {"bids": bids, "asks": asks}
+async def fetch_cryptocompare_news():
+    """Fetch real BTC news from CryptoCompare"""
+    try:
+        # Check cache
+        if market_data_cache["news"] and market_data_cache["news_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["news_time"]).seconds < NEWS_CACHE_TTL:
+                return market_data_cache["news"]
+        
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.get(
+                "https://min-api.cryptocompare.com/data/v2/news/",
+                params={"lang": "EN"}
+            )
+            logger.info(f"CryptoCompare news response status: {response.status_code}")
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"CryptoCompare news type: {data.get('Type')}, message: {data.get('Message')}")
+                # Accept both Type 100 (success) and Type 0 (which also has data)
+                news_data = data.get("Data", [])
+                if news_data:
+                    news_items = []
+                    for item in news_data[:10]:  # Get top 10
+                        # Filter for BTC-related news
+                        title = item.get("title", "")
+                        categories = item.get("categories", "").lower()
+                        if not any(kw in title.lower() or kw in categories for kw in ["btc", "bitcoin", "crypto"]):
+                            continue
+                        
+                        # Determine sentiment from title keywords
+                        title_lower = title.lower()
+                        bullish_words = ["surge", "rally", "bullish", "soar", "gain", "rise", "high", "record", "pump", "buy", "up"]
+                        bearish_words = ["crash", "drop", "bearish", "fall", "decline", "low", "dump", "sell", "fear", "down"]
+                        
+                        if any(word in title_lower for word in bullish_words):
+                            sentiment = "bullish"
+                        elif any(word in title_lower for word in bearish_words):
+                            sentiment = "bearish"
+                        else:
+                            sentiment = "neutral"
+                        
+                        news_items.append({
+                            "id": str(item.get("id", uuid.uuid4())),
+                            "title": title,
+                            "source": item.get("source_info", {}).get("name", item.get("source", "Unknown")),
+                            "url": item.get("url", ""),
+                            "timestamp": datetime.fromtimestamp(item.get("published_on", 0), tz=timezone.utc),
+                            "sentiment": sentiment,
+                            "image_url": item.get("imageurl", None)
+                        })
+                        
+                        if len(news_items) >= 8:  # Limit to 8 BTC news
+                            break
+                    
+                    # Update cache
+                    market_data_cache["news"] = news_items
+                    market_data_cache["news_time"] = datetime.now(timezone.utc)
+                    logger.info(f"Fetched {len(news_items)} BTC news items")
+                    return news_items
+            else:
+                logger.error(f"CryptoCompare returned status: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error fetching CryptoCompare news: {e}")
+    return None
 
-# Compatibility functions for existing code
+# Compatibility wrapper functions
 async def fetch_binance_ticker():
-    """Wrapper to maintain compatibility"""
-    return await fetch_coingecko_ticker()
+    """Wrapper for Kraken ticker"""
+    return await fetch_kraken_ticker()
 
 async def fetch_binance_klines(interval: str = "1h", limit: int = 100):
-    """Wrapper to fetch candles - maps interval to days"""
-    interval_to_days = {
-        "15m": 1,
-        "1h": 7,
-        "4h": 14,
-        "1d": 30
+    """Wrapper to map interval to Kraken format"""
+    interval_map = {
+        "15m": 15,
+        "1h": 60,
+        "4h": 240,
+        "1d": 1440
     }
-    days = interval_to_days.get(interval, 7)
-    return await fetch_coingecko_ohlc(days)
+    kraken_interval = interval_map.get(interval, 60)
+    return await fetch_kraken_ohlc(kraken_interval)
 
 async def fetch_binance_orderbook(limit: int = 100):
-    """Generate mock orderbook based on current price"""
-    ticker = await fetch_coingecko_ticker()
-    if ticker:
-        return generate_mock_orderbook(ticker["price"])
-    return None
+    """Wrapper for Kraken orderbook"""
+    return await fetch_kraken_orderbook(limit)
 
 # ============== ANALYSIS ENGINES ==============
 
-def calculate_support_resistance(candles: List[dict], current_price: float) -> List[SupportResistanceLevel]:
-    """Calculate support and resistance levels from price data"""
+def calculate_support_resistance(candles: List[dict], current_price: float, orderbook: dict = None) -> List[SupportResistanceLevel]:
+    """Calculate support and resistance levels from price data and order book"""
     if not candles or len(candles) < 20:
         return []
     
@@ -321,11 +409,13 @@ def calculate_support_resistance(candles: List[dict], current_price: float) -> L
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
     
-    # Find recent highs (potential resistance)
+    # Find recent highs (potential resistance) using pivot detection
     for i in range(2, len(highs) - 2):
         if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
             distance = ((highs[i] - current_price) / current_price) * 100
-            strength = "strong" if abs(distance) < 2 else "moderate" if abs(distance) < 5 else "weak"
+            # Count touches for strength
+            touches = sum(1 for h in highs if abs(h - highs[i]) / highs[i] < 0.005)
+            strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
             levels.append(SupportResistanceLevel(
                 price=round(highs[i], 2),
                 level_type="resistance",
@@ -334,11 +424,12 @@ def calculate_support_resistance(candles: List[dict], current_price: float) -> L
                 distance_percent=round(distance, 2)
             ))
     
-    # Find recent lows (potential support)
+    # Find recent lows (potential support) using pivot detection
     for i in range(2, len(lows) - 2):
         if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
             distance = ((lows[i] - current_price) / current_price) * 100
-            strength = "strong" if abs(distance) < 2 else "moderate" if abs(distance) < 5 else "weak"
+            touches = sum(1 for l in lows if abs(l - lows[i]) / lows[i] < 0.005)
+            strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
             levels.append(SupportResistanceLevel(
                 price=round(lows[i], 2),
                 level_type="support",
@@ -347,12 +438,54 @@ def calculate_support_resistance(candles: List[dict], current_price: float) -> L
                 distance_percent=round(distance, 2)
             ))
     
-    # Sort by distance and return top levels
-    levels.sort(key=lambda x: abs(x.distance_percent))
-    return levels[:10]
+    # Add order book walls as S/R levels
+    if orderbook:
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        # Find significant bid walls (support)
+        bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
+        if bid_volumes:
+            avg_bid_vol = sum(v[1] for v in bid_volumes) / len(bid_volumes)
+            for price, vol in bid_volumes:
+                if vol > avg_bid_vol * 3:  # Significant wall
+                    distance = ((price - current_price) / current_price) * 100
+                    levels.append(SupportResistanceLevel(
+                        price=round(price, 2),
+                        level_type="support",
+                        strength="strong" if vol > avg_bid_vol * 5 else "moderate",
+                        timeframe="OrderBook",
+                        distance_percent=round(distance, 2)
+                    ))
+        
+        # Find significant ask walls (resistance)
+        ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:50]]
+        if ask_volumes:
+            avg_ask_vol = sum(v[1] for v in ask_volumes) / len(ask_volumes)
+            for price, vol in ask_volumes:
+                if vol > avg_ask_vol * 3:
+                    distance = ((price - current_price) / current_price) * 100
+                    levels.append(SupportResistanceLevel(
+                        price=round(price, 2),
+                        level_type="resistance",
+                        strength="strong" if vol > avg_ask_vol * 5 else "moderate",
+                        timeframe="OrderBook",
+                        distance_percent=round(distance, 2)
+                    ))
+    
+    # Remove duplicates and sort by distance
+    seen_prices = set()
+    unique_levels = []
+    for level in sorted(levels, key=lambda x: abs(x.distance_percent)):
+        rounded_price = round(level.price, -1)  # Round to nearest 10
+        if rounded_price not in seen_prices:
+            seen_prices.add(rounded_price)
+            unique_levels.append(level)
+    
+    return unique_levels[:12]
 
 def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> MarketBias:
-    """Calculate market bias from multiple indicators"""
+    """Calculate market bias from multiple indicators including real order book"""
     if not candles or len(candles) < 20:
         return MarketBias(
             bias="NEUTRAL",
@@ -363,77 +496,124 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
             inputs={}
         )
     
-    # Trend analysis
-    closes = [c["close"] for c in candles[-20:]]
-    sma_short = sum(closes[-7:]) / 7
-    sma_long = sum(closes[-20:]) / 20
+    # Trend analysis using EMAs
+    closes = [c["close"] for c in candles[-50:]]
+    
+    def ema(data, period):
+        if len(data) < period:
+            return sum(data) / len(data)
+        multiplier = 2 / (period + 1)
+        ema_val = sum(data[:period]) / period
+        for price in data[period:]:
+            ema_val = (price - ema_val) * multiplier + ema_val
+        return ema_val
+    
+    ema_7 = ema(closes, 7)
+    ema_21 = ema(closes, 21)
     current_price = closes[-1]
     
     trend_score = 0
-    if current_price > sma_short > sma_long:
-        trend_score = 2
-    elif current_price > sma_short:
-        trend_score = 1
-    elif current_price < sma_short < sma_long:
-        trend_score = -2
-    elif current_price < sma_short:
-        trend_score = -1
+    if current_price > ema_7 > ema_21:
+        trend_score = 2  # Strong bullish
+    elif current_price > ema_7:
+        trend_score = 1  # Weak bullish
+    elif current_price < ema_7 < ema_21:
+        trend_score = -2  # Strong bearish
+    elif current_price < ema_7:
+        trend_score = -1  # Weak bearish
     
     # Volume analysis
     volumes = [c["volume"] for c in candles[-20:]]
-    avg_volume = sum(volumes) / len(volumes)
-    recent_volume = volumes[-1]
-    volume_score = 1 if recent_volume > avg_volume * 1.2 else -1 if recent_volume < avg_volume * 0.8 else 0
+    avg_volume = sum(volumes) / len(volumes) if volumes else 0
+    recent_volume = volumes[-1] if volumes else 0
+    volume_score = 1 if recent_volume > avg_volume * 1.5 else -1 if recent_volume < avg_volume * 0.5 else 0
     
-    # Price momentum
-    price_change = (closes[-1] - closes[-5]) / closes[-5] * 100
-    momentum_score = 1 if price_change > 1 else -1 if price_change < -1 else 0
+    # Price momentum (RSI-like)
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        change = closes[i] - closes[i-1]
+        if change > 0:
+            gains.append(change)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(abs(change))
     
-    # Orderbook imbalance
+    avg_gain = sum(gains[-14:]) / 14 if len(gains) >= 14 else 0
+    avg_loss = sum(losses[-14:]) / 14 if len(losses) >= 14 else 0
+    rs = avg_gain / avg_loss if avg_loss > 0 else 100
+    rsi = 100 - (100 / (1 + rs))
+    
+    momentum_score = 1 if rsi > 60 else -1 if rsi < 40 else 0
+    
+    # Order book imbalance (REAL DATA)
     ob_score = 0
+    ob_imbalance = 0
     if orderbook:
-        bids = sum([float(b[1]) for b in orderbook.get("bids", [])[:20]])
-        asks = sum([float(a[1]) for a in orderbook.get("asks", [])[:20]])
-        if bids > asks * 1.2:
-            ob_score = 1
-        elif asks > bids * 1.2:
-            ob_score = -1
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        # Calculate total depth in USD
+        bid_depth = sum([float(b[0]) * float(b[1]) for b in bids[:30]])
+        ask_depth = sum([float(a[0]) * float(a[1]) for a in asks[:30]])
+        
+        total_depth = bid_depth + ask_depth
+        if total_depth > 0:
+            ob_imbalance = ((bid_depth - ask_depth) / total_depth) * 100
+            
+            if ob_imbalance > 15:
+                ob_score = 2  # Strong buying pressure
+            elif ob_imbalance > 5:
+                ob_score = 1  # Moderate buying pressure
+            elif ob_imbalance < -15:
+                ob_score = -2  # Strong selling pressure
+            elif ob_imbalance < -5:
+                ob_score = -1  # Moderate selling pressure
     
+    # Calculate total score
     total_score = trend_score + volume_score + momentum_score + ob_score
-    max_score = 5
+    max_score = 7
     
-    if total_score >= 2:
+    if total_score >= 3:
         bias = "BULLISH"
         confidence = min(50 + (total_score / max_score) * 50, 95)
-    elif total_score <= -2:
+    elif total_score <= -3:
         bias = "BEARISH"
         confidence = min(50 + (abs(total_score) / max_score) * 50, 95)
     else:
         bias = "NEUTRAL"
-        confidence = 50 + abs(total_score) * 10
+        confidence = 50 + abs(total_score) * 5
     
-    # Estimated move based on ATR
+    # Calculate ATR for estimated move
     highs = [c["high"] for c in candles[-14:]]
     lows = [c["low"] for c in candles[-14:]]
-    atr = sum([highs[i] - lows[i] for i in range(len(highs))]) / len(highs)
-    estimated_move = (atr / current_price) * 100
+    tr_list = [highs[i] - lows[i] for i in range(len(highs))]
+    atr = sum(tr_list) / len(tr_list) if tr_list else 0
+    estimated_move = (atr / current_price) * 100 if current_price > 0 else 0
     
     # Risk analysis
-    volatility = max(highs) - min(lows)
-    trap_risk = "high" if volatility > atr * 2 else "moderate" if volatility > atr * 1.5 else "low"
-    squeeze_prob = min((1 - (volatility / (atr * 3))) * 100, 80) if atr > 0 else 0
+    recent_range = max(highs[-7:]) - min(lows[-7:]) if len(highs) >= 7 else 0
+    volatility_ratio = recent_range / atr if atr > 0 else 1
+    
+    trap_risk = "high" if volatility_ratio > 2 or abs(ob_imbalance) > 30 else "moderate" if volatility_ratio > 1.5 else "low"
+    
+    # Squeeze probability (low volatility = high squeeze probability)
+    squeeze_prob = max(0, min(80, (1 - (volatility_ratio / 3)) * 100)) if volatility_ratio < 3 else 0
     
     return MarketBias(
         bias=bias,
         confidence=round(confidence, 1),
         estimated_move=round(estimated_move, 2),
         trap_risk=trap_risk,
-        squeeze_probability=round(max(0, squeeze_prob), 1),
+        squeeze_probability=round(squeeze_prob, 1),
         inputs={
             "trend_score": trend_score,
             "volume_score": volume_score,
             "momentum_score": momentum_score,
-            "orderbook_score": ob_score
+            "orderbook_score": ob_score,
+            "rsi": round(rsi, 1),
+            "orderbook_imbalance": round(ob_imbalance, 2)
         }
     )
 
@@ -448,66 +628,117 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
     lows = [c["low"] for c in candles]
     current_price = closes[-1]
     
-    # Double Top Detection
-    recent_highs = [(i, highs[i]) for i in range(-20, -1) if highs[i] > highs[i-1] and highs[i] > highs[i+1]]
+    # Double Top Detection (look for M pattern)
+    recent_highs = []
+    for i in range(-25, -2):
+        if i >= -len(highs):
+            if highs[i] > highs[i-1] and highs[i] > highs[i+1]:
+                recent_highs.append((i, highs[i]))
+    
     if len(recent_highs) >= 2:
         h1, h2 = recent_highs[-2], recent_highs[-1]
-        if abs(h1[1] - h2[1]) / h1[1] < 0.02:  # Within 2%
+        price_diff_pct = abs(h1[1] - h2[1]) / h1[1] * 100
+        if price_diff_pct < 1.5 and h2[0] - h1[0] >= 5:  # Within 1.5% and separated
+            neckline = min(lows[h1[0]:h2[0]]) if h1[0] < h2[0] else min(lows)
+            target = neckline - (h1[1] - neckline)
             patterns.append(PatternDetection(
                 pattern="Double Top",
                 direction="BEARISH",
-                confidence=72.0,
-                estimated_move=-3.5,
+                confidence=75.0 - price_diff_pct * 5,
+                estimated_move=round(((target - current_price) / current_price) * 100, 2),
                 timeframe="1H",
                 start_price=h1[1],
-                target_price=h1[1] * 0.965,
+                target_price=round(target, 2),
                 timestamp=datetime.now(timezone.utc)
             ))
     
-    # Double Bottom Detection
-    recent_lows = [(i, lows[i]) for i in range(-20, -1) if lows[i] < lows[i-1] and lows[i] < lows[i+1]]
+    # Double Bottom Detection (look for W pattern)
+    recent_lows = []
+    for i in range(-25, -2):
+        if i >= -len(lows):
+            if lows[i] < lows[i-1] and lows[i] < lows[i+1]:
+                recent_lows.append((i, lows[i]))
+    
     if len(recent_lows) >= 2:
         l1, l2 = recent_lows[-2], recent_lows[-1]
-        if abs(l1[1] - l2[1]) / l1[1] < 0.02:
+        price_diff_pct = abs(l1[1] - l2[1]) / l1[1] * 100
+        if price_diff_pct < 1.5 and l2[0] - l1[0] >= 5:
+            neckline = max(highs[l1[0]:l2[0]]) if l1[0] < l2[0] else max(highs)
+            target = neckline + (neckline - l1[1])
             patterns.append(PatternDetection(
                 pattern="Double Bottom",
                 direction="BULLISH",
-                confidence=70.0,
-                estimated_move=3.5,
+                confidence=75.0 - price_diff_pct * 5,
+                estimated_move=round(((target - current_price) / current_price) * 100, 2),
                 timeframe="1H",
                 start_price=l1[1],
-                target_price=l1[1] * 1.035,
+                target_price=round(target, 2),
                 timestamp=datetime.now(timezone.utc)
             ))
     
     # Bull Flag Detection
-    if len(closes) >= 20:
-        initial_move = (closes[-15] - closes[-20]) / closes[-20] * 100
-        consolidation = max(closes[-10:]) - min(closes[-10:])
-        if initial_move > 3 and consolidation / current_price * 100 < 2:
+    if len(closes) >= 25:
+        pole_start = closes[-25]
+        pole_end = max(closes[-25:-15])
+        pole_move = (pole_end - pole_start) / pole_start * 100
+        
+        flag_high = max(closes[-10:])
+        flag_low = min(closes[-10:])
+        flag_range = (flag_high - flag_low) / current_price * 100
+        
+        if pole_move > 3 and flag_range < 2:
+            target = current_price + (pole_end - pole_start)
             patterns.append(PatternDetection(
                 pattern="Bull Flag",
                 direction="BULLISH",
-                confidence=68.0,
-                estimated_move=initial_move * 0.8,
+                confidence=70.0,
+                estimated_move=round(pole_move * 0.7, 2),
                 timeframe="1H",
-                start_price=closes[-15],
-                target_price=current_price * (1 + initial_move * 0.008),
+                start_price=pole_start,
+                target_price=round(target, 2),
                 timestamp=datetime.now(timezone.utc)
             ))
     
     # Bear Flag Detection
-    if len(closes) >= 20:
-        initial_drop = (closes[-20] - closes[-15]) / closes[-20] * 100
-        if initial_drop > 3 and consolidation / current_price * 100 < 2:
+    if len(closes) >= 25:
+        pole_start = closes[-25]
+        pole_end = min(closes[-25:-15])
+        pole_move = (pole_start - pole_end) / pole_start * 100
+        
+        flag_high = max(closes[-10:])
+        flag_low = min(closes[-10:])
+        flag_range = (flag_high - flag_low) / current_price * 100
+        
+        if pole_move > 3 and flag_range < 2:
+            target = current_price - (pole_start - pole_end)
             patterns.append(PatternDetection(
                 pattern="Bear Flag",
                 direction="BEARISH",
-                confidence=65.0,
-                estimated_move=-initial_drop * 0.8,
+                confidence=68.0,
+                estimated_move=round(-pole_move * 0.7, 2),
                 timeframe="1H",
-                start_price=closes[-15],
-                target_price=current_price * (1 - initial_drop * 0.008),
+                start_price=pole_start,
+                target_price=round(target, 2),
+                timestamp=datetime.now(timezone.utc)
+            ))
+    
+    # Triangle Detection
+    if len(highs) >= 20 and len(lows) >= 20:
+        recent_highs_vals = highs[-20:]
+        recent_lows_vals = lows[-20:]
+        
+        high_slope = (recent_highs_vals[-1] - recent_highs_vals[0]) / 20
+        low_slope = (recent_lows_vals[-1] - recent_lows_vals[0]) / 20
+        
+        if high_slope < 0 and low_slope > 0:  # Converging
+            patterns.append(PatternDetection(
+                pattern="Symmetrical Triangle",
+                direction="NEUTRAL",
+                confidence=65.0,
+                estimated_move=2.5,
+                timeframe="1H",
+                start_price=closes[-20],
+                target_price=round(current_price * 1.025, 2),
                 timestamp=datetime.now(timezone.utc)
             ))
     
@@ -515,7 +746,7 @@ def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
 
 def detect_candlestick_patterns(candles: List[dict]) -> List[CandlestickPattern]:
     """Detect candlestick patterns"""
-    if not candles or len(candles) < 3:
+    if not candles or len(candles) < 5:
         return []
     
     patterns = []
@@ -531,64 +762,91 @@ def detect_candlestick_patterns(candles: List[dict]) -> List[CandlestickPattern]
             if total_range == 0:
                 continue
             
+            is_bullish = c["close"] > c["open"]
+            body_pct = body / total_range
+            
             # Doji
-            if body / total_range < 0.1:
+            if body_pct < 0.1:
                 patterns.append(CandlestickPattern(
                     pattern="Doji",
                     signal="NEUTRAL",
-                    confidence=60.0,
+                    confidence=65.0,
                     candle_time=c["time"],
-                    explanation="Doji indicates market indecision. Watch for direction confirmation."
+                    explanation="Doji indicates market indecision. Equal buying and selling pressure. Watch for direction confirmation on next candle."
                 ))
             
-            # Hammer (bullish)
-            elif lower_wick > body * 2 and upper_wick < body * 0.5 and c["close"] > c["open"]:
+            # Hammer (bullish reversal)
+            elif lower_wick > body * 2.5 and upper_wick < body * 0.5 and is_bullish:
                 patterns.append(CandlestickPattern(
                     pattern="Hammer",
                     signal="BULLISH",
-                    confidence=68.0,
+                    confidence=72.0,
                     candle_time=c["time"],
-                    explanation="Hammer shows rejection of lower prices. Potential bullish reversal."
+                    explanation="Hammer shows strong rejection of lower prices. Buyers stepped in aggressively. Potential bullish reversal signal."
                 ))
             
-            # Shooting Star (bearish)
-            elif upper_wick > body * 2 and lower_wick < body * 0.5 and c["close"] < c["open"]:
+            # Inverted Hammer
+            elif upper_wick > body * 2.5 and lower_wick < body * 0.5 and is_bullish:
+                patterns.append(CandlestickPattern(
+                    pattern="Inverted Hammer",
+                    signal="BULLISH",
+                    confidence=65.0,
+                    candle_time=c["time"],
+                    explanation="Inverted Hammer at support can signal bullish reversal. Confirmation needed."
+                ))
+            
+            # Shooting Star (bearish reversal)
+            elif upper_wick > body * 2.5 and lower_wick < body * 0.5 and not is_bullish:
                 patterns.append(CandlestickPattern(
                     pattern="Shooting Star",
                     signal="BEARISH",
-                    confidence=65.0,
+                    confidence=70.0,
                     candle_time=c["time"],
-                    explanation="Shooting Star shows rejection of higher prices. Potential bearish reversal."
+                    explanation="Shooting Star shows rejection of higher prices. Sellers overwhelmed buyers. Potential bearish reversal."
                 ))
             
-            # Bullish Engulfing
+            # Hanging Man
+            elif lower_wick > body * 2.5 and upper_wick < body * 0.5 and not is_bullish:
+                patterns.append(CandlestickPattern(
+                    pattern="Hanging Man",
+                    signal="BEARISH",
+                    confidence=65.0,
+                    candle_time=c["time"],
+                    explanation="Hanging Man at resistance warns of potential reversal. Selling pressure emerging."
+                ))
+            
+            # Engulfing patterns
             if i > -len(candles) + 1:
                 prev = candles[i-1]
-                if prev["close"] < prev["open"] and c["close"] > c["open"]:
-                    if c["open"] < prev["close"] and c["close"] > prev["open"]:
+                prev_body = abs(prev["close"] - prev["open"])
+                prev_is_bullish = prev["close"] > prev["open"]
+                
+                # Bullish Engulfing
+                if not prev_is_bullish and is_bullish:
+                    if c["open"] <= prev["close"] and c["close"] >= prev["open"] and body > prev_body * 1.2:
                         patterns.append(CandlestickPattern(
                             pattern="Bullish Engulfing",
                             signal="BULLISH",
-                            confidence=72.0,
+                            confidence=78.0,
                             candle_time=c["time"],
-                            explanation="Bullish Engulfing shows strong buying pressure. Potential trend reversal."
+                            explanation="Bullish Engulfing shows strong buying momentum completely overwhelming prior selling. High probability reversal signal."
                         ))
                 
                 # Bearish Engulfing
-                if prev["close"] > prev["open"] and c["close"] < c["open"]:
-                    if c["open"] > prev["close"] and c["close"] < prev["open"]:
+                if prev_is_bullish and not is_bullish:
+                    if c["open"] >= prev["close"] and c["close"] <= prev["open"] and body > prev_body * 1.2:
                         patterns.append(CandlestickPattern(
                             pattern="Bearish Engulfing",
                             signal="BEARISH",
-                            confidence=72.0,
+                            confidence=78.0,
                             candle_time=c["time"],
-                            explanation="Bearish Engulfing shows strong selling pressure. Potential trend reversal."
+                            explanation="Bearish Engulfing shows strong selling momentum completely overwhelming prior buying. High probability reversal signal."
                         ))
     
-    return patterns[-5:]  # Return last 5 patterns
+    return patterns[-6:]
 
 def analyze_orderbook(orderbook: dict, current_price: float) -> OrderBookAnalysis:
-    """Analyze order book for walls and imbalance"""
+    """Analyze real order book for walls and imbalance"""
     if not orderbook:
         return OrderBookAnalysis(
             top_bid_wall={"price": 0, "quantity": 0},
@@ -596,175 +854,226 @@ def analyze_orderbook(orderbook: dict, current_price: float) -> OrderBookAnalysi
             imbalance=0.0,
             imbalance_direction="balanced",
             bid_depth=0,
-            ask_depth=0
+            ask_depth=0,
+            data_source="Unavailable"
         )
     
     bids = orderbook.get("bids", [])
     asks = orderbook.get("asks", [])
     
-    # Find largest walls
-    bid_walls = sorted([(float(b[0]), float(b[1])) for b in bids], key=lambda x: x[1], reverse=True)
-    ask_walls = sorted([(float(a[0]), float(a[1])) for a in asks], key=lambda x: x[1], reverse=True)
+    # Find largest bid wall
+    bid_walls = [(float(b[0]), float(b[1])) for b in bids]
+    bid_walls_sorted = sorted(bid_walls, key=lambda x: x[1], reverse=True)
+    top_bid = bid_walls_sorted[0] if bid_walls_sorted else (0, 0)
     
-    top_bid = bid_walls[0] if bid_walls else (0, 0)
-    top_ask = ask_walls[0] if ask_walls else (0, 0)
+    # Find largest ask wall
+    ask_walls = [(float(a[0]), float(a[1])) for a in asks]
+    ask_walls_sorted = sorted(ask_walls, key=lambda x: x[1], reverse=True)
+    top_ask = ask_walls_sorted[0] if ask_walls_sorted else (0, 0)
     
-    # Calculate depth
-    bid_depth = sum([float(b[1]) * float(b[0]) for b in bids[:50]])
-    ask_depth = sum([float(a[1]) * float(a[0]) for a in asks[:50]])
+    # Calculate depth in USD (price * quantity)
+    bid_depth = sum([float(b[0]) * float(b[1]) for b in bids[:50]])
+    ask_depth = sum([float(a[0]) * float(a[1]) for a in asks[:50]])
     
     total_depth = bid_depth + ask_depth
     imbalance = ((bid_depth - ask_depth) / total_depth * 100) if total_depth > 0 else 0
     
-    if imbalance > 10:
+    if imbalance > 15:
         direction = "bullish"
-    elif imbalance < -10:
+    elif imbalance < -15:
         direction = "bearish"
     else:
         direction = "balanced"
     
     return OrderBookAnalysis(
-        top_bid_wall={"price": top_bid[0], "quantity": top_bid[1]},
-        top_ask_wall={"price": top_ask[0], "quantity": top_ask[1]},
+        top_bid_wall={"price": round(top_bid[0], 2), "quantity": round(top_bid[1], 4)},
+        top_ask_wall={"price": round(top_ask[0], 2), "quantity": round(top_ask[1], 4)},
         imbalance=round(imbalance, 2),
         imbalance_direction=direction,
         bid_depth=round(bid_depth, 2),
-        ask_depth=round(ask_depth, 2)
+        ask_depth=round(ask_depth, 2),
+        data_source="Kraken"
     )
 
-def generate_liquidity_clusters(candles: List[dict], current_price: float) -> tuple:
-    """Generate liquidity cluster data"""
-    if not candles:
-        return [], LiquidityDirection(
-            direction="BALANCED",
-            next_target=current_price,
-            distance_percent=0.0,
-            imbalance_ratio=1.0
-        )
-    
+def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None) -> tuple:
+    """Generate liquidity cluster data from order book analysis"""
     clusters = []
     
-    # Simulate liquidity zones based on price action
-    highs = [c["high"] for c in candles[-50:]]
-    lows = [c["low"] for c in candles[-50:]]
+    if orderbook:
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        # Calculate average volumes to identify significant levels
+        bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
+        ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:50]]
+        
+        if bid_volumes:
+            avg_bid_vol = sum(v[1] for v in bid_volumes) / len(bid_volumes)
+            
+            # Find clusters of significant buy orders (liquidity below)
+            for price, vol in bid_volumes:
+                if vol > avg_bid_vol * 1.5:  # Above average
+                    distance = ((price - current_price) / current_price) * 100
+                    strength = "high" if vol > avg_bid_vol * 3 else "medium" if vol > avg_bid_vol * 2 else "low"
+                    clusters.append(LiquidityCluster(
+                        price=round(price, 2),
+                        strength=strength,
+                        distance_percent=round(distance, 2),
+                        side="below",
+                        estimated_value=round(price * vol, 0)
+                    ))
+        
+        if ask_volumes:
+            avg_ask_vol = sum(v[1] for v in ask_volumes) / len(ask_volumes)
+            
+            # Find clusters of significant sell orders (liquidity above)
+            for price, vol in ask_volumes:
+                if vol > avg_ask_vol * 1.5:
+                    distance = ((price - current_price) / current_price) * 100
+                    strength = "high" if vol > avg_ask_vol * 3 else "medium" if vol > avg_ask_vol * 2 else "low"
+                    clusters.append(LiquidityCluster(
+                        price=round(price, 2),
+                        strength=strength,
+                        distance_percent=round(distance, 2),
+                        side="above",
+                        estimated_value=round(price * vol, 0)
+                    ))
     
-    # Resistance zones (liquidity above)
-    resistance_levels = sorted(set([h for h in highs if h > current_price]))[:5]
-    for level in resistance_levels:
-        distance = ((level - current_price) / current_price) * 100
-        clusters.append(LiquidityCluster(
-            price=round(level, 2),
-            strength="high" if distance < 2 else "medium" if distance < 5 else "low",
-            distance_percent=round(distance, 2),
-            side="above",
-            estimated_value=round(abs(level - current_price) * 100, 0)
-        ))
+    # Also add historical S/R levels as potential liquidity zones
+    if candles and len(candles) >= 20:
+        highs = [c["high"] for c in candles[-50:]]
+        lows = [c["low"] for c in candles[-50:]]
+        
+        # Recent resistance levels
+        for h in sorted(set(highs), reverse=True)[:3]:
+            if h > current_price:
+                distance = ((h - current_price) / current_price) * 100
+                if distance < 5:  # Within 5%
+                    clusters.append(LiquidityCluster(
+                        price=round(h, 2),
+                        strength="medium",
+                        distance_percent=round(distance, 2),
+                        side="above",
+                        estimated_value=0
+                    ))
+        
+        # Recent support levels
+        for l in sorted(set(lows))[:3]:
+            if l < current_price:
+                distance = ((l - current_price) / current_price) * 100
+                if abs(distance) < 5:
+                    clusters.append(LiquidityCluster(
+                        price=round(l, 2),
+                        strength="medium",
+                        distance_percent=round(distance, 2),
+                        side="below",
+                        estimated_value=0
+                    ))
     
-    # Support zones (liquidity below)
-    support_levels = sorted(set([l for l in lows if l < current_price]), reverse=True)[:5]
-    for level in support_levels:
-        distance = ((level - current_price) / current_price) * 100
-        clusters.append(LiquidityCluster(
-            price=round(level, 2),
-            strength="high" if abs(distance) < 2 else "medium" if abs(distance) < 5 else "low",
-            distance_percent=round(distance, 2),
-            side="below",
-            estimated_value=round(abs(level - current_price) * 100, 0)
-        ))
+    # Calculate liquidity direction based on order book imbalance
+    above_value = sum(c.estimated_value for c in clusters if c.side == "above")
+    below_value = sum(c.estimated_value for c in clusters if c.side == "below")
     
-    # Calculate liquidity direction
-    above_count = len([c for c in clusters if c.side == "above"])
-    below_count = len([c for c in clusters if c.side == "below"])
+    above_clusters = [c for c in clusters if c.side == "above"]
+    below_clusters = [c for c in clusters if c.side == "below"]
     
-    if above_count > below_count * 1.5:
+    if above_value > below_value * 1.3 or len(above_clusters) > len(below_clusters) * 1.5:
         direction = "UP"
-        next_target = resistance_levels[0] if resistance_levels else current_price
-    elif below_count > above_count * 1.5:
+        next_target = min(c.price for c in above_clusters) if above_clusters else current_price
+    elif below_value > above_value * 1.3 or len(below_clusters) > len(above_clusters) * 1.5:
         direction = "DOWN"
-        next_target = support_levels[0] if support_levels else current_price
+        next_target = max(c.price for c in below_clusters) if below_clusters else current_price
     else:
         direction = "BALANCED"
         next_target = current_price
+    
+    imbalance_ratio = (above_value / below_value) if below_value > 0 else 1.0
     
     liq_direction = LiquidityDirection(
         direction=direction,
         next_target=round(next_target, 2),
         distance_percent=round(((next_target - current_price) / current_price) * 100, 2),
-        imbalance_ratio=round(above_count / max(below_count, 1), 2)
+        imbalance_ratio=round(imbalance_ratio, 2)
     )
     
-    return clusters, liq_direction
+    # Remove duplicates and limit results
+    seen_prices = set()
+    unique_clusters = []
+    for c in sorted(clusters, key=lambda x: abs(x.distance_percent)):
+        rounded = round(c.price, -1)
+        if rounded not in seen_prices:
+            seen_prices.add(rounded)
+            unique_clusters.append(c)
+    
+    return unique_clusters[:12], liq_direction
 
-def generate_whale_alerts(candles: List[dict], current_price: float) -> List[WhaleAlert]:
-    """Generate whale alert signals based on volume analysis"""
+def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: dict = None) -> List[WhaleAlert]:
+    """Generate whale alert signals based on volume and order book analysis"""
     if not candles or len(candles) < 20:
         return []
     
     alerts = []
-    volumes = [c["volume"] for c in candles[-20:]]
-    avg_volume = sum(volumes) / len(volumes)
+    volumes = [c["volume"] for c in candles[-30:]]
+    avg_volume = sum(volumes) / len(volumes) if volumes else 0
     
-    for i in range(-5, 0):
-        c = candles[i]
-        if c["volume"] > avg_volume * 2:
-            is_bullish = c["close"] > c["open"]
+    # Detect volume spikes
+    for i in range(-7, 0):
+        if i >= -len(candles):
+            c = candles[i]
+            if c["volume"] > avg_volume * 2.5:  # Significant volume spike
+                is_bullish = c["close"] > c["open"]
+                signal = "LONG" if is_bullish else "SHORT"
+                entry = c["close"]
+                
+                # Calculate target based on volume intensity
+                volume_ratio = c["volume"] / avg_volume
+                move_pct = min(3.0, 1.5 + (volume_ratio - 2.5) * 0.5)
+                if not is_bullish:
+                    move_pct = -move_pct
+                
+                target = entry * (1 + move_pct / 100)
+                confidence = min(85, 60 + (volume_ratio - 2) * 8)
+                
+                alerts.append(WhaleAlert(
+                    signal=signal,
+                    entry=round(entry, 2),
+                    target=round(target, 2),
+                    confidence=round(confidence, 1),
+                    estimated_move=round(move_pct, 2),
+                    timeframe="1H",
+                    timestamp=datetime.fromtimestamp(c["time"], tz=timezone.utc),
+                    reason=f"Volume spike detected ({volume_ratio:.1f}x average). {'Buying' if is_bullish else 'Selling'} pressure."
+                ))
+    
+    # Detect large order book imbalances
+    if orderbook:
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        bid_depth = sum([float(b[0]) * float(b[1]) for b in bids[:20]])
+        ask_depth = sum([float(a[0]) * float(a[1]) for a in asks[:20]])
+        
+        imbalance = ((bid_depth - ask_depth) / (bid_depth + ask_depth) * 100) if (bid_depth + ask_depth) > 0 else 0
+        
+        if abs(imbalance) > 25:
+            is_bullish = imbalance > 0
             signal = "LONG" if is_bullish else "SHORT"
-            entry = c["close"]
-            move_pct = 2.5 if is_bullish else -2.5
-            target = entry * (1 + move_pct / 100)
+            move_pct = abs(imbalance) / 15
+            if not is_bullish:
+                move_pct = -move_pct
             
             alerts.append(WhaleAlert(
                 signal=signal,
-                entry=round(entry, 2),
-                target=round(target, 2),
-                confidence=round(65 + (c["volume"] / avg_volume) * 5, 1),
-                estimated_move=move_pct,
-                timeframe="1H",
-                timestamp=datetime.fromtimestamp(c["time"], tz=timezone.utc),
-                reason=f"Large volume spike detected ({round(c['volume']/avg_volume, 1)}x average)"
+                entry=round(current_price, 2),
+                target=round(current_price * (1 + move_pct / 100), 2),
+                confidence=round(min(80, 55 + abs(imbalance) / 2), 1),
+                estimated_move=round(move_pct, 2),
+                timeframe="Current",
+                timestamp=datetime.now(timezone.utc),
+                reason=f"Order book imbalance: {imbalance:.1f}%. Heavy {'buying' if is_bullish else 'selling'} pressure detected."
             ))
     
-    return alerts[-3:]
-
-# ============== MOCK NEWS DATA ==============
-
-MOCK_NEWS = [
-    {
-        "title": "Bitcoin ETF Sees Record Inflows as Institutional Interest Grows",
-        "source": "CryptoNews",
-        "url": "https://example.com/btc-etf-inflows",
-        "timestamp": datetime.now(timezone.utc) - timedelta(hours=1),
-        "sentiment": "bullish"
-    },
-    {
-        "title": "Federal Reserve Signals Potential Rate Cuts in 2024",
-        "source": "Reuters",
-        "url": "https://example.com/fed-rates",
-        "timestamp": datetime.now(timezone.utc) - timedelta(hours=3),
-        "sentiment": "bullish"
-    },
-    {
-        "title": "Bitcoin Mining Difficulty Reaches All-Time High",
-        "source": "CoinDesk",
-        "url": "https://example.com/mining-difficulty",
-        "timestamp": datetime.now(timezone.utc) - timedelta(hours=5),
-        "sentiment": "neutral"
-    },
-    {
-        "title": "Major Exchange Reports Surge in BTC Trading Volume",
-        "source": "Bloomberg",
-        "url": "https://example.com/trading-volume",
-        "timestamp": datetime.now(timezone.utc) - timedelta(hours=8),
-        "sentiment": "bullish"
-    },
-    {
-        "title": "Regulatory Clarity Expected for Crypto Markets",
-        "source": "WSJ",
-        "url": "https://example.com/crypto-regulation",
-        "timestamp": datetime.now(timezone.utc) - timedelta(hours=12),
-        "sentiment": "neutral"
-    }
-]
+    return alerts[-5:]
 
 # ============== API ROUTES ==============
 
@@ -775,13 +1084,17 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "CryptoRadar API",
-        "version": "1.0.0"
+        "version": "1.1.0",
+        "data_sources": {
+            "market_data": "Kraken",
+            "news": "CryptoCompare"
+        }
     }
 
 @api_router.get("/market/status")
 async def get_market_status():
-    """Get current BTCUSDT market status"""
-    ticker = await fetch_binance_ticker()
+    """Get current BTCUSDT market status from Kraken"""
+    ticker = await fetch_kraken_ticker()
     if ticker:
         return MarketStatus(
             symbol="BTCUSDT",
@@ -792,7 +1105,8 @@ async def get_market_status():
             low_24h=ticker["low_24h"],
             volume_24h=ticker["volume_24h"],
             status="LIVE",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
+            data_source="Kraken"
         )
     return MarketStatus(
         symbol="BTCUSDT",
@@ -803,7 +1117,8 @@ async def get_market_status():
         low_24h=0,
         volume_24h=0,
         status="OFFLINE",
-        timestamp=datetime.now(timezone.utc)
+        timestamp=datetime.now(timezone.utc),
+        data_source="Unavailable"
     )
 
 @api_router.get("/chart/candles")
@@ -811,90 +1126,100 @@ async def get_candles(
     interval: str = Query(default="1h", description="Timeframe: 15m, 1h, 4h, 1d"),
     limit: int = Query(default=200, le=500)
 ):
-    """Get candlestick data for chart"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
-    candles = await fetch_binance_klines(binance_interval, limit)
+    """Get candlestick data from Kraken"""
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
+    candles = await fetch_kraken_ohlc(kraken_interval)
     if candles:
-        return {"candles": candles, "interval": interval}
-    return {"candles": [], "interval": interval}
+        # Limit results
+        candles = candles[-limit:] if len(candles) > limit else candles
+        return {"candles": candles, "interval": interval, "data_source": "Kraken"}
+    return {"candles": [], "interval": interval, "data_source": "Unavailable"}
 
 @api_router.get("/market/bias")
 async def get_market_bias(interval: str = Query(default="1h")):
-    """Get market bias analysis"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    """Get market bias analysis with real order book data"""
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
-    orderbook = await fetch_binance_orderbook(100)
+    candles = await fetch_kraken_ohlc(kraken_interval)
+    orderbook = await fetch_kraken_orderbook(100)
     
     bias = calculate_market_bias(candles, orderbook)
     return bias
 
 @api_router.get("/support-resistance")
 async def get_support_resistance(interval: str = Query(default="1h")):
-    """Get support and resistance levels"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    """Get support and resistance levels from price data and order book"""
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
-    ticker = await fetch_binance_ticker()
+    candles = await fetch_kraken_ohlc(kraken_interval)
+    ticker = await fetch_kraken_ticker()
+    orderbook = await fetch_kraken_orderbook(100)
     current_price = ticker["price"] if ticker else 0
     
-    levels = calculate_support_resistance(candles, current_price)
-    return {"levels": levels, "current_price": current_price}
+    levels = calculate_support_resistance(candles, current_price, orderbook)
+    return {"levels": levels, "current_price": current_price, "data_source": "Kraken"}
 
 @api_router.get("/liquidity")
 async def get_liquidity(interval: str = Query(default="1h")):
-    """Get liquidity clusters and direction"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    """Get liquidity clusters from order book analysis"""
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
-    ticker = await fetch_binance_ticker()
+    candles = await fetch_kraken_ohlc(kraken_interval)
+    ticker = await fetch_kraken_ticker()
+    orderbook = await fetch_kraken_orderbook(100)
     current_price = ticker["price"] if ticker else 0
     
-    clusters, direction = generate_liquidity_clusters(candles, current_price)
-    return {"clusters": clusters, "direction": direction, "current_price": current_price}
+    clusters, direction = generate_liquidity_clusters(candles, current_price, orderbook)
+    return {
+        "clusters": clusters, 
+        "direction": direction, 
+        "current_price": current_price,
+        "data_source": "Kraken OrderBook"
+    }
 
 @api_router.get("/whale-alerts")
 async def get_whale_alerts(interval: str = Query(default="1h")):
-    """Get whale alert signals"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    """Get whale alert signals from volume and order book analysis"""
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
-    ticker = await fetch_binance_ticker()
+    candles = await fetch_kraken_ohlc(kraken_interval)
+    ticker = await fetch_kraken_ticker()
+    orderbook = await fetch_kraken_orderbook(100)
     current_price = ticker["price"] if ticker else 0
     
-    alerts = generate_whale_alerts(candles, current_price)
-    return {"alerts": alerts}
+    alerts = generate_whale_alerts(candles, current_price, orderbook)
+    return {"alerts": alerts, "data_source": "Kraken"}
 
 @api_router.get("/patterns")
 async def get_patterns(interval: str = Query(default="1h")):
     """Get detected chart patterns"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
+    candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_patterns(candles)
     return {"patterns": patterns}
 
 @api_router.get("/candlesticks")
 async def get_candlestick_patterns(interval: str = Query(default="1h")):
     """Get detected candlestick patterns"""
-    interval_map = {"15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
+    kraken_interval = interval_map.get(interval, 60)
     
-    candles = await fetch_binance_klines(binance_interval, 100)
+    candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_candlestick_patterns(candles)
     return {"patterns": patterns}
 
 @api_router.get("/orderbook")
 async def get_orderbook_analysis():
-    """Get order book analysis"""
-    orderbook = await fetch_binance_orderbook(100)
-    ticker = await fetch_binance_ticker()
+    """Get real order book analysis from Kraken"""
+    orderbook = await fetch_kraken_orderbook(100)
+    ticker = await fetch_kraken_ticker()
     current_price = ticker["price"] if ticker else 0
     
     analysis = analyze_orderbook(orderbook, current_price)
@@ -902,8 +1227,11 @@ async def get_orderbook_analysis():
 
 @api_router.get("/news")
 async def get_news():
-    """Get BTC-related news"""
-    return {"news": [NewsItem(**n) for n in MOCK_NEWS]}
+    """Get real BTC-related news from CryptoCompare"""
+    news = await fetch_cryptocompare_news()
+    if news:
+        return {"news": [NewsItem(**n) for n in news], "data_source": "CryptoCompare"}
+    return {"news": [], "data_source": "Unavailable"}
 
 # ============== ALERTS CRUD ==============
 
@@ -1009,8 +1337,8 @@ async def test_telegram(message: TelegramMessage):
         raise HTTPException(status_code=400, detail="Telegram not configured")
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.post(
                 f"https://api.telegram.org/bot{settings['telegram_bot_token']}/sendMessage",
                 json={
                     "chat_id": settings['telegram_chat_id'],
@@ -1024,6 +1352,53 @@ async def test_telegram(message: TelegramMessage):
                 raise HTTPException(status_code=400, detail="Failed to send message")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ============== WEBSOCKET FOR REAL-TIME PRICE ==============
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+manager = ConnectionManager()
+
+@api_router.websocket("/ws/price")
+async def websocket_price(websocket: WebSocket):
+    """WebSocket endpoint for real-time price updates"""
+    await manager.connect(websocket)
+    try:
+        while True:
+            ticker = await fetch_kraken_ticker()
+            if ticker:
+                await websocket.send_json({
+                    "type": "price_update",
+                    "data": {
+                        "price": ticker["price"],
+                        "change_24h": ticker["price_change_percent_24h"],
+                        "high_24h": ticker["high_24h"],
+                        "low_24h": ticker["low_24h"],
+                        "volume_24h": ticker["volume_24h"],
+                        "bid": ticker.get("bid", 0),
+                        "ask": ticker.get("ask", 0),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                })
+            await asyncio.sleep(5)  # Update every 5 seconds
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 # Include the router in the main app
 app.include_router(api_router)

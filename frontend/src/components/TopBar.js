@@ -31,12 +31,14 @@ export function TopBar() {
     setLearnMode, 
     refreshAll, 
     setSidebarOpen,
-    isLoading 
+    isLoading,
+    dataSource
   } = useApp();
 
   const price = marketStatus?.price || 0;
   const change = marketStatus?.price_change_percent_24h || 0;
   const isPositive = change >= 0;
+  const source = marketStatus?.data_source || dataSource || 'Kraken';
 
   const formatPrice = (p) => {
     return new Intl.NumberFormat('en-US', {
@@ -101,6 +103,11 @@ export function TopBar() {
             connectionStatus === 'OFFLINE' && "bg-bearish"
           )} />
           {t(connectionStatus.toLowerCase())}
+        </div>
+
+        {/* Data source indicator */}
+        <div className="hidden md:flex items-center px-2 py-1 rounded-sm text-xs font-mono text-zinc-500 bg-zinc-800/50 border border-zinc-700/50">
+          via {source}
         </div>
       </div>
 
