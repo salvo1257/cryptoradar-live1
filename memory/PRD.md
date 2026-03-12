@@ -1,4 +1,4 @@
-# CryptoRadar v1.6 - Product Requirements Document
+# CryptoRadar v1.7 - Product Requirements Document
 
 ## Original Problem Statement
 Build CryptoRadar - a professional BTC market intelligence dashboard that reads multiple market signals and summarizes the market situation for Bitcoin.
@@ -10,11 +10,11 @@ Build CryptoRadar - a professional BTC market intelligence dashboard that reads 
 - **Data Sources**: 
   - Kraken, Coinbase, Bitstamp (multi-exchange order books)
   - CryptoCompare (news)
-  - CoinGlass (Open Interest, Liquidations)
+  - CoinGlass (Open Interest, Liquidations, Funding Rate)
 - **Chart**: TradingView Lightweight Charts v5.1
 - **Real-time**: WebSocket for live price streaming
 
-## 🎯 TRADE SIGNAL MODULE (v1.6 Enhanced)
+## TRADE SIGNAL MODULE (v1.7 Enhanced with Whale & Liquidity Ladder)
 
 The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionable signal with realistic BTC trading logic.
 
@@ -33,42 +33,14 @@ The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionabl
 | safe_invalidation | True invalidation level |
 | sweep_detected | Boolean |
 | sweep_analysis | Explanation of sweep context |
+| **whale_activity** | Whale Engine output (direction, strength, pressures) |
+| **liquidity_ladder_summary** | Ladder output (path analysis, levels) |
+| **whale_confirms_direction** | Boolean - whale confirms trade direction |
+| **sweep_first_expected** | Boolean - expected sweep before move |
 | reasoning | Detailed signal explanation |
 | warnings | Risk warnings list |
 
-### Enhanced BTC Trading Logic (v1.6)
-
-#### 1. Minimum Move Filter
-- **Threshold**: 0.50%
-- If estimated move < 0.50%, signal is NO TRADE
-- Prevents trading insignificant moves
-
-#### 2. Smart Stop Loss Placement
-- Stops placed BEYOND liquidity sweep zones
-- NOT at obvious support/resistance
-- Buffer: 0.3% beyond obvious levels
-- Uses second S/R level for true invalidation
-
-#### 3. Liquidity Sweep Detection
-- Detects when price approaches key levels
-- Identifies potential sweep-then-reversal setups
-- Requires confluence (bias + sweep + reaction)
-- Only signals reversal when confirmation present
-
-#### 4. Setup Type Classification
-| Type | Description |
-|------|-------------|
-| **standard** | Direct entry based on factor alignment |
-| **sweep_reversal** | Wait for sweep, then enter on reclaim |
-| **continuation** | Trend continuation move |
-
-#### 5. NO TRADE Conditions
-- Mixed factors (score between -3 and +3)
-- Move too small (< 0.50%)
-- Stop too vulnerable to sweep
-- No clear setup type
-
-### Factor Scoring System (7 Factors)
+### Factor Scoring System (9 Factors - v1.7)
 | Factor | Max Score | Description |
 |--------|-----------|-------------|
 | Market Bias | +/-3 | Order book imbalance, trend, RSI |
@@ -77,10 +49,35 @@ The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionabl
 | Funding Rate | +/-1 | Sentiment from liquidations |
 | Open Interest | +/-1 | Trend confirmation |
 | Pattern Signals | +/-2 | Chart pattern detection |
-| Whale Alerts | +/-1 | Volume/imbalance signals |
+| Whale Alerts (legacy) | +/-1 | Volume/imbalance signals |
+| **Whale Engine** | +/-2 | NEW: Volume spikes, OB pressure, liquidations |
+| **Liquidity Ladder** | +/-1 | NEW: Path analysis for sweep direction |
 
-**Total Range**: -12 to +12
+**Total Range**: -15 to +15
 **Thresholds**: LONG ≥ +4, SHORT ≤ -4, else NO TRADE
+
+## NEW: Whale Activity Engine (v1.7)
+
+Analyzes multiple whale indicators:
+- **Volume Spikes**: Detects volume 1.5-2.5x+ average with bullish/bearish classification
+- **Order Book Pressure**: Analyzes bid/ask depth imbalance, large walls
+- **Liquidation Data**: CoinGlass long/short liquidation ratios
+- **OI Momentum**: Rising OI with price direction confirmation
+
+Output: `WhaleActivity` object with direction (BUY/SELL/NEUTRAL), strength, buy/sell pressure, explanation
+
+## NEW: Liquidity Ladder (v1.7)
+
+Shows sequence of liquidity levels above/below current price:
+- **S/R Levels**: Support/resistance from price history
+- **Liquidity Clusters**: Multi-exchange order book aggregation
+- **Whale Levels**: Large single orders ($500k+)
+
+Features:
+- `more_attractive_side`: Where more liquidity exists (above/below/balanced)
+- `sweep_expectation`: Predicted sweep direction before move
+- `path_analysis`: Narrative explanation of likely price path
+- Nearest and major levels above/below with strength ratings
 
 ## Other Intelligence Modules
 
@@ -108,15 +105,11 @@ The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionabl
 - Volume at level
 - Exchange information
 
-### Whale Alerts
-- Volume spikes
-- Order book imbalances
-- Stop loss, R/R ratio
-
-### Pattern Detection
+### Pattern Detection (MOCKED)
 - Chart patterns with strength
 - Stop loss levels
 - Explanations
+- Note: Currently simplified/simulated logic
 
 ## Version History
 
@@ -126,25 +119,37 @@ The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionabl
 ### v1.3 - CoinGlass Integration
 ### v1.4 - Multi-Exchange Aggregation
 ### v1.5 - Trade Signal Module
-### v1.6 - Enhanced Trade Signal (December 2025)
+### v1.6 - Enhanced Trade Signal
 - ✅ Minimum 0.50% move filter
 - ✅ Smart stop loss beyond sweep zones
 - ✅ Liquidity sweep detection
 - ✅ Setup type classification
-- ✅ Enhanced NO TRADE conditions
-- ✅ 100% test pass rate (18 backend + all UI)
+
+### v1.7 - Whale & Liquidity Ladder Integration (December 2025)
+- ✅ Whale Activity Engine with multi-source analysis
+- ✅ Liquidity Ladder with path analysis
+- ✅ Integration into Trade Signal scoring (+3 max score range)
+- ✅ Frontend display of whale activity and liquidity ladder
+- ✅ CoinGlass liquidation data in whale engine
+- ✅ 100% test pass rate (iteration_8.json)
 
 ## API Keys
 - CoinGlass: `858c52fb63b04008ab6633a913c32c7d`
 - Kraken, Coinbase, Bitstamp: Public APIs
 
 ## P1 - Next Tasks
-1. Telegram notification backend
-2. Price alert monitoring
+1. Telegram notification backend logic
+2. Price alert monitoring (background process)
 
 ## P2 - Future Tasks
-1. Multi-language support
+1. Multi-language support (IT/DE translations)
 2. Learn Mode content
+3. Real Pattern Detection Engine (ML-based)
 
 ## Test Reports
-- `/app/test_reports/iteration_7.json` - Enhanced Trade Signal (100% pass)
+- `/app/test_reports/iteration_8.json` - Whale & Liquidity Ladder v1.7 (100% pass)
+
+## Key Files
+- `/app/backend/server.py` - All backend logic
+- `/app/frontend/src/components/cards/TradeSignalCard.js` - Trade signal UI
+- `/app/frontend/src/contexts/AppContext.js` - Frontend state
