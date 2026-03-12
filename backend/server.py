@@ -115,6 +115,49 @@ class LiquidityDirection(BaseModel):
     imbalance_ratio: float
     explanation: Optional[str] = None  # Detailed explanation
 
+# ============== WHALE ALERT ENGINE ==============
+
+class WhaleActivity(BaseModel):
+    """Whale Alert Engine output - detects large market activity"""
+    direction: str  # "BUY", "SELL", "NEUTRAL"
+    strength: float  # 0-100 score
+    confidence: float  # 0-100
+    signals: List[str]  # List of detected signals
+    explanation: str  # Summary explanation
+    volume_spike: bool = False
+    volume_ratio: float = 1.0  # Current volume vs average
+    buy_pressure: float = 0  # 0-100 buy pressure score
+    sell_pressure: float = 0  # 0-100 sell pressure score
+    liquidation_bias: Optional[str] = None  # "longs_liquidated", "shorts_liquidated", or None
+    orderbook_aggression: Optional[str] = None  # "aggressive_buying", "aggressive_selling", or None
+    data_source: str = "Multi-Exchange Aggregated"
+
+# ============== LIQUIDITY LADDER ==============
+
+class LiquidityLevel(BaseModel):
+    """Single level in the liquidity ladder"""
+    price: float
+    distance_percent: float
+    strength: str  # "major", "moderate", "minor"
+    type: str  # "stop_cluster", "resistance_liquidity", "support_liquidity", "whale_level"
+    estimated_value: float  # USD value at this level
+    exchanges: List[str]  # Which exchanges show this level
+    explanation: str
+
+class LiquidityLadder(BaseModel):
+    """Liquidity Ladder module - shows sequence of liquidity levels"""
+    current_price: float
+    ladder_above: List[LiquidityLevel]  # Liquidity levels above price
+    ladder_below: List[LiquidityLevel]  # Liquidity levels below price
+    nearest_above: Optional[LiquidityLevel] = None
+    nearest_below: Optional[LiquidityLevel] = None
+    major_above: Optional[LiquidityLevel] = None
+    major_below: Optional[LiquidityLevel] = None
+    more_attractive_side: str  # "above", "below", "balanced"
+    sweep_expectation: str  # "sweep_below_first", "sweep_above_first", "no_clear_sweep", "balanced"
+    path_analysis: str  # Explanation of likely price path
+    data_source: str = "Multi-Exchange Aggregated"
+
 class TradeSignal(BaseModel):
     """Final actionable trading signal synthesizing all intelligence"""
     direction: str  # "LONG", "SHORT", "NO TRADE"
@@ -132,12 +175,17 @@ class TradeSignal(BaseModel):
     timestamp: datetime
     valid_for: str  # e.g., "4H", "1D"
     warnings: List[str]  # Risk warnings
-    # New fields for advanced BTC trading logic
+    # Advanced BTC trading logic
     setup_type: str = "standard"  # "standard", "sweep_reversal", "continuation"
     liquidity_sweep_zone: Optional[float] = None  # Where liquidity sweep likely to occur
     safe_invalidation: Optional[float] = None  # True invalidation beyond sweep zone
     sweep_detected: bool = False  # Whether a liquidity sweep pattern is detected
     sweep_analysis: Optional[str] = None  # Explanation of liquidity sweep context
+    # NEW: Whale and Liquidity Ladder integration
+    whale_activity: Optional[Dict[str, Any]] = None  # Whale Alert Engine output
+    liquidity_ladder_summary: Optional[Dict[str, Any]] = None  # Liquidity Ladder summary
+    sweep_first_expected: bool = False  # Whether price likely to sweep before real move
+    whale_confirms_direction: bool = False  # Whether whale activity confirms signal direction
 
 class WhaleAlert(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1877,6 +1925,428 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
         overcrowded=None,
         signal_text="API temporarily unavailable. Showing estimated data.",
         data_source="Fallback"
+    )
+
+# ============== WHALE ALERT ENGINE ==============
+
+def analyze_whale_activity(
+    candles: List[dict],
+    current_price: float,
+    aggregated_orderbook: dict,
+    liquidation_data: dict = None,
+    open_interest_data: dict = None
+) -> WhaleActivity:
+    """
+    Whale Alert Engine - detects unusual large market activity.
+    
+    Analyzes:
+    - Volume spikes vs average
+    - Order book buy/sell pressure imbalance
+    - CoinGlass liquidation data (long vs short liquidations)
+    - Aggressive buying/selling patterns
+    
+    Returns direction (BUY/SELL/NEUTRAL), strength score, and explanation.
+    """
+    
+    signals = []
+    buy_pressure = 0
+    sell_pressure = 0
+    
+    # 1. VOLUME ANALYSIS
+    volume_spike = False
+    volume_ratio = 1.0
+    
+    if candles and len(candles) >= 20:
+        recent_volumes = [c["volume"] for c in candles[-20:]]
+        avg_volume = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 0
+        current_volume = candles[-1]["volume"] if candles else 0
+        
+        if avg_volume > 0:
+            volume_ratio = current_volume / avg_volume
+            
+            if volume_ratio >= 2.5:
+                volume_spike = True
+                # Determine if bullish or bearish volume
+                if candles[-1]["close"] > candles[-1]["open"]:
+                    buy_pressure += 25
+                    signals.append(f"Large bullish volume ({volume_ratio:.1f}x average)")
+                else:
+                    sell_pressure += 25
+                    signals.append(f"Large bearish volume ({volume_ratio:.1f}x average)")
+            elif volume_ratio >= 1.5:
+                if candles[-1]["close"] > candles[-1]["open"]:
+                    buy_pressure += 10
+                else:
+                    sell_pressure += 10
+    
+    # 2. ORDER BOOK PRESSURE ANALYSIS
+    orderbook_aggression = None
+    
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        exchange_stats = aggregated_orderbook.get("exchange_stats", {})
+        
+        total_bid_depth = aggregated_orderbook.get("total_bid_depth", 0)
+        total_ask_depth = aggregated_orderbook.get("total_ask_depth", 0)
+        
+        if total_bid_depth + total_ask_depth > 0:
+            ob_imbalance = ((total_bid_depth - total_ask_depth) / (total_bid_depth + total_ask_depth)) * 100
+            
+            if ob_imbalance > 25:
+                buy_pressure += 30
+                orderbook_aggression = "aggressive_buying"
+                signals.append(f"Heavy buy-side order book ({ob_imbalance:.1f}% imbalance)")
+            elif ob_imbalance > 15:
+                buy_pressure += 15
+                signals.append(f"Buy-side order book dominance ({ob_imbalance:.1f}%)")
+            elif ob_imbalance < -25:
+                sell_pressure += 30
+                orderbook_aggression = "aggressive_selling"
+                signals.append(f"Heavy sell-side order book ({abs(ob_imbalance):.1f}% imbalance)")
+            elif ob_imbalance < -15:
+                sell_pressure += 15
+                signals.append(f"Sell-side order book dominance ({abs(ob_imbalance):.1f}%)")
+        
+        # Check for exchange-level whale activity (large walls)
+        if bids:
+            bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:30]]
+            avg_bid = sum(v[1] for v in bid_volumes) / len(bid_volumes) if bid_volumes else 0
+            large_bid_walls = [v for v in bid_volumes if v[1] > avg_bid * 4]
+            if large_bid_walls:
+                buy_pressure += 10
+                signals.append(f"{len(large_bid_walls)} large bid walls detected")
+        
+        if asks:
+            ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:30]]
+            avg_ask = sum(v[1] for v in ask_volumes) / len(ask_volumes) if ask_volumes else 0
+            large_ask_walls = [v for v in ask_volumes if v[1] > avg_ask * 4]
+            if large_ask_walls:
+                sell_pressure += 10
+                signals.append(f"{len(large_ask_walls)} large ask walls detected")
+    
+    # 3. LIQUIDATION DATA ANALYSIS (CoinGlass)
+    liquidation_bias = None
+    
+    if liquidation_data:
+        long_liq_24h = liquidation_data.get("long_liquidation_usd_24h", 0)
+        short_liq_24h = liquidation_data.get("short_liquidation_usd_24h", 0)
+        total_liq = long_liq_24h + short_liq_24h
+        
+        if total_liq > 0:
+            long_ratio = long_liq_24h / total_liq
+            short_ratio = short_liq_24h / total_liq
+            
+            # Large long liquidations = bearish pressure / shorts winning
+            if long_ratio > 0.65:
+                sell_pressure += 20
+                liquidation_bias = "longs_liquidated"
+                signals.append(f"Heavy long liquidations ({long_ratio*100:.0f}% of total)")
+            elif long_ratio > 0.55:
+                sell_pressure += 10
+                signals.append(f"More longs than shorts liquidated")
+            
+            # Large short liquidations = bullish pressure / longs winning  
+            elif short_ratio > 0.65:
+                buy_pressure += 20
+                liquidation_bias = "shorts_liquidated"
+                signals.append(f"Heavy short liquidations ({short_ratio*100:.0f}% of total)")
+            elif short_ratio > 0.55:
+                buy_pressure += 10
+                signals.append(f"More shorts than longs liquidated")
+    
+    # 4. OPEN INTEREST MOMENTUM
+    if open_interest_data:
+        oi_change_1h = open_interest_data.get("change_1h", 0)
+        oi_change_24h = open_interest_data.get("change_24h", 0)
+        
+        # Rising OI with price going up = new longs entering (bullish)
+        # Rising OI with price going down = new shorts entering (bearish)
+        if candles and len(candles) >= 2:
+            price_change = (candles[-1]["close"] - candles[-2]["close"]) / candles[-2]["close"] * 100
+            
+            if oi_change_1h > 0.5 and price_change > 0.2:
+                buy_pressure += 15
+                signals.append("Rising OI with bullish price (new longs)")
+            elif oi_change_1h > 0.5 and price_change < -0.2:
+                sell_pressure += 15
+                signals.append("Rising OI with bearish price (new shorts)")
+    
+    # CALCULATE FINAL WHALE DIRECTION
+    total_pressure = buy_pressure + sell_pressure
+    strength = min(100, total_pressure)
+    
+    if buy_pressure > sell_pressure + 20:
+        direction = "BUY"
+        net_pressure = buy_pressure - sell_pressure
+        confidence = min(95, 50 + net_pressure)
+    elif sell_pressure > buy_pressure + 20:
+        direction = "SELL"
+        net_pressure = sell_pressure - buy_pressure
+        confidence = min(95, 50 + net_pressure)
+    else:
+        direction = "NEUTRAL"
+        confidence = max(30, 50 - abs(buy_pressure - sell_pressure))
+    
+    # BUILD EXPLANATION
+    if direction == "BUY":
+        if volume_spike and orderbook_aggression == "aggressive_buying":
+            explanation = "Large buy pressure detected: volume spike combined with heavy bid-side order book."
+        elif liquidation_bias == "shorts_liquidated":
+            explanation = "Whale buying pressure: short squeeze in progress with heavy short liquidations."
+        elif signals:
+            explanation = f"Buy pressure detected: {signals[0]}"
+        else:
+            explanation = "Moderate whale buying activity detected across exchanges."
+    elif direction == "SELL":
+        if volume_spike and orderbook_aggression == "aggressive_selling":
+            explanation = "Large sell pressure detected: volume spike combined with heavy ask-side order book."
+        elif liquidation_bias == "longs_liquidated":
+            explanation = "Whale selling pressure: long liquidation cascade with heavy long liquidations."
+        elif signals:
+            explanation = f"Sell pressure detected: {signals[0]}"
+        else:
+            explanation = "Moderate whale selling activity detected across exchanges."
+    else:
+        explanation = "No clear whale directional bias. Activity is balanced or insufficient for signal."
+    
+    return WhaleActivity(
+        direction=direction,
+        strength=round(strength, 1),
+        confidence=round(confidence, 1),
+        signals=signals,
+        explanation=explanation,
+        volume_spike=volume_spike,
+        volume_ratio=round(volume_ratio, 2),
+        buy_pressure=round(buy_pressure, 1),
+        sell_pressure=round(sell_pressure, 1),
+        liquidation_bias=liquidation_bias,
+        orderbook_aggression=orderbook_aggression,
+        data_source="Multi-Exchange + CoinGlass"
+    )
+
+# ============== LIQUIDITY LADDER ==============
+
+def build_liquidity_ladder(
+    current_price: float,
+    sr_levels: List[SupportResistanceLevel],
+    liquidity_clusters: List[LiquidityCluster],
+    aggregated_orderbook: dict = None
+) -> LiquidityLadder:
+    """
+    Build a Liquidity Ladder showing the sequence of important liquidity levels
+    above and below current price.
+    
+    Identifies:
+    - Stop clusters (where traders likely have stops)
+    - Resistance liquidity (sell orders above)
+    - Support liquidity (buy orders below)
+    - Whale levels (large single orders)
+    
+    Ranks by distance, strength, and exchange confirmation.
+    """
+    
+    ladder_above = []
+    ladder_below = []
+    
+    # Get active exchanges
+    active_exchanges = []
+    if aggregated_orderbook:
+        active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken", "Coinbase", "Bitstamp"])
+    
+    # 1. ADD S/R LEVELS TO LADDER
+    for level in sr_levels:
+        distance_pct = ((level.price - current_price) / current_price) * 100
+        
+        if level.level_type == "resistance" and level.price > current_price:
+            ladder_above.append(LiquidityLevel(
+                price=level.price,
+                distance_percent=round(distance_pct, 2),
+                strength="major" if level.strength == "strong" else "moderate" if level.strength == "moderate" else "minor",
+                type="resistance_liquidity" if level.timeframe == "Multi-Exchange" else "stop_cluster",
+                estimated_value=level.volume_at_level or 0,
+                exchanges=level.exchanges or active_exchanges,
+                explanation=level.explanation or f"Resistance at ${level.price:,.0f}"
+            ))
+        elif level.level_type == "support" and level.price < current_price:
+            ladder_below.append(LiquidityLevel(
+                price=level.price,
+                distance_percent=round(distance_pct, 2),
+                strength="major" if level.strength == "strong" else "moderate" if level.strength == "moderate" else "minor",
+                type="support_liquidity" if level.timeframe == "Multi-Exchange" else "stop_cluster",
+                estimated_value=level.volume_at_level or 0,
+                exchanges=level.exchanges or active_exchanges,
+                explanation=level.explanation or f"Support at ${level.price:,.0f}"
+            ))
+    
+    # 2. ADD LIQUIDITY CLUSTERS TO LADDER
+    for cluster in liquidity_clusters:
+        distance_pct = ((cluster.price - current_price) / current_price) * 100
+        
+        # Check if this level is already in ladder (within 0.1%)
+        is_duplicate = False
+        target_list = ladder_above if cluster.side == "above" else ladder_below
+        for existing in target_list:
+            if abs(existing.price - cluster.price) / cluster.price < 0.001:
+                # Merge - take higher value
+                if cluster.estimated_value > existing.estimated_value:
+                    existing.estimated_value = cluster.estimated_value
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            level_type = "resistance_liquidity" if cluster.side == "above" else "support_liquidity"
+            
+            if cluster.side == "above":
+                ladder_above.append(LiquidityLevel(
+                    price=cluster.price,
+                    distance_percent=round(distance_pct, 2),
+                    strength=cluster.strength if cluster.strength in ["major", "moderate", "minor"] else "moderate",
+                    type=level_type,
+                    estimated_value=cluster.estimated_value,
+                    exchanges=cluster.exchanges or active_exchanges,
+                    explanation=cluster.explanation or f"Liquidity cluster at ${cluster.price:,.0f}"
+                ))
+            else:
+                ladder_below.append(LiquidityLevel(
+                    price=cluster.price,
+                    distance_percent=round(distance_pct, 2),
+                    strength=cluster.strength if cluster.strength in ["major", "moderate", "minor"] else "moderate",
+                    type=level_type,
+                    estimated_value=cluster.estimated_value,
+                    exchanges=cluster.exchanges or active_exchanges,
+                    explanation=cluster.explanation or f"Liquidity cluster at ${cluster.price:,.0f}"
+                ))
+    
+    # 3. ADD ORDER BOOK WHALE LEVELS (large single orders)
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        
+        # Find whale bid levels (top 3 largest)
+        if bids:
+            bid_list = [(float(b[0]), float(b[1])) for b in bids[:50]]
+            bid_list_sorted = sorted(bid_list, key=lambda x: x[1], reverse=True)[:3]
+            
+            for price, qty in bid_list_sorted:
+                if price < current_price:
+                    distance_pct = ((price - current_price) / current_price) * 100
+                    value = price * qty
+                    
+                    # Only add if significant value
+                    if value > 500000:  # $500k+
+                        ladder_below.append(LiquidityLevel(
+                            price=round(price, 2),
+                            distance_percent=round(distance_pct, 2),
+                            strength="major" if value > 2000000 else "moderate",
+                            type="whale_level",
+                            estimated_value=round(value, 0),
+                            exchanges=active_exchanges,
+                            explanation=f"Whale bid: ${value/1000000:.1f}M ({qty:.2f} BTC)"
+                        ))
+        
+        # Find whale ask levels
+        if asks:
+            ask_list = [(float(a[0]), float(a[1])) for a in asks[:50]]
+            ask_list_sorted = sorted(ask_list, key=lambda x: x[1], reverse=True)[:3]
+            
+            for price, qty in ask_list_sorted:
+                if price > current_price:
+                    distance_pct = ((price - current_price) / current_price) * 100
+                    value = price * qty
+                    
+                    if value > 500000:
+                        ladder_above.append(LiquidityLevel(
+                            price=round(price, 2),
+                            distance_percent=round(distance_pct, 2),
+                            strength="major" if value > 2000000 else "moderate",
+                            type="whale_level",
+                            estimated_value=round(value, 0),
+                            exchanges=active_exchanges,
+                            explanation=f"Whale ask: ${value/1000000:.1f}M ({qty:.2f} BTC)"
+                        ))
+    
+    # 4. SORT AND DEDUPE LADDERS
+    ladder_above = sorted(ladder_above, key=lambda x: x.distance_percent)
+    ladder_below = sorted(ladder_below, key=lambda x: abs(x.distance_percent))
+    
+    # Remove duplicates (keep strongest)
+    def dedupe_ladder(ladder):
+        seen_prices = {}
+        result = []
+        for level in ladder:
+            rounded = round(level.price, -1)  # Round to nearest $10
+            if rounded not in seen_prices:
+                seen_prices[rounded] = level
+                result.append(level)
+            else:
+                # Keep the one with higher value
+                if level.estimated_value > seen_prices[rounded].estimated_value:
+                    result.remove(seen_prices[rounded])
+                    seen_prices[rounded] = level
+                    result.append(level)
+        return sorted(result, key=lambda x: abs(x.distance_percent))
+    
+    ladder_above = dedupe_ladder(ladder_above)[:8]
+    ladder_below = dedupe_ladder(ladder_below)[:8]
+    
+    # 5. IDENTIFY KEY LEVELS
+    nearest_above = ladder_above[0] if ladder_above else None
+    nearest_below = ladder_below[0] if ladder_below else None
+    
+    major_above = next((l for l in ladder_above if l.strength == "major"), nearest_above)
+    major_below = next((l for l in ladder_below if l.strength == "major"), nearest_below)
+    
+    # 6. DETERMINE WHICH SIDE IS MORE ATTRACTIVE
+    above_total_value = sum(l.estimated_value for l in ladder_above)
+    below_total_value = sum(l.estimated_value for l in ladder_below)
+    
+    above_major_count = sum(1 for l in ladder_above if l.strength == "major")
+    below_major_count = sum(1 for l in ladder_below if l.strength == "major")
+    
+    # More liquidity = more attractive for price to sweep that direction
+    if above_total_value > below_total_value * 1.5 or above_major_count > below_major_count:
+        more_attractive_side = "above"
+    elif below_total_value > above_total_value * 1.5 or below_major_count > above_major_count:
+        more_attractive_side = "below"
+    else:
+        more_attractive_side = "balanced"
+    
+    # 7. DETERMINE SWEEP EXPECTATION
+    # Price tends to seek liquidity - if one side has much more, expect sweep there first
+    if nearest_above and nearest_below:
+        above_dist = nearest_above.distance_percent
+        below_dist = abs(nearest_below.distance_percent)
+        
+        # If much more liquidity above and closer, expect upward sweep first
+        if more_attractive_side == "above" and above_dist < below_dist * 1.5:
+            sweep_expectation = "sweep_above_first"
+            path_analysis = f"Upper liquidity ladder is stronger (${above_total_value/1000000:.1f}M above vs ${below_total_value/1000000:.1f}M below). Price likely to sweep ${nearest_above.price:,.0f} before potential reversal."
+        elif more_attractive_side == "below" and below_dist < above_dist * 1.5:
+            sweep_expectation = "sweep_below_first"
+            path_analysis = f"Lower liquidity ladder is stronger (${below_total_value/1000000:.1f}M below vs ${above_total_value/1000000:.1f}M above). Price likely to sweep ${nearest_below.price:,.0f} before potential reversal."
+        elif more_attractive_side == "balanced":
+            sweep_expectation = "balanced"
+            path_analysis = f"Balanced liquidity distribution. No clear sweep direction - watch for breakout catalyst."
+        else:
+            sweep_expectation = "no_clear_sweep"
+            path_analysis = f"Liquidity levels present but no clear sweep setup. Monitor for accumulation/distribution."
+    else:
+        sweep_expectation = "no_clear_sweep"
+        path_analysis = "Insufficient liquidity data for path analysis."
+    
+    return LiquidityLadder(
+        current_price=round(current_price, 2),
+        ladder_above=ladder_above,
+        ladder_below=ladder_below,
+        nearest_above=nearest_above,
+        nearest_below=nearest_below,
+        major_above=major_above,
+        major_below=major_below,
+        more_attractive_side=more_attractive_side,
+        sweep_expectation=sweep_expectation,
+        path_analysis=path_analysis,
+        data_source="Multi-Exchange Aggregated"
     )
 
 # ============== TRADE SIGNAL GENERATOR ==============
