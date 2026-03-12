@@ -5,9 +5,12 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
+import { useApp } from '../../contexts/AppContext';
+
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function AlertHistoryPage() {
+  const { language } = useApp();
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,19 @@ export function AlertHistoryPage() {
     }
   };
 
+  const getStatusConfig = (status) => {
+    switch (status) {
+      case 'active':
+        return { label: 'ATTIVO', color: 'text-bullish', bg: 'bg-bullish/20', border: 'border-bullish/30' };
+      case 'invalidated':
+        return { label: 'INVALIDATO', color: 'text-bearish', bg: 'bg-bearish/20', border: 'border-bearish/30' };
+      case 'expired':
+        return { label: 'SCADUTO', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30' };
+      default:
+        return { label: '-', color: 'text-zinc-500', bg: 'bg-zinc-800', border: 'border-zinc-600' };
+    }
+  };
+
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleString('en-US', {
@@ -96,8 +112,8 @@ export function AlertHistoryPage() {
         <div className="flex items-center gap-3">
           <History className="w-6 h-6 text-crypto-accent" />
           <div>
-            <h1 className="text-2xl font-heading font-bold">Signal History</h1>
-            <p className="text-sm text-zinc-500">Track past trade signals and analyze performance</p>
+            <h1 className="text-2xl font-heading font-bold">{language === 'it' ? 'Storico Segnali' : 'Signal History'}</h1>
+            <p className="text-sm text-zinc-500">{language === 'it' ? 'Traccia i segnali passati e analizza le performance' : 'Track past trade signals and analyze performance'}</p>
           </div>
         </div>
         <Button
@@ -111,7 +127,7 @@ export function AlertHistoryPage() {
           ) : (
             <Zap className="w-4 h-4 mr-2" />
           )}
-          Record Current Signal
+          {language === 'it' ? 'Registra Segnale' : 'Record Current Signal'}
         </Button>
       </div>
 
@@ -119,19 +135,19 @@ export function AlertHistoryPage() {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
-            <div className="text-xs text-zinc-500 uppercase mb-1">Total Signals</div>
+            <div className="text-xs text-zinc-500 uppercase mb-1">{language === 'it' ? 'Totale Segnali' : 'Total Signals'}</div>
             <div className="text-2xl font-mono font-bold">{stats.total_signals || 0}</div>
           </div>
           <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
-            <div className="text-xs text-zinc-500 uppercase mb-1">Last 24H</div>
+            <div className="text-xs text-zinc-500 uppercase mb-1">{language === 'it' ? 'Ultime 24H' : 'Last 24H'}</div>
             <div className="text-2xl font-mono font-bold text-crypto-accent">{stats.signals_24h || 0}</div>
           </div>
           <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
-            <div className="text-xs text-zinc-500 uppercase mb-1">LONG Signals</div>
+            <div className="text-xs text-zinc-500 uppercase mb-1">{language === 'it' ? 'Segnali LONG' : 'LONG Signals'}</div>
             <div className="text-2xl font-mono font-bold text-bullish">{stats.by_direction?.LONG || 0}</div>
           </div>
           <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
-            <div className="text-xs text-zinc-500 uppercase mb-1">SHORT Signals</div>
+            <div className="text-xs text-zinc-500 uppercase mb-1">{language === 'it' ? 'Segnali SHORT' : 'SHORT Signals'}</div>
             <div className="text-2xl font-mono font-bold text-bearish">{stats.by_direction?.SHORT || 0}</div>
           </div>
         </div>
@@ -143,18 +159,18 @@ export function AlertHistoryPage() {
           <Filter className="w-4 h-4 text-zinc-500" />
           <Select value={directionFilter} onValueChange={(val) => { setDirectionFilter(val); setPage(1); }}>
             <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
-              <SelectValue placeholder="Filter" />
+              <SelectValue placeholder={language === 'it' ? 'Filtra' : 'Filter'} />
             </SelectTrigger>
             <SelectContent className="bg-crypto-surface border-crypto-border">
-              <SelectItem value="all">All Signals</SelectItem>
-              <SelectItem value="LONG">LONG Only</SelectItem>
-              <SelectItem value="SHORT">SHORT Only</SelectItem>
+              <SelectItem value="all">{language === 'it' ? 'Tutti i Segnali' : 'All Signals'}</SelectItem>
+              <SelectItem value="LONG">{language === 'it' ? 'Solo LONG' : 'LONG Only'}</SelectItem>
+              <SelectItem value="SHORT">{language === 'it' ? 'Solo SHORT' : 'SHORT Only'}</SelectItem>
               <SelectItem value="NO TRADE">NO TRADE</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <span>{totalCount} signals</span>
+          <span>{totalCount} {language === 'it' ? 'segnali' : 'signals'}</span>
           <Button variant="ghost" size="sm" onClick={fetchHistory} data-testid="refresh-history-btn">
             <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
           </Button>
@@ -177,6 +193,7 @@ export function AlertHistoryPage() {
           <div className="divide-y divide-crypto-border">
             {signals.map((signal, idx) => {
               const config = getDirectionConfig(signal.direction);
+              const statusConfig = getStatusConfig(signal.status);
               const Icon = config.icon;
               
               return (
@@ -196,6 +213,11 @@ export function AlertHistoryPage() {
                           <Badge className={cn("font-mono text-xs", config.bg, config.color, config.border)}>
                             {signal.direction}
                           </Badge>
+                          {signal.status && (
+                            <Badge className={cn("font-mono text-[10px]", statusConfig.bg, statusConfig.color, statusConfig.border)}>
+                              {statusConfig.label}
+                            </Badge>
+                          )}
                           <span className="text-xs text-zinc-500">{signal.setup_type}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
@@ -207,13 +229,18 @@ export function AlertHistoryPage() {
                             BTC: {formatPrice(signal.btc_price)}
                           </span>
                         </div>
+                        {signal.reason && (
+                          <div className="text-[10px] text-zinc-500 mt-1 italic">
+                            {signal.reason}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     {/* Right: Key Metrics */}
                     <div className="flex items-center gap-6 text-sm">
                       <div className="text-center">
-                        <div className="text-xs text-zinc-500">Confidence</div>
+                        <div className="text-xs text-zinc-500">{language === 'it' ? 'Fiducia' : 'Confidence'}</div>
                         <div className={cn(
                           "font-mono font-bold",
                           signal.confidence >= 70 ? "text-bullish" :
@@ -223,7 +250,7 @@ export function AlertHistoryPage() {
                         </div>
                       </div>
                       <div className="text-center">
-                        <div className="text-xs text-zinc-500">Est. Move</div>
+                        <div className="text-xs text-zinc-500">{language === 'it' ? 'Mov. Stim.' : 'Est. Move'}</div>
                         <div className={cn(
                           "font-mono font-bold",
                           signal.estimated_move > 0 ? "text-bullish" : "text-bearish"
@@ -245,7 +272,7 @@ export function AlertHistoryPage() {
                     <div className="mt-3 pt-3 border-t border-white/5">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                         <div>
-                          <span className="text-zinc-500">Entry Zone:</span>
+                          <span className="text-zinc-500">{language === 'it' ? 'Zona Ingresso:' : 'Entry Zone:'}</span>
                           <div className="font-mono">
                             {formatPrice(signal.entry_zone_low)} - {formatPrice(signal.entry_zone_high)}
                           </div>
@@ -260,14 +287,14 @@ export function AlertHistoryPage() {
                         </div>
                         <div>
                           <span className="text-zinc-500 flex items-center gap-1">
-                            <Target className="w-3 h-3" /> Target 1:
+                            <Target className="w-3 h-3" /> {language === 'it' ? 'Obiettivo 1:' : 'Target 1:'}
                           </span>
                           <div className="font-mono text-bullish">
                             {formatPrice(signal.target_1)}
                           </div>
                         </div>
                         <div>
-                          <span className="text-zinc-500">Target 2:</span>
+                          <span className="text-zinc-500">{language === 'it' ? 'Obiettivo 2:' : 'Target 2:'}</span>
                           <div className="font-mono text-bullish">
                             {formatPrice(signal.target_2)}
                           </div>
@@ -283,12 +310,12 @@ export function AlertHistoryPage() {
                         )}
                         {signal.whale_direction && (
                           <Badge variant="outline" className="text-[10px] bg-crypto-surface/50">
-                            Whale: {signal.whale_direction}
+                            {language === 'it' ? 'Balene' : 'Whale'}: {signal.whale_direction}
                           </Badge>
                         )}
                         {signal.liquidity_direction && (
                           <Badge variant="outline" className="text-[10px] bg-crypto-surface/50">
-                            Liquidity: {signal.liquidity_direction}
+                            {language === 'it' ? 'Liquidità' : 'Liquidity'}: {signal.liquidity_direction}
                           </Badge>
                         )}
                       </div>
@@ -311,10 +338,10 @@ export function AlertHistoryPage() {
               data-testid="prev-page-btn"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
-              Previous
+              {language === 'it' ? 'Precedente' : 'Previous'}
             </Button>
             <span className="text-sm text-zinc-500">
-              Page {page} of {totalPages}
+              {language === 'it' ? `Pagina ${page} di ${totalPages}` : `Page ${page} of ${totalPages}`}
             </span>
             <Button
               variant="ghost"
@@ -323,7 +350,7 @@ export function AlertHistoryPage() {
               disabled={page === totalPages}
               data-testid="next-page-btn"
             >
-              Next
+              {language === 'it' ? 'Successiva' : 'Next'}
               <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
@@ -335,7 +362,7 @@ export function AlertHistoryPage() {
         <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-crypto-accent" />
-            <h3 className="font-heading font-semibold">Performance Statistics</h3>
+            <h3 className="font-heading font-semibold">{language === 'it' ? 'Statistiche Performance' : 'Performance Statistics'}</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {Object.entries(stats.averages_by_direction).map(([direction, data]) => {
@@ -345,11 +372,11 @@ export function AlertHistoryPage() {
                   <div className={cn("font-mono font-bold mb-2", config.color)}>{direction}</div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <span className="text-zinc-500">Avg Confidence:</span>
+                      <span className="text-zinc-500">{language === 'it' ? 'Fiducia Media:' : 'Avg Confidence:'}</span>
                       <div className="font-mono">{data.avg_confidence}%</div>
                     </div>
                     <div>
-                      <span className="text-zinc-500">Avg R:R:</span>
+                      <span className="text-zinc-500">{language === 'it' ? 'R:R Medio:' : 'Avg R:R:'}</span>
                       <div className="font-mono">{data.avg_risk_reward}:1</div>
                     </div>
                   </div>

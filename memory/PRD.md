@@ -8,6 +8,9 @@
 - All 6 PDF manuals downloadable
 - Dashboard fully operational in Italian
 - **Trade Signal Reasoning: FULLY TRANSLATED TO ITALIAN** ✅
+- **All Card Explanations: FULLY TRANSLATED TO ITALIAN** ✅
+- **Signal History Auto-Recording: IMPLEMENTED** ✅
+- **Status Labels (ATTIVO/INVALIDATO/SCADUTO): IMPLEMENTED** ✅
 - Startup checks implemented with logging
 - Auto-restart configured via Supervisor
 

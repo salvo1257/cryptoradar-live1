@@ -363,6 +363,14 @@ ORDERBOOK_CACHE_TTL = 10  # seconds
 NEWS_CACHE_TTL = 300  # 5 minutes
 COINGLASS_CACHE_TTL = 60  # 1 minute for CoinGlass data
 
+# Signal tracking for auto-recording
+last_signal_state = {
+    "direction": None,
+    "signal_id": None,
+    "timestamp": None,
+    "btc_price": None
+}
+
 async def fetch_kraken_ticker():
     """Fetch current BTC/USD ticker from Kraken"""
     try:
@@ -1006,13 +1014,13 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
             touches = sum(1 for h in highs if abs(h - highs[i]) / highs[i] < 0.005)
             strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
             
-            explanation = f"Price rejected at ${highs[i]:,.0f} on {touches} occasions. "
+            explanation = f"Prezzo respinto a ${highs[i]:,.0f} in {touches} occasioni. "
             if strength == "strong":
-                explanation += "High probability of rejection if tested again."
+                explanation += "Alta probabilità di rigetto se testato di nuovo."
             elif strength == "moderate":
-                explanation += "Likely to see selling pressure here."
+                explanation += "Probabile pressione di vendita a questo livello."
             else:
-                explanation += "May break on strong momentum."
+                explanation += "Potrebbe cedere con forte momentum."
             
             levels.append(SupportResistanceLevel(
                 price=round(highs[i], 2),
@@ -1030,13 +1038,13 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
             touches = sum(1 for l in lows if abs(l - lows[i]) / lows[i] < 0.005)
             strength = "strong" if touches >= 3 else "moderate" if touches >= 2 else "weak"
             
-            explanation = f"Buyers stepped in at ${lows[i]:,.0f} on {touches} occasions. "
+            explanation = f"I compratori sono intervenuti a ${lows[i]:,.0f} in {touches} occasioni. "
             if strength == "strong":
-                explanation += "Strong demand zone - high probability of bounce."
+                explanation += "Zona di domanda forte - alta probabilità di rimbalzo."
             elif strength == "moderate":
-                explanation += "Likely to see buying interest here."
+                explanation += "Probabile interesse d'acquisto a questo livello."
             else:
-                explanation += "May break on heavy selling pressure."
+                explanation += "Potrebbe cedere con forte pressione di vendita."
             
             levels.append(SupportResistanceLevel(
                 price=round(lows[i], 2),
@@ -1065,11 +1073,11 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
                     volume_btc = vol
                     volume_usd = price * vol
                     
-                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in buy orders across {len(active_exchanges)} exchanges. "
+                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in ordini di acquisto su {len(active_exchanges)} exchange. "
                     if strength == "strong":
-                        explanation += "Major support wall - unlikely to break easily."
+                        explanation += "Muro di supporto importante - difficile da rompere."
                     else:
-                        explanation += "Moderate buying interest at this level."
+                        explanation += "Interesse d'acquisto moderato a questo livello."
                     
                     levels.append(SupportResistanceLevel(
                         price=round(price, 2),
@@ -1093,11 +1101,11 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
                     volume_btc = vol
                     volume_usd = price * vol
                     
-                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in sell orders across {len(active_exchanges)} exchanges. "
+                    explanation = f"${volume_usd:,.0f} ({volume_btc:.2f} BTC) in ordini di vendita su {len(active_exchanges)} exchange. "
                     if strength == "strong":
-                        explanation += "Major resistance wall - expect strong selling here."
+                        explanation += "Muro di resistenza importante - attendersi forte vendita qui."
                     else:
-                        explanation += "Moderate selling pressure at this level."
+                        explanation += "Pressione di vendita moderata a questo livello."
                     
                     levels.append(SupportResistanceLevel(
                         price=round(price, 2),
@@ -1283,26 +1291,26 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
         recent_low = min(lows[-20:]) if len(lows) >= 20 else current_price * 0.98
         next_target = recent_low if recent_low < current_price else current_price * 0.98
     
-    # Generate analysis text
+    # Generate analysis text (Italian)
     analysis_parts = []
     if bias == "BULLISH":
         if ob_imbalance > 10:
-            analysis_parts.append("Strong buying pressure in order book.")
+            analysis_parts.append("Forte pressione di acquisto nell'order book.")
         if rsi > 50:
-            analysis_parts.append("Momentum favors bulls.")
+            analysis_parts.append("Il momentum favorisce i rialzisti.")
         if squeeze_prob > 40:
-            analysis_parts.append(f"Short squeeze probability at {squeeze_prob:.0f}%.")
+            analysis_parts.append(f"Probabilità di short squeeze al {squeeze_prob:.0f}%.")
     elif bias == "BEARISH":
         if ob_imbalance < -10:
-            analysis_parts.append("Heavy selling pressure detected.")
+            analysis_parts.append("Forte pressione di vendita rilevata.")
         if rsi < 50:
-            analysis_parts.append("Momentum favors bears.")
+            analysis_parts.append("Il momentum favorisce i ribassisti.")
         if squeeze_prob > 40:
-            analysis_parts.append(f"Long squeeze probability at {squeeze_prob:.0f}%.")
+            analysis_parts.append(f"Probabilità di long squeeze al {squeeze_prob:.0f}%.")
     else:
-        analysis_parts.append("Market indecision. Wait for clearer signals.")
+        analysis_parts.append("Indecisione del mercato. Attendere segnali più chiari.")
     
-    analysis_text = " ".join(analysis_parts) if analysis_parts else "Analyzing market conditions..."
+    analysis_text = " ".join(analysis_parts) if analysis_parts else "Analisi delle condizioni di mercato in corso..."
     
     # Generate per-exchange consensus if aggregated data available
     exchange_consensus = None
@@ -2020,16 +2028,16 @@ async def generate_open_interest(current_price: float, candles: List[dict] = Non
         change_4h = cg_data["change_4h"]
         change_24h = cg_data["change_24h"]
         
-        # Determine trend
+        # Determine trend (Italian)
         if change_24h > 3:
             trend = "increasing"
-            signal = "Increasing OI with rising positions. New money entering the market. If price rising = bullish continuation."
+            signal = "OI in aumento con nuove posizioni. Nuovi capitali stanno entrando nel mercato. Se il prezzo sale = continuazione rialzista."
         elif change_24h < -3:
             trend = "decreasing"
-            signal = "Decreasing OI indicates positions being closed. Potential trend exhaustion or profit-taking."
+            signal = "OI in diminuzione indica chiusura di posizioni. Possibile esaurimento del trend o presa di profitto."
         else:
             trend = "stable"
-            signal = "Stable OI shows market consolidation. Watch for breakout with volume."
+            signal = "OI stabile indica consolidamento del mercato. Attendere una rottura con aumento dei volumi."
         
         # Estimate exchange distribution based on typical market share
         exchanges = [
@@ -2094,19 +2102,19 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
                 payer = "shorts"
                 sentiment = "bearish"
                 overcrowded = "shorts" if long_ratio > 0.65 else None
-                signal_text = f"More longs liquidated ({long_ratio*100:.1f}%). Bearish pressure. Shorts paying longs."
+                signal_text = f"Più long liquidati ({long_ratio*100:.1f}%). Pressione ribassista. Gli short pagano i long."
             elif short_ratio > 0.55:
                 current_rate = 0.005 + (short_ratio - 0.5) * 0.02
                 payer = "longs"
                 sentiment = "bullish"
                 overcrowded = "longs" if short_ratio > 0.65 else None
-                signal_text = f"More shorts liquidated ({short_ratio*100:.1f}%). Bullish pressure. Longs paying shorts."
+                signal_text = f"Più short liquidati ({short_ratio*100:.1f}%). Pressione rialzista. I long pagano gli short."
             else:
                 current_rate = 0.001
                 payer = "longs"
                 sentiment = "neutral"
                 overcrowded = None
-                signal_text = "Balanced liquidations. Neutral funding environment."
+                signal_text = "Liquidazioni bilanciate. Ambiente di funding neutrale."
             
             return FundingRate(
                 current_rate=round(current_rate, 4),
@@ -2127,7 +2135,7 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
         payer="longs" if base_rate > 0 else "shorts",
         sentiment="bullish" if base_rate > 0.005 else "bearish" if base_rate < -0.005 else "neutral",
         overcrowded=None,
-        signal_text="API temporarily unavailable. Showing estimated data.",
+        signal_text="API temporaneamente non disponibile. Dati stimati.",
         data_source="Fallback"
     )
 
@@ -3746,10 +3754,123 @@ async def get_trade_signal():
         liquidity_ladder=liquidity_ladder
     )
     
+    # Auto-record signal changes
+    await auto_record_signal_change(
+        new_signal=signal,
+        current_price=current_price,
+        market_bias=market_bias,
+        whale_activity=whale_activity,
+        liquidity_direction=liquidity_direction
+    )
+    
     return signal
 
 
 # ============== SIGNAL HISTORY ==============
+
+async def auto_record_signal_change(new_signal, current_price, market_bias, whale_activity, liquidity_direction, reason: str = None):
+    """
+    Automatically record signal when direction changes or signal invalidates.
+    Tracks: LONG/SHORT appearing, changing to NO TRADE, invalidations
+    """
+    global last_signal_state
+    
+    try:
+        should_record = False
+        status = "active"
+        
+        old_direction = last_signal_state.get("direction")
+        new_direction = new_signal.direction
+        old_signal_id = last_signal_state.get("signal_id")
+        
+        # Determine if we should record and what status
+        if old_direction is None:
+            # First signal
+            if new_direction in ["LONG", "SHORT"]:
+                should_record = True
+                status = "active"
+                reason = "Nuovo segnale rilevato"
+        elif old_direction != new_direction:
+            # Direction changed
+            should_record = True
+            
+            if old_direction in ["LONG", "SHORT"] and new_direction == "NO TRADE":
+                # Signal invalidated or expired
+                status = "invalidated"
+                reason = reason or f"Segnale {old_direction} invalidato - condizioni cambiate"
+                
+                # Update old signal status
+                if old_signal_id:
+                    await signal_history_collection.update_one(
+                        {"signal_id": old_signal_id},
+                        {"$set": {
+                            "status": "invalidated",
+                            "closed_at": datetime.now(timezone.utc),
+                            "exit_price": current_price,
+                            "exit_reason": reason
+                        }}
+                    )
+            elif new_direction in ["LONG", "SHORT"]:
+                # New actionable signal
+                status = "active"
+                if old_direction in ["LONG", "SHORT"]:
+                    reason = f"Inversione da {old_direction} a {new_direction}"
+                else:
+                    reason = f"Nuovo segnale {new_direction}"
+        else:
+            # Same direction - check if enough time passed (record every 4 hours for tracking)
+            if last_signal_state.get("timestamp"):
+                time_diff = (datetime.now(timezone.utc) - last_signal_state["timestamp"]).total_seconds()
+                if time_diff > 14400 and new_direction in ["LONG", "SHORT"]:  # 4 hours
+                    should_record = True
+                    status = "active"
+                    reason = "Aggiornamento periodico (4H)"
+        
+        if should_record:
+            signal_id = str(uuid.uuid4())
+            history_entry = {
+                "signal_id": signal_id,
+                "timestamp": datetime.now(timezone.utc),
+                "direction": new_direction,
+                "confidence": new_signal.confidence,
+                "estimated_move": new_signal.estimated_move,
+                "entry_zone_low": new_signal.entry_zone_low,
+                "entry_zone_high": new_signal.entry_zone_high,
+                "stop_loss": new_signal.stop_loss,
+                "target_1": new_signal.target_1,
+                "target_2": new_signal.target_2,
+                "risk_reward_ratio": new_signal.risk_reward_ratio,
+                "setup_type": new_signal.setup_type,
+                "btc_price": current_price,
+                "market_bias": market_bias.bias if market_bias else None,
+                "whale_direction": whale_activity.direction if whale_activity else None,
+                "liquidity_direction": liquidity_direction.direction if liquidity_direction else None,
+                "warnings": new_signal.warnings[:3] if new_signal.warnings else [],
+                "reasoning_summary": new_signal.reasoning[:500] if new_signal.reasoning else "",
+                "status": status,
+                "reason": reason,
+                "previous_signal": old_direction,
+                "exit_price": None,
+                "exit_reason": None,
+                "closed_at": None
+            }
+            
+            await signal_history_collection.insert_one(history_entry)
+            
+            # Update tracking state
+            last_signal_state["direction"] = new_direction
+            last_signal_state["signal_id"] = signal_id if status == "active" else None
+            last_signal_state["timestamp"] = datetime.now(timezone.utc)
+            last_signal_state["btc_price"] = current_price
+            
+            logger.info(f"Auto-recorded signal: {new_direction} (status: {status}, reason: {reason})")
+            return {"recorded": True, "signal_id": signal_id, "status": status, "reason": reason}
+        
+        return {"recorded": False, "reason": "Nessun cambiamento significativo"}
+        
+    except Exception as e:
+        logger.error(f"Error in auto_record_signal_change: {e}")
+        return {"recorded": False, "error": str(e)}
 
 @api_router.post("/signal-history/record")
 async def record_signal():
