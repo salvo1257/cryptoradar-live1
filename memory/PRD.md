@@ -13,8 +13,22 @@ Build CryptoRadar - a professional BTC market intelligence dashboard that reads 
   - CoinGlass (Open Interest, Liquidations, Funding Rate)
 - **Chart**: TradingView Lightweight Charts v5.1
 - **Real-time**: WebSocket for live price streaming
+- **Core Timeframe**: **4H (240 minutes)** - All trading intelligence anchored to 4H for bot-ready signals
 
-## TRADE SIGNAL MODULE (v1.7 Enhanced with Whale & Liquidity Ladder)
+## OPERATIONAL TIMEFRAME: 4H
+
+All trading intelligence modules operate on the **4-hour timeframe** by default:
+- `/api/trade-signal` - Uses 4H candles for analysis
+- `/api/market/bias` - 4H market structure
+- `/api/support-resistance` - 4H S/R levels
+- `/api/liquidity` - 4H liquidity clusters
+- `/api/whale-alerts` - 4H whale analysis
+- `/api/patterns` - 4H pattern detection
+- `/api/open-interest` - 4H OI analysis
+
+Chart viewing (`/api/chart/candles`) still supports 15m, 1H, 4H, 1D for visual analysis.
+
+## TRADE SIGNAL MODULE (v1.7 - 4H Based)
 
 The centerpiece of CryptoRadar - synthesizes ALL intelligence into one actionable signal with realistic BTC trading logic.
 
@@ -131,6 +145,7 @@ Features:
 - ✅ Integration into Trade Signal scoring (+3 max score range)
 - ✅ Frontend display of whale activity and liquidity ladder
 - ✅ CoinGlass liquidation data in whale engine
+- ✅ **4H Operational Timeframe** - All trading intelligence now uses 4H candles
 - ✅ 100% test pass rate (iteration_8.json)
 
 ## API Keys

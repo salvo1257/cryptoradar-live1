@@ -3014,10 +3014,10 @@ async def get_candles(
     return {"candles": [], "interval": interval, "data_source": "Unavailable"}
 
 @api_router.get("/market/bias")
-async def get_market_bias(interval: str = Query(default="1h")):
-    """Get market bias analysis with aggregated multi-exchange order book data"""
+async def get_market_bias(interval: str = Query(default="4h")):
+    """Get market bias analysis with aggregated multi-exchange order book data (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     aggregated_orderbook = await get_aggregated_orderbook()
@@ -3026,10 +3026,10 @@ async def get_market_bias(interval: str = Query(default="1h")):
     return bias
 
 @api_router.get("/support-resistance")
-async def get_support_resistance(interval: str = Query(default="1h")):
-    """Get support and resistance levels from price data and aggregated multi-exchange order book"""
+async def get_support_resistance(interval: str = Query(default="4h")):
+    """Get support and resistance levels from price data and aggregated multi-exchange order book (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
@@ -3048,10 +3048,10 @@ async def get_support_resistance(interval: str = Query(default="1h")):
     }
 
 @api_router.get("/liquidity")
-async def get_liquidity(interval: str = Query(default="1h")):
-    """Get liquidity clusters from aggregated multi-exchange order book analysis"""
+async def get_liquidity(interval: str = Query(default="4h")):
+    """Get liquidity clusters from aggregated multi-exchange order book analysis (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
@@ -3072,10 +3072,10 @@ async def get_liquidity(interval: str = Query(default="1h")):
     }
 
 @api_router.get("/whale-alerts")
-async def get_whale_alerts(interval: str = Query(default="1h")):
-    """Get whale alert signals from volume and aggregated multi-exchange order book analysis"""
+async def get_whale_alerts(interval: str = Query(default="4h")):
+    """Get whale alert signals from volume and aggregated multi-exchange order book analysis (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     ticker = await fetch_kraken_ticker()
@@ -3093,20 +3093,20 @@ async def get_whale_alerts(interval: str = Query(default="1h")):
     }
 
 @api_router.get("/patterns")
-async def get_patterns(interval: str = Query(default="1h")):
-    """Get detected chart patterns with detailed explanations"""
+async def get_patterns(interval: str = Query(default="4h")):
+    """Get detected chart patterns with detailed explanations (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_patterns(candles)
     return {"patterns": patterns, "data_source": "Kraken OHLC"}
 
 @api_router.get("/candlesticks")
-async def get_candlestick_patterns(interval: str = Query(default="1h")):
-    """Get detected candlestick patterns"""
+async def get_candlestick_patterns(interval: str = Query(default="4h")):
+    """Get detected candlestick patterns (default: 4H)"""
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
-    kraken_interval = interval_map.get(interval, 60)
+    kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     patterns = detect_candlestick_patterns(candles)
@@ -3226,8 +3226,9 @@ async def get_trade_signal():
     entry zones, targets, stop loss, and detailed reasoning.
     """
     # Fetch all required data in parallel
+    # NOTE: Using 4H (240min) candles as the core operational timeframe for trading intelligence
     ticker_task = fetch_kraken_ticker()
-    candles_task = fetch_kraken_ohlc(60)
+    candles_task = fetch_kraken_ohlc(240)  # 4H timeframe for bot-ready signals
     aggregated_ob_task = get_aggregated_orderbook()
     
     ticker, candles, aggregated_orderbook = await asyncio.gather(
@@ -3360,7 +3361,7 @@ async def get_trade_signal():
 async def get_open_interest():
     """Get Open Interest data from CoinGlass"""
     ticker = await fetch_kraken_ticker()
-    candles = await fetch_kraken_ohlc(60)
+    candles = await fetch_kraken_ohlc(240)  # 4H timeframe
     current_price = ticker["price"] if ticker else 0
     
     oi = await generate_open_interest(current_price, candles)
