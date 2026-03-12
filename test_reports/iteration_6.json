@@ -1,0 +1,80 @@
+{
+  "summary": "Trade Signal module testing completed successfully. All 24 backend tests passed (16 TradeSignal tests + 8 regression tests). Frontend UI verified showing correct direction badge (LONG/SHORT/NO TRADE), confidence percentage, entry zones, stop loss, targets, risk/reward ratio, warnings, Signal Reasoning and Factor Breakdown sections.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "/api/trade-signal returns valid TradeSignal with all 14 required fields",
+    "TradeSignal direction is valid (LONG/SHORT/NO TRADE)",
+    "Confidence is within valid range 0-100",
+    "Factors structure contains all 7 intelligence components",
+    "market_bias factor includes bias and confidence",
+    "liquidity factor includes direction and imbalance_ratio",
+    "exchange_consensus factor includes description and score",
+    "funding_rate factor includes rate and sentiment",
+    "open_interest factor includes total, trend, and change_24h",
+    "patterns factor includes count and top_pattern",
+    "whale_alerts factor includes count",
+    "Entry zone, stop loss, and targets are valid for LONG/SHORT signals",
+    "Risk/Reward ratio is numeric",
+    "Reasoning explanation is detailed (>50 chars)",
+    "Warnings is a list",
+    "Timestamp and valid_for fields present",
+    "REGRESSION: /api/market/bias returns valid response with exchange_consensus",
+    "REGRESSION: /api/market/bias inputs structure contains all scoring components",
+    "REGRESSION: /api/liquidity returns valid response with clusters, direction, exchange_stats",
+    "REGRESSION: Liquidity clusters have required fields",
+    "REGRESSION: Liquidity direction structure has required fields",
+    "UI: TradeSignalCard displays on dashboard with data-testid='trade-signal-card'",
+    "UI: Direction badge (LONG/SHORT/NO TRADE) visible with correct styling",
+    "UI: Confidence percentage displayed with progress bar",
+    "UI: Entry Zone, Stop Loss, Target 1, Target 2 displayed correctly",
+    "UI: Risk/Reward Ratio displayed with color coding",
+    "UI: Warnings displayed with yellow alert styling",
+    "UI: Invalidation reason displayed",
+    "UI: Show Details expands to show Signal Reasoning section",
+    "UI: Factor Breakdown shows all 7 factors with score bars",
+    "UI: Refresh button triggers signal update"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_trade_signal.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_trade_signal.py"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 tests passed)",
+    "frontend": "100% (all TradeSignalCard features working)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Trade Signal module fully functional. Signal direction can change between LONG, SHORT, and NO TRADE based on live market conditions - this is expected. Factor scores range from -12 to +12 with thresholds at +/-4 for trade signals. All 7 factors (market_bias, liquidity, exchange_consensus, funding_rate, open_interest, patterns, whale_alerts) are being synthesized correctly. UI displays all trade parameters (entry zone, stop loss, targets, R/R ratio) with proper formatting and color coding.",
+  "features_verified": {
+    "trade_signal_endpoint": {
+      "direction": "LONG/SHORT/NO TRADE based on market conditions",
+      "confidence": "0-100% with alignment bonus",
+      "estimated_move": "Expected % move to target",
+      "entry_zone": "Low/High range for entry",
+      "stop_loss": "Invalidation level",
+      "targets": "Target 1 and Target 2 price levels",
+      "risk_reward_ratio": "Calculated from entry/stop/target",
+      "reasoning": "Detailed explanation with factor breakdown",
+      "factors": "7 intelligence factors with individual scores",
+      "warnings": "Risk warnings (trap risk, squeeze risk)"
+    },
+    "regression_tests": {
+      "market_bias": "Working with exchange_consensus per exchange",
+      "liquidity": "Working with exchange_stats including imbalance"
+    }
+  }
+}

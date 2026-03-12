@@ -8,7 +8,8 @@ import {
   WhaleAlertCard, 
   OrderBookCard,
   OpenInterestCard,
-  FundingRateCard
+  FundingRateCard,
+  TradeSignalCard
 } from '../cards';
 
 export function DashboardPage() {
@@ -29,14 +30,18 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 space-y-4" data-testid="dashboard-page">
-      {/* Main Chart */}
-      <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-          <h2 className="font-heading font-semibold text-sm uppercase tracking-wider">BTC/USDT</h2>
-          <span className="text-xs text-zinc-500 font-mono">TradingView Chart</span>
-        </div>
-        <div className="p-2">
-          <TradingChart height={380} />
+      {/* Trade Signal - Main Intelligence Card */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <TradeSignalCard />
+        {/* Main Chart */}
+        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+            <h2 className="font-heading font-semibold text-sm uppercase tracking-wider">BTC/USDT</h2>
+            <span className="text-xs text-zinc-500 font-mono">TradingView Chart</span>
+          </div>
+          <div className="p-2">
+            <TradingChart height={330} />
+          </div>
         </div>
       </div>
 

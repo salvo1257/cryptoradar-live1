@@ -115,6 +115,24 @@ class LiquidityDirection(BaseModel):
     imbalance_ratio: float
     explanation: Optional[str] = None  # Detailed explanation
 
+class TradeSignal(BaseModel):
+    """Final actionable trading signal synthesizing all intelligence"""
+    direction: str  # "LONG", "SHORT", "NO TRADE"
+    confidence: float  # 0-100
+    estimated_move: float  # Expected % move
+    entry_zone_low: float
+    entry_zone_high: float
+    stop_loss: float
+    invalidation_reason: str
+    target_1: float
+    target_2: float
+    risk_reward_ratio: float
+    reasoning: str  # Detailed explanation of why this signal
+    factors: Dict[str, Any]  # Individual factor contributions
+    timestamp: datetime
+    valid_for: str  # e.g., "4H", "1D"
+    warnings: List[str]  # Risk warnings
+
 class WhaleAlert(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     signal: str
@@ -1855,6 +1873,332 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
         data_source="Fallback"
     )
 
+# ============== TRADE SIGNAL GENERATOR ==============
+
+def generate_trade_signal(
+    current_price: float,
+    market_bias: MarketBias,
+    liquidity_direction: LiquidityDirection,
+    sr_levels: List[SupportResistanceLevel],
+    funding_rate: FundingRate,
+    open_interest: OpenInterest,
+    patterns: List[PatternDetection],
+    whale_alerts: List[WhaleAlert],
+    exchange_comparison: Dict[str, Any]
+) -> TradeSignal:
+    """
+    Generate a final actionable trading signal by synthesizing all intelligence.
+    
+    Scoring System:
+    - Market Bias: +/-3 points
+    - Liquidity Direction: +/-2 points
+    - Exchange Consensus: +/-2 points
+    - Funding Rate: +/-1 point
+    - Open Interest Trend: +/-1 point
+    - Pattern Signals: +/-2 points
+    - Whale Alerts: +/-1 point
+    
+    Total range: -12 to +12
+    Signal thresholds:
+    - LONG: score >= 4
+    - SHORT: score <= -4
+    - NO TRADE: -3 to +3
+    """
+    
+    score = 0
+    factors = {}
+    reasoning_parts = []
+    warnings = []
+    
+    # 1. Market Bias Analysis (+/-3)
+    bias_score = 0
+    if market_bias.bias == "BULLISH":
+        bias_score = 3 if market_bias.confidence >= 70 else 2 if market_bias.confidence >= 55 else 1
+    elif market_bias.bias == "BEARISH":
+        bias_score = -3 if market_bias.confidence >= 70 else -2 if market_bias.confidence >= 55 else -1
+    
+    score += bias_score
+    factors["market_bias"] = {
+        "bias": market_bias.bias,
+        "confidence": market_bias.confidence,
+        "score": bias_score,
+        "max": 3
+    }
+    
+    if bias_score > 0:
+        reasoning_parts.append(f"Market Bias is {market_bias.bias} with {market_bias.confidence:.0f}% confidence")
+    elif bias_score < 0:
+        reasoning_parts.append(f"Market Bias is {market_bias.bias} with {market_bias.confidence:.0f}% confidence")
+    
+    # 2. Liquidity Direction (+/-2)
+    liq_score = 0
+    if liquidity_direction.direction == "UP":
+        liq_score = 2 if liquidity_direction.imbalance_ratio > 1.5 else 1
+    elif liquidity_direction.direction == "DOWN":
+        liq_score = -2 if liquidity_direction.imbalance_ratio < 0.67 else -1
+    
+    score += liq_score
+    factors["liquidity"] = {
+        "direction": liquidity_direction.direction,
+        "target": liquidity_direction.next_target,
+        "imbalance_ratio": liquidity_direction.imbalance_ratio,
+        "score": liq_score,
+        "max": 2
+    }
+    
+    if liq_score != 0:
+        reasoning_parts.append(f"Liquidity points {liquidity_direction.direction} toward ${liquidity_direction.next_target:,.0f}")
+    
+    # 3. Exchange Consensus (+/-2)
+    exchange_score = 0
+    if exchange_comparison and "exchanges" in exchange_comparison:
+        bullish_count = sum(1 for ex in exchange_comparison["exchanges"].values() if ex.get("bias") == "BULLISH")
+        bearish_count = sum(1 for ex in exchange_comparison["exchanges"].values() if ex.get("bias") == "BEARISH")
+        total = len(exchange_comparison["exchanges"])
+        
+        if bullish_count >= 2:
+            exchange_score = 2 if bullish_count == total else 1
+        elif bearish_count >= 2:
+            exchange_score = -2 if bearish_count == total else -1
+        
+        consensus_text = f"{bullish_count}/{total} exchanges bullish, {bearish_count}/{total} bearish"
+    else:
+        consensus_text = "Exchange data unavailable"
+    
+    score += exchange_score
+    factors["exchange_consensus"] = {
+        "description": consensus_text,
+        "score": exchange_score,
+        "max": 2
+    }
+    
+    if exchange_score > 0:
+        reasoning_parts.append(f"Multi-exchange consensus is bullish ({consensus_text})")
+    elif exchange_score < 0:
+        reasoning_parts.append(f"Multi-exchange consensus is bearish ({consensus_text})")
+    
+    # 4. Funding Rate (+/-1)
+    funding_score = 0
+    if funding_rate:
+        if funding_rate.sentiment == "bullish":
+            funding_score = 1
+        elif funding_rate.sentiment == "bearish":
+            funding_score = -1
+        
+        # Overcrowded warning
+        if funding_rate.overcrowded:
+            warnings.append(f"⚠️ {funding_rate.overcrowded.capitalize()} are overcrowded - squeeze risk")
+            # Overcrowded longs is actually bearish (potential long squeeze)
+            if funding_rate.overcrowded == "longs":
+                funding_score -= 1
+            elif funding_rate.overcrowded == "shorts":
+                funding_score += 1
+    
+    score += funding_score
+    factors["funding_rate"] = {
+        "rate": funding_rate.current_rate if funding_rate else 0,
+        "sentiment": funding_rate.sentiment if funding_rate else "unknown",
+        "score": funding_score,
+        "max": 1
+    }
+    
+    if funding_score != 0:
+        reasoning_parts.append(f"Funding rate sentiment is {funding_rate.sentiment}")
+    
+    # 5. Open Interest Trend (+/-1)
+    oi_score = 0
+    if open_interest:
+        if open_interest.trend == "increasing":
+            # Increasing OI with bullish bias = bullish, with bearish bias = bearish
+            if score > 0:
+                oi_score = 1
+                reasoning_parts.append("Open Interest increasing with bullish trend (new longs entering)")
+            elif score < 0:
+                oi_score = -1
+                reasoning_parts.append("Open Interest increasing with bearish trend (new shorts entering)")
+        elif open_interest.trend == "decreasing":
+            # Decreasing OI usually means positions closing - can signal reversal
+            if score > 0:
+                oi_score = 0  # Neutral - might be profit taking
+                warnings.append("⚠️ OI decreasing - possible profit taking / exhaustion")
+            elif score < 0:
+                oi_score = 0
+                warnings.append("⚠️ OI decreasing - shorts may be covering")
+    
+    score += oi_score
+    factors["open_interest"] = {
+        "total": open_interest.total_oi if open_interest else 0,
+        "trend": open_interest.trend if open_interest else "unknown",
+        "change_24h": open_interest.change_24h if open_interest else 0,
+        "score": oi_score,
+        "max": 1
+    }
+    
+    # 6. Pattern Signals (+/-2)
+    pattern_score = 0
+    if patterns:
+        for pattern in patterns[:2]:  # Consider top 2 patterns
+            if pattern.direction == "BULLISH" and pattern.confidence >= 65:
+                pattern_score += 1
+                reasoning_parts.append(f"{pattern.pattern} pattern detected (bullish, {pattern.confidence:.0f}% conf)")
+            elif pattern.direction == "BEARISH" and pattern.confidence >= 65:
+                pattern_score -= 1
+                reasoning_parts.append(f"{pattern.pattern} pattern detected (bearish, {pattern.confidence:.0f}% conf)")
+    
+    pattern_score = max(-2, min(2, pattern_score))  # Clamp to +/-2
+    score += pattern_score
+    factors["patterns"] = {
+        "count": len(patterns),
+        "top_pattern": patterns[0].pattern if patterns else None,
+        "score": pattern_score,
+        "max": 2
+    }
+    
+    # 7. Whale Alerts (+/-1)
+    whale_score = 0
+    if whale_alerts:
+        long_signals = sum(1 for w in whale_alerts if w.signal == "LONG")
+        short_signals = sum(1 for w in whale_alerts if w.signal == "SHORT")
+        
+        if long_signals > short_signals:
+            whale_score = 1
+            reasoning_parts.append(f"Whale activity favors longs ({long_signals} long vs {short_signals} short signals)")
+        elif short_signals > long_signals:
+            whale_score = -1
+            reasoning_parts.append(f"Whale activity favors shorts ({short_signals} short vs {long_signals} long signals)")
+    
+    score += whale_score
+    factors["whale_alerts"] = {
+        "count": len(whale_alerts),
+        "score": whale_score,
+        "max": 1
+    }
+    
+    # 8. Trap Risk Assessment
+    if market_bias.trap_risk == "high":
+        warnings.append("⚠️ High trap risk - potential fake breakout")
+        # High trap risk reduces confidence but doesn't change direction
+    
+    # Determine final direction
+    if score >= 4:
+        direction = "LONG"
+    elif score <= -4:
+        direction = "SHORT"
+    else:
+        direction = "NO TRADE"
+    
+    # Calculate confidence (normalize score to 0-100)
+    max_score = 12
+    raw_confidence = (abs(score) / max_score) * 100
+    
+    # Adjust confidence based on factor alignment
+    aligned_factors = sum(1 for f in factors.values() if isinstance(f, dict) and f.get("score", 0) * score > 0)
+    total_factors = len([f for f in factors.values() if isinstance(f, dict) and f.get("score", 0) != 0])
+    
+    if total_factors > 0:
+        alignment_bonus = (aligned_factors / total_factors) * 15
+        confidence = min(95, raw_confidence + alignment_bonus)
+    else:
+        confidence = raw_confidence
+    
+    # Reduce confidence for NO TRADE
+    if direction == "NO TRADE":
+        confidence = max(30, 60 - abs(score) * 5)  # Low confidence for mixed signals
+    
+    # Calculate entry zone, stops, and targets using S/R levels
+    supports = sorted([l for l in sr_levels if l.level_type == "support"], key=lambda x: abs(x.distance_percent))
+    resistances = sorted([l for l in sr_levels if l.level_type == "resistance"], key=lambda x: abs(x.distance_percent))
+    
+    if direction == "LONG":
+        # Entry zone: current price to nearest support
+        nearest_support = supports[0].price if supports else current_price * 0.995
+        entry_zone_low = nearest_support
+        entry_zone_high = current_price
+        
+        # Stop loss: below second support or 1.5% below entry
+        stop_loss = supports[1].price * 0.998 if len(supports) > 1 else current_price * 0.985
+        invalidation_reason = f"Break below ${stop_loss:,.0f} support invalidates long thesis"
+        
+        # Targets: first two resistances
+        target_1 = resistances[0].price if resistances else current_price * 1.02
+        target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.04
+        
+        # Estimated move to target 1
+        estimated_move = ((target_1 - current_price) / current_price) * 100
+        
+    elif direction == "SHORT":
+        # Entry zone: current price to nearest resistance
+        nearest_resistance = resistances[0].price if resistances else current_price * 1.005
+        entry_zone_low = current_price
+        entry_zone_high = nearest_resistance
+        
+        # Stop loss: above second resistance or 1.5% above entry
+        stop_loss = resistances[1].price * 1.002 if len(resistances) > 1 else current_price * 1.015
+        invalidation_reason = f"Break above ${stop_loss:,.0f} resistance invalidates short thesis"
+        
+        # Targets: first two supports
+        target_1 = supports[0].price if supports else current_price * 0.98
+        target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
+        
+        # Estimated move to target 1
+        estimated_move = ((target_1 - current_price) / current_price) * 100
+        
+    else:  # NO TRADE
+        entry_zone_low = current_price * 0.99
+        entry_zone_high = current_price * 1.01
+        stop_loss = 0
+        invalidation_reason = "Mixed signals - wait for clearer setup"
+        target_1 = 0
+        target_2 = 0
+        estimated_move = 0
+    
+    # Calculate risk/reward ratio
+    if direction != "NO TRADE" and stop_loss > 0:
+        risk = abs(current_price - stop_loss)
+        reward = abs(target_1 - current_price)
+        risk_reward_ratio = reward / risk if risk > 0 else 0
+    else:
+        risk_reward_ratio = 0
+    
+    # Build final reasoning text
+    if direction == "NO TRADE":
+        reasoning = "⚠️ MIXED SIGNALS - NO CLEAR TRADE SETUP\n\n"
+        reasoning += "The intelligence factors are not aligned:\n"
+        for part in reasoning_parts:
+            reasoning += f"• {part}\n"
+        reasoning += "\nWait for clearer directional bias before entering a position."
+    else:
+        dir_emoji = "🟢" if direction == "LONG" else "🔴"
+        reasoning = f"{dir_emoji} {direction} OPPORTUNITY DETECTED\n\n"
+        reasoning += "Key factors supporting this trade:\n"
+        for part in reasoning_parts:
+            reasoning += f"• {part}\n"
+        
+        if warnings:
+            reasoning += "\n⚠️ Risk Warnings:\n"
+            for warning in warnings:
+                reasoning += f"{warning}\n"
+        
+        reasoning += f"\nRisk/Reward: {risk_reward_ratio:.1f}:1"
+    
+    return TradeSignal(
+        direction=direction,
+        confidence=round(confidence, 1),
+        estimated_move=round(estimated_move, 2),
+        entry_zone_low=round(entry_zone_low, 2),
+        entry_zone_high=round(entry_zone_high, 2),
+        stop_loss=round(stop_loss, 2),
+        invalidation_reason=invalidation_reason,
+        target_1=round(target_1, 2),
+        target_2=round(target_2, 2),
+        risk_reward_ratio=round(risk_reward_ratio, 2),
+        reasoning=reasoning,
+        factors=factors,
+        timestamp=datetime.now(timezone.utc),
+        valid_for="4H",
+        warnings=warnings
+    )
+
 # ============== API ROUTES ==============
 
 @api_router.get("/health")
@@ -2109,6 +2453,106 @@ async def get_exchange_comparison():
         "exchanges": comparison,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@api_router.get("/trade-signal")
+async def get_trade_signal():
+    """
+    Get final actionable trading signal synthesizing all intelligence.
+    
+    This endpoint aggregates:
+    - Market Bias (order book, trend, momentum)
+    - Liquidity Direction (multi-exchange)
+    - Exchange Consensus
+    - Funding Rate & Open Interest
+    - Pattern Detection
+    - Whale Alerts
+    
+    Returns a clear LONG, SHORT, or NO TRADE recommendation with
+    entry zones, targets, stop loss, and detailed reasoning.
+    """
+    # Fetch all required data in parallel
+    ticker_task = fetch_kraken_ticker()
+    candles_task = fetch_kraken_ohlc(60)
+    aggregated_ob_task = get_aggregated_orderbook()
+    
+    ticker, candles, aggregated_orderbook = await asyncio.gather(
+        ticker_task, candles_task, aggregated_ob_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    if current_price == 0:
+        return TradeSignal(
+            direction="NO TRADE",
+            confidence=0,
+            estimated_move=0,
+            entry_zone_low=0,
+            entry_zone_high=0,
+            stop_loss=0,
+            invalidation_reason="Market data unavailable",
+            target_1=0,
+            target_2=0,
+            risk_reward_ratio=0,
+            reasoning="Unable to generate signal - market data unavailable",
+            factors={},
+            timestamp=datetime.now(timezone.utc),
+            valid_for="N/A",
+            warnings=["Market data unavailable"]
+        )
+    
+    # Generate all intelligence components
+    market_bias = calculate_market_bias(candles, aggregated_orderbook)
+    
+    sr_levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook)
+    
+    clusters, liquidity_direction = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook)
+    
+    # Get exchange comparison
+    tickers = await fetch_all_exchange_tickers()
+    orderbooks = await fetch_all_exchange_orderbooks()
+    exchange_comparison = {"exchanges": {}}
+    for exchange, ex_ticker in tickers.items():
+        exchange_comparison["exchanges"][exchange] = {
+            "price": ex_ticker.get("price", 0),
+            "bias": "NEUTRAL"
+        }
+        if exchange in orderbooks and orderbooks[exchange]:
+            ob = orderbooks[exchange]
+            bids = ob.get("bids", [])
+            asks = ob.get("asks", [])
+            bid_depth = sum(float(b[0]) * float(b[1]) for b in bids[:30])
+            ask_depth = sum(float(a[0]) * float(a[1]) for a in asks[:30])
+            total = bid_depth + ask_depth
+            imbalance = ((bid_depth - ask_depth) / total * 100) if total > 0 else 0
+            if imbalance > 10:
+                exchange_comparison["exchanges"][exchange]["bias"] = "BULLISH"
+            elif imbalance < -10:
+                exchange_comparison["exchanges"][exchange]["bias"] = "BEARISH"
+    
+    # Get funding and OI
+    funding_task = generate_funding_rate(aggregated_orderbook)
+    oi_task = generate_open_interest(current_price, candles)
+    
+    funding_rate, open_interest = await asyncio.gather(funding_task, oi_task)
+    
+    # Get patterns and whale alerts
+    patterns = detect_patterns(candles)
+    whale_alerts = generate_whale_alerts_enhanced(candles, current_price, aggregated_orderbook)
+    
+    # Generate the final trade signal
+    signal = generate_trade_signal(
+        current_price=current_price,
+        market_bias=market_bias,
+        liquidity_direction=liquidity_direction,
+        sr_levels=sr_levels,
+        funding_rate=funding_rate,
+        open_interest=open_interest,
+        patterns=patterns,
+        whale_alerts=whale_alerts,
+        exchange_comparison=exchange_comparison
+    )
+    
+    return signal
 
 @api_router.get("/open-interest")
 async def get_open_interest():
