@@ -2360,27 +2360,33 @@ def generate_trade_signal(
     open_interest: OpenInterest,
     patterns: List[PatternDetection],
     whale_alerts: List[WhaleAlert],
-    exchange_comparison: Dict[str, Any]
+    exchange_comparison: Dict[str, Any],
+    whale_activity: WhaleActivity = None,
+    liquidity_ladder: LiquidityLadder = None
 ) -> TradeSignal:
     """
     Generate a final actionable trading signal by synthesizing all intelligence.
     
-    ENHANCED BTC TRADING LOGIC:
+    ENHANCED BTC TRADING LOGIC (v1.7 - Whale & Liquidity Ladder Integration):
     1. Minimum move filter: No signal if estimated move < 0.50%
     2. Smart stop placement: Beyond liquidity sweep zones
     3. Liquidity sweep detection: Identify sweep-and-reversal setups
     4. Setup type classification: continuation vs sweep_reversal
+    5. Whale Activity Engine: Confirms direction with whale pressure
+    6. Liquidity Ladder: Path analysis for sweep expectations
     
     Scoring System:
     - Market Bias: +/-3 points
-    - Liquidity Direction: +/-2 points
+    - Liquidity Direction: +/-2 points  
     - Exchange Consensus: +/-2 points
     - Funding Rate: +/-1 point
     - Open Interest Trend: +/-1 point
     - Pattern Signals: +/-2 points
-    - Whale Alerts: +/-1 point
+    - Whale Alerts (legacy): +/-1 point
+    - Whale Activity Engine: +/-2 points (NEW)
+    - Liquidity Ladder Path: +/-1 point (NEW)
     
-    Total range: -12 to +12
+    Total range: -15 to +15
     Signal thresholds:
     - LONG: score >= 4
     - SHORT: score <= -4
@@ -2616,7 +2622,73 @@ def generate_trade_signal(
         "max": 1
     }
     
-    # 8. Trap Risk Assessment
+    # 8. WHALE ACTIVITY ENGINE (+/-2) - NEW
+    whale_engine_score = 0
+    whale_confirms_direction = False
+    
+    if whale_activity:
+        if whale_activity.direction == "BUY" and whale_activity.strength >= 40:
+            whale_engine_score = 2 if whale_activity.strength >= 70 else 1
+            reasoning_parts.append(f"Whale Engine detects BUY pressure ({whale_activity.strength:.0f}% strength): {whale_activity.explanation}")
+        elif whale_activity.direction == "SELL" and whale_activity.strength >= 40:
+            whale_engine_score = -2 if whale_activity.strength >= 70 else -1
+            reasoning_parts.append(f"Whale Engine detects SELL pressure ({whale_activity.strength:.0f}% strength): {whale_activity.explanation}")
+        
+        # Add specific whale signals as warnings/context
+        if whale_activity.volume_spike:
+            warnings.append(f"🐋 Volume spike detected: {whale_activity.volume_ratio:.1f}x average")
+        if whale_activity.liquidation_bias == "longs_liquidated":
+            warnings.append("🐋 Long liquidation cascade in progress")
+        elif whale_activity.liquidation_bias == "shorts_liquidated":
+            warnings.append("🐋 Short squeeze in progress")
+        if whale_activity.orderbook_aggression:
+            aggression_text = "aggressive buying" if whale_activity.orderbook_aggression == "aggressive_buying" else "aggressive selling"
+            warnings.append(f"🐋 Order book shows {aggression_text}")
+    
+    score += whale_engine_score
+    factors["whale_engine"] = {
+        "direction": whale_activity.direction if whale_activity else "N/A",
+        "strength": whale_activity.strength if whale_activity else 0,
+        "buy_pressure": whale_activity.buy_pressure if whale_activity else 0,
+        "sell_pressure": whale_activity.sell_pressure if whale_activity else 0,
+        "score": whale_engine_score,
+        "max": 2
+    }
+    
+    # 9. LIQUIDITY LADDER PATH (+/-1) - NEW
+    ladder_score = 0
+    sweep_first_expected = False
+    
+    if liquidity_ladder:
+        # If ladder shows more attractive liquidity in one direction, that's where price will seek
+        if liquidity_ladder.more_attractive_side == "above":
+            ladder_score = 1  # Bullish - price seeks upside liquidity
+            reasoning_parts.append(f"Liquidity Ladder: More liquidity above - path analysis suggests upward sweep toward ${liquidity_ladder.major_above.price:,.0f}" if liquidity_ladder.major_above else "Liquidity Ladder: Path favors upside")
+        elif liquidity_ladder.more_attractive_side == "below":
+            ladder_score = -1  # Bearish - price seeks downside liquidity
+            reasoning_parts.append(f"Liquidity Ladder: More liquidity below - path analysis suggests downward sweep toward ${liquidity_ladder.major_below.price:,.0f}" if liquidity_ladder.major_below else "Liquidity Ladder: Path favors downside")
+        
+        # Determine sweep expectation
+        if liquidity_ladder.sweep_expectation == "sweep_below_first":
+            sweep_first_expected = True
+            if score > 0:  # Currently bullish
+                warnings.append(f"⚠️ Sweep expected: Price may dip to ${liquidity_ladder.nearest_below.price:,.0f} before moving up" if liquidity_ladder.nearest_below else "⚠️ Potential dip before move up")
+        elif liquidity_ladder.sweep_expectation == "sweep_above_first":
+            sweep_first_expected = True
+            if score < 0:  # Currently bearish
+                warnings.append(f"⚠️ Sweep expected: Price may spike to ${liquidity_ladder.nearest_above.price:,.0f} before moving down" if liquidity_ladder.nearest_above else "⚠️ Potential spike before move down")
+    
+    score += ladder_score
+    factors["liquidity_ladder"] = {
+        "more_attractive_side": liquidity_ladder.more_attractive_side if liquidity_ladder else "N/A",
+        "sweep_expectation": liquidity_ladder.sweep_expectation if liquidity_ladder else "N/A",
+        "nearest_above": liquidity_ladder.nearest_above.price if liquidity_ladder and liquidity_ladder.nearest_above else None,
+        "nearest_below": liquidity_ladder.nearest_below.price if liquidity_ladder and liquidity_ladder.nearest_below else None,
+        "score": ladder_score,
+        "max": 1
+    }
+    
+    # 10. Trap Risk Assessment
     if market_bias.trap_risk == "high":
         warnings.append("⚠️ High trap risk - potential fake breakout / liquidity grab")
     
@@ -2782,12 +2854,76 @@ def generate_trade_signal(
         if sweep_analysis:
             reasoning += f"\n🔄 Sweep Analysis:\n{sweep_analysis}\n"
         
+        # Add liquidity ladder path analysis
+        if liquidity_ladder and liquidity_ladder.path_analysis:
+            reasoning += f"\n🪜 Liquidity Path:\n{liquidity_ladder.path_analysis}\n"
+        
+        # Add whale activity summary
+        if whale_activity and whale_activity.direction != "NEUTRAL":
+            reasoning += f"\n🐋 Whale Activity:\n{whale_activity.explanation}\n"
+        
         if warnings:
             reasoning += "\n⚠️ Risk Warnings:\n"
             for warning in warnings:
                 reasoning += f"{warning}\n"
         
         reasoning += f"\n📈 Risk/Reward: {risk_reward_ratio:.1f}:1"
+    
+    # Check if whale confirms direction
+    if whale_activity:
+        if direction == "LONG" and whale_activity.direction == "BUY":
+            whale_confirms_direction = True
+        elif direction == "SHORT" and whale_activity.direction == "SELL":
+            whale_confirms_direction = True
+    
+    # Build whale activity summary for response
+    whale_activity_summary = None
+    if whale_activity:
+        whale_activity_summary = {
+            "direction": whale_activity.direction,
+            "strength": whale_activity.strength,
+            "confidence": whale_activity.confidence,
+            "explanation": whale_activity.explanation,
+            "volume_spike": whale_activity.volume_spike,
+            "volume_ratio": whale_activity.volume_ratio,
+            "buy_pressure": whale_activity.buy_pressure,
+            "sell_pressure": whale_activity.sell_pressure,
+            "liquidation_bias": whale_activity.liquidation_bias,
+            "orderbook_aggression": whale_activity.orderbook_aggression,
+            "signals": whale_activity.signals
+        }
+    
+    # Build liquidity ladder summary for response
+    liquidity_ladder_summary = None
+    if liquidity_ladder:
+        liquidity_ladder_summary = {
+            "current_price": liquidity_ladder.current_price,
+            "more_attractive_side": liquidity_ladder.more_attractive_side,
+            "sweep_expectation": liquidity_ladder.sweep_expectation,
+            "path_analysis": liquidity_ladder.path_analysis,
+            "nearest_above": {
+                "price": liquidity_ladder.nearest_above.price,
+                "distance_percent": liquidity_ladder.nearest_above.distance_percent,
+                "strength": liquidity_ladder.nearest_above.strength,
+                "type": liquidity_ladder.nearest_above.type
+            } if liquidity_ladder.nearest_above else None,
+            "nearest_below": {
+                "price": liquidity_ladder.nearest_below.price,
+                "distance_percent": liquidity_ladder.nearest_below.distance_percent,
+                "strength": liquidity_ladder.nearest_below.strength,
+                "type": liquidity_ladder.nearest_below.type
+            } if liquidity_ladder.nearest_below else None,
+            "major_above": {
+                "price": liquidity_ladder.major_above.price,
+                "strength": liquidity_ladder.major_above.strength
+            } if liquidity_ladder.major_above else None,
+            "major_below": {
+                "price": liquidity_ladder.major_below.price,
+                "strength": liquidity_ladder.major_below.strength
+            } if liquidity_ladder.major_below else None,
+            "levels_above_count": len(liquidity_ladder.ladder_above),
+            "levels_below_count": len(liquidity_ladder.ladder_below)
+        }
     
     return TradeSignal(
         direction=direction,
@@ -2809,7 +2945,11 @@ def generate_trade_signal(
         liquidity_sweep_zone=round(liquidity_sweep_zone, 2) if liquidity_sweep_zone else None,
         safe_invalidation=round(safe_invalidation, 2) if safe_invalidation else None,
         sweep_detected=sweep_detected,
-        sweep_analysis=sweep_analysis
+        sweep_analysis=sweep_analysis,
+        whale_activity=whale_activity_summary,
+        liquidity_ladder_summary=liquidity_ladder_summary,
+        sweep_first_expected=sweep_first_expected,
+        whale_confirms_direction=whale_confirms_direction
     )
 
 # ============== API ROUTES ==============
@@ -3078,7 +3218,9 @@ async def get_trade_signal():
     - Exchange Consensus
     - Funding Rate & Open Interest
     - Pattern Detection
-    - Whale Alerts
+    - Whale Alerts (legacy)
+    - Whale Activity Engine (NEW v1.7)
+    - Liquidity Ladder (NEW v1.7)
     
     Returns a clear LONG, SHORT, or NO TRADE recommendation with
     entry zones, targets, stop loss, and detailed reasoning.
@@ -3142,17 +3284,62 @@ async def get_trade_signal():
             elif imbalance < -10:
                 exchange_comparison["exchanges"][exchange]["bias"] = "BEARISH"
     
-    # Get funding and OI
+    # Get funding and OI (async)
     funding_task = generate_funding_rate(aggregated_orderbook)
     oi_task = generate_open_interest(current_price, candles)
     
     funding_rate, open_interest = await asyncio.gather(funding_task, oi_task)
     
-    # Get patterns and whale alerts
+    # Get patterns and whale alerts (legacy)
     patterns = detect_patterns(candles)
     whale_alerts = generate_whale_alerts_enhanced(candles, current_price, aggregated_orderbook)
     
-    # Generate the final trade signal
+    # NEW v1.7: Generate Whale Activity Engine data
+    # Need to fetch liquidation data from CoinGlass for the whale engine
+    liquidation_data = None
+    try:
+        coinglass_key = os.environ.get("COINGLASS_API_KEY", "")
+        if coinglass_key:
+            async with httpx.AsyncClient() as client:
+                headers = {"coinglassSecret": coinglass_key}
+                liq_resp = await client.get(
+                    "https://open-api-v3.coinglass.com/api/futures/liquidation/detail?symbol=BTC",
+                    headers=headers,
+                    timeout=10.0
+                )
+                if liq_resp.status_code == 200:
+                    liq_data = liq_resp.json()
+                    if liq_data.get("success") and liq_data.get("data"):
+                        data_list = liq_data["data"]
+                        if data_list:
+                            # Aggregate liquidation data across exchanges
+                            total_long_liq = sum(float(d.get("longLiqUsd", 0) or 0) for d in data_list)
+                            total_short_liq = sum(float(d.get("shortLiqUsd", 0) or 0) for d in data_list)
+                            liquidation_data = {
+                                "long_liquidation_usd_24h": total_long_liq,
+                                "short_liquidation_usd_24h": total_short_liq
+                            }
+    except Exception as e:
+        logger.warning(f"Failed to fetch CoinGlass liquidation data: {e}")
+    
+    # Generate Whale Activity
+    whale_activity = analyze_whale_activity(
+        candles=candles,
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidation_data=liquidation_data,
+        open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None
+    )
+    
+    # NEW v1.7: Build Liquidity Ladder
+    liquidity_ladder = build_liquidity_ladder(
+        current_price=current_price,
+        sr_levels=sr_levels,
+        liquidity_clusters=clusters,
+        aggregated_orderbook=aggregated_orderbook
+    )
+    
+    # Generate the final trade signal with all intelligence
     signal = generate_trade_signal(
         current_price=current_price,
         market_bias=market_bias,
@@ -3162,7 +3349,9 @@ async def get_trade_signal():
         open_interest=open_interest,
         patterns=patterns,
         whale_alerts=whale_alerts,
-        exchange_comparison=exchange_comparison
+        exchange_comparison=exchange_comparison,
+        whale_activity=whale_activity,
+        liquidity_ladder=liquidity_ladder
     )
     
     return signal

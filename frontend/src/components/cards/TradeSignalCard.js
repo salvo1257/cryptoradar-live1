@@ -224,6 +224,96 @@ export function TradeSignalCard({ compact = false }) {
           </div>
         )}
 
+        {/* NEW: Whale Activity Engine */}
+        {signal.whale_activity && signal.whale_activity.direction !== 'NEUTRAL' && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-sm" data-testid="whale-activity-section">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🐋</span>
+                <span className="text-xs text-blue-400 font-semibold uppercase">Whale Activity Engine</span>
+              </div>
+              <span className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-mono font-bold",
+                signal.whale_activity.direction === 'BUY' ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
+              )}>
+                {signal.whale_activity.direction}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              <div>
+                <div className="text-[10px] text-zinc-500">Strength</div>
+                <div className="font-mono text-sm">{signal.whale_activity.strength?.toFixed(0)}%</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500">Buy Pressure</div>
+                <div className="font-mono text-sm text-bullish">{signal.whale_activity.buy_pressure?.toFixed(0)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500">Sell Pressure</div>
+                <div className="font-mono text-sm text-bearish">{signal.whale_activity.sell_pressure?.toFixed(0)}</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-zinc-400">{signal.whale_activity.explanation}</p>
+            {signal.whale_confirms_direction && (
+              <div className="mt-2 pt-2 border-t border-blue-500/20">
+                <span className="text-[10px] text-bullish">✓ Whale activity confirms signal direction</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NEW: Liquidity Ladder Summary */}
+        {signal.liquidity_ladder_summary && (
+          <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/20 rounded-sm" data-testid="liquidity-ladder-section">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🪜</span>
+                <span className="text-xs text-purple-400 font-semibold uppercase">Liquidity Ladder</span>
+              </div>
+              <span className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-mono",
+                signal.liquidity_ladder_summary.more_attractive_side === 'above' ? "bg-bullish/20 text-bullish" :
+                signal.liquidity_ladder_summary.more_attractive_side === 'below' ? "bg-bearish/20 text-bearish" :
+                "bg-zinc-700 text-zinc-400"
+              )}>
+                {signal.liquidity_ladder_summary.more_attractive_side?.toUpperCase()}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <div>
+                <div className="text-[10px] text-zinc-500">Nearest Above ({signal.liquidity_ladder_summary.levels_above_count || 0} levels)</div>
+                {signal.liquidity_ladder_summary.nearest_above ? (
+                  <div className="font-mono text-sm text-bullish">
+                    ${formatPrice(signal.liquidity_ladder_summary.nearest_above.price)}
+                    <span className="text-[10px] text-zinc-500 ml-1">
+                      ({signal.liquidity_ladder_summary.nearest_above.strength})
+                    </span>
+                  </div>
+                ) : <div className="text-sm text-zinc-500">-</div>}
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500">Nearest Below ({signal.liquidity_ladder_summary.levels_below_count || 0} levels)</div>
+                {signal.liquidity_ladder_summary.nearest_below ? (
+                  <div className="font-mono text-sm text-bearish">
+                    ${formatPrice(signal.liquidity_ladder_summary.nearest_below.price)}
+                    <span className="text-[10px] text-zinc-500 ml-1">
+                      ({signal.liquidity_ladder_summary.nearest_below.strength})
+                    </span>
+                  </div>
+                ) : <div className="text-sm text-zinc-500">-</div>}
+              </div>
+            </div>
+            {signal.sweep_first_expected && (
+              <div className="mt-2 pt-2 border-t border-purple-500/20">
+                <span className="text-[10px] text-yellow-400">
+                  ⚠️ Sweep expected: {signal.liquidity_ladder_summary.sweep_expectation?.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
+            <p className="text-[10px] text-zinc-400 mt-2">{signal.liquidity_ladder_summary.path_analysis}</p>
+          </div>
+        )}
+
         {/* Trade Parameters Grid */}
         {signal.direction !== 'NO TRADE' && (
           <div className="grid grid-cols-2 gap-3 mb-4">
