@@ -3172,6 +3172,127 @@ async def health_check():
         }
     }
 
+@api_router.get("/system/health")
+async def get_system_health():
+    """
+    Comprehensive system health check for all APIs.
+    Useful for verifying deployment status.
+    """
+    health = {
+        "status": "OK",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "1.7",
+        "apis": {}
+    }
+    
+    # 1. Check Kraken
+    try:
+        ticker = await fetch_kraken_ticker()
+        health["apis"]["kraken"] = {
+            "status": "OK" if ticker and ticker.get("price", 0) > 0 else "ERROR",
+            "description": "Dati di mercato BTC (prezzo, candele, order book)",
+            "api_key_required": False,
+            "btc_price": ticker.get("price", 0) if ticker else 0
+        }
+    except Exception as e:
+        health["apis"]["kraken"] = {"status": "ERROR", "error": str(e)}
+    
+    # 2. Check Coinbase
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get("https://api.exchange.coinbase.com/products/BTC-USD/ticker")
+            health["apis"]["coinbase"] = {
+                "status": "OK" if resp.status_code == 200 else "ERROR",
+                "description": "Order book per aggregazione multi-exchange",
+                "api_key_required": False
+            }
+    except Exception as e:
+        health["apis"]["coinbase"] = {"status": "ERROR", "error": str(e)}
+    
+    # 3. Check Bitstamp
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get("https://www.bitstamp.net/api/v2/ticker/btcusd/")
+            health["apis"]["bitstamp"] = {
+                "status": "OK" if resp.status_code == 200 else "ERROR",
+                "description": "Order book per aggregazione multi-exchange",
+                "api_key_required": False
+            }
+    except Exception as e:
+        health["apis"]["bitstamp"] = {"status": "ERROR", "error": str(e)}
+    
+    # 4. Check CoinGlass
+    coinglass_key = os.environ.get("COINGLASS_API_KEY", "")
+    if coinglass_key:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"coinglassSecret": coinglass_key}
+                resp = await client.get(
+                    "https://open-api-v3.coinglass.com/api/futures/funding-rate/info?symbol=BTC",
+                    headers=headers
+                )
+                data = resp.json()
+                health["apis"]["coinglass"] = {
+                    "status": "OK" if data.get("success") else "ERROR",
+                    "description": "Open Interest, Funding Rate, Liquidazioni",
+                    "api_key_required": True,
+                    "api_key_configured": True,
+                    "message": "Dati derivati attivi"
+                }
+        except Exception as e:
+            health["apis"]["coinglass"] = {"status": "ERROR", "error": str(e), "api_key_configured": True}
+    else:
+        health["apis"]["coinglass"] = {
+            "status": "NOT_CONFIGURED",
+            "description": "Open Interest, Funding Rate, Liquidazioni",
+            "api_key_required": True,
+            "api_key_configured": False,
+            "message": "Aggiungi COINGLASS_API_KEY in backend/.env"
+        }
+    
+    # 5. Check CryptoCompare (optional)
+    cryptocompare_key = os.environ.get("CRYPTOCOMPARE_API_KEY", "")
+    health["apis"]["cryptocompare"] = {
+        "status": "FALLBACK" if not cryptocompare_key else "OK",
+        "description": "Feed notizie crypto (opzionale)",
+        "api_key_required": False,
+        "api_key_configured": bool(cryptocompare_key),
+        "message": "Usando notizie generate dal mercato" if not cryptocompare_key else "Notizie esterne attive"
+    }
+    
+    # 6. Check Telegram (optional)
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    health["apis"]["telegram"] = {
+        "status": "NOT_CONFIGURED" if not (telegram_token and telegram_chat) else "OK",
+        "description": "Notifiche Telegram (opzionale)",
+        "api_key_required": True,
+        "api_key_configured": bool(telegram_token and telegram_chat),
+        "message": "Non configurato - funzionalità opzionale" if not telegram_token else "Bot Telegram attivo"
+    }
+    
+    # 7. Check MongoDB
+    try:
+        await signal_history_collection.count_documents({})
+        health["apis"]["mongodb"] = {
+            "status": "OK",
+            "description": "Database per storico segnali",
+            "api_key_required": False,
+            "message": "Database connesso"
+        }
+    except Exception as e:
+        health["apis"]["mongodb"] = {"status": "ERROR", "error": str(e)}
+    
+    # Determine overall status
+    critical_apis = ["kraken", "mongodb"]
+    for api in critical_apis:
+        if health["apis"].get(api, {}).get("status") != "OK":
+            health["status"] = "DEGRADED"
+            break
+    
+    return health
+
+
 @api_router.get("/market/status")
 async def get_market_status():
     """Get current BTCUSDT market status from Kraken"""
