@@ -814,11 +814,18 @@ async def fetch_binance_orderbook(limit: int = 100):
 
 def calculate_support_resistance_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> List[SupportResistanceLevel]:
     """
-    Calculate support and resistance levels from price data and aggregated multi-exchange order book.
+    Calculate support and resistance levels from 4H price data and aggregated multi-exchange order book.
     Enhanced with exchange information and detailed explanations.
+    
+    FILTERING RULES (for 4H BTC trading):
+    - Minimum distance between levels: 0.3% ($210+ at $70k)
+    - Levels within 0.3% are merged, keeping the strongest
+    - Maximum 8 levels returned (4 support, 4 resistance ideally)
     """
     if not candles or len(candles) < 20:
         return []
+    
+    MIN_LEVEL_DISTANCE_PCT = 0.3  # Minimum 0.3% between levels for meaningful 4H trading
     
     levels = []
     highs = [c["high"] for c in candles]
@@ -843,7 +850,7 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
                 price=round(highs[i], 2),
                 level_type="resistance",
                 strength=strength,
-                timeframe="1H",
+                timeframe="4H",  # Fixed: Now correctly labeled as 4H
                 distance_percent=round(distance, 2),
                 explanation=explanation
             ))
@@ -867,7 +874,7 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
                 price=round(lows[i], 2),
                 level_type="support",
                 strength=strength,
-                timeframe="1H",
+                timeframe="4H",  # Fixed: Now correctly labeled as 4H
                 distance_percent=round(distance, 2),
                 explanation=explanation
             ))
@@ -935,16 +942,45 @@ def calculate_support_resistance_enhanced(candles: List[dict], current_price: fl
                         explanation=explanation
                     ))
     
-    # Remove duplicates and sort by distance
-    seen_prices = set()
-    unique_levels = []
-    for level in sorted(levels, key=lambda x: abs(x.distance_percent)):
-        rounded_price = round(level.price, -1)  # Round to nearest 10
-        if rounded_price not in seen_prices:
-            seen_prices.add(rounded_price)
-            unique_levels.append(level)
+    # IMPROVED FILTERING: Merge levels that are too close together (within MIN_LEVEL_DISTANCE_PCT)
+    # Sort by price for merging
+    levels_sorted = sorted(levels, key=lambda x: x.price)
     
-    return unique_levels[:12]
+    merged_levels = []
+    for level in levels_sorted:
+        if not merged_levels:
+            merged_levels.append(level)
+            continue
+        
+        last_level = merged_levels[-1]
+        distance_between = abs(level.price - last_level.price) / last_level.price * 100
+        
+        if distance_between < MIN_LEVEL_DISTANCE_PCT:
+            # Levels too close - keep the stronger one
+            strength_rank = {"strong": 3, "moderate": 2, "weak": 1}
+            if strength_rank.get(level.strength, 0) > strength_rank.get(last_level.strength, 0):
+                merged_levels[-1] = level
+            elif strength_rank.get(level.strength, 0) == strength_rank.get(last_level.strength, 0):
+                # Same strength - keep Multi-Exchange over 4H
+                if level.timeframe == "Multi-Exchange" and last_level.timeframe != "Multi-Exchange":
+                    merged_levels[-1] = level
+        else:
+            merged_levels.append(level)
+    
+    # Sort by distance from current price and return top levels
+    # Prioritize: strong levels, then by distance
+    def level_priority(lvl):
+        strength_score = {"strong": 0, "moderate": 1, "weak": 2}.get(lvl.strength, 2)
+        return (strength_score, abs(lvl.distance_percent))
+    
+    final_levels = sorted(merged_levels, key=level_priority)
+    
+    # Return max 8 levels (balanced between support and resistance)
+    supports = [l for l in final_levels if l.level_type == "support"][:4]
+    resistances = [l for l in final_levels if l.level_type == "resistance"][:4]
+    
+    result = supports + resistances
+    return sorted(result, key=lambda x: abs(x.distance_percent))[:8]
 
 # Keep old function for backward compatibility
 def calculate_support_resistance(candles: List[dict], current_price: float, orderbook: dict = None) -> List[SupportResistanceLevel]:

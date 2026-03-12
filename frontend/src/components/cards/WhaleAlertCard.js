@@ -1,32 +1,93 @@
-import React from 'react';
-import { HelpCircle, TrendingUp, TrendingDown, Target, Shield, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { HelpCircle, TrendingUp, TrendingDown, MinusCircle, Activity, RefreshCw, Waves, BarChart3 } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import { ScrollArea } from '../ui/scroll-area';
+import { Progress } from '../ui/progress';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function WhaleAlertCard({ compact = false }) {
-  const { t, whaleAlerts, learnMode } = useApp();
-  const { alerts = [], data_source = '' } = whaleAlerts || {};
+  const { t, learnMode } = useApp();
+  const [whaleData, setWhaleData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
 
-  const formatPrice = (p) => {
-    return new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(p);
+  const fetchWhaleActivity = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/trade-signal`);
+      const data = await response.json();
+      setWhaleData(data.whale_activity);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Error fetching whale activity:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const formatTime = (ts) => {
-    const date = new Date(ts);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  useEffect(() => {
+    fetchWhaleActivity();
+    const interval = setInterval(fetchWhaleActivity, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getDirectionConfig = (direction) => {
+    switch (direction) {
+      case 'BUY':
+        return {
+          icon: TrendingUp,
+          label: 'BUYING PRESSURE',
+          color: 'bullish',
+          bgClass: 'bg-bullish/10',
+          borderClass: 'border-bullish',
+          textClass: 'text-bullish'
+        };
+      case 'SELL':
+        return {
+          icon: TrendingDown,
+          label: 'SELLING PRESSURE',
+          color: 'bearish',
+          bgClass: 'bg-bearish/10',
+          borderClass: 'border-bearish',
+          textClass: 'text-bearish'
+        };
+      default:
+        return {
+          icon: MinusCircle,
+          label: 'NEUTRAL',
+          color: 'zinc-400',
+          bgClass: 'bg-zinc-800',
+          borderClass: 'border-zinc-600',
+          textClass: 'text-zinc-400'
+        };
+    }
   };
+
+  if (loading && !whaleData) {
+    return (
+      <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card animate-pulse" data-testid="whale-alert-card">
+        <div className="px-4 py-3 border-b border-white/5">
+          <div className="h-4 bg-crypto-surface rounded w-1/3" />
+        </div>
+        <div className="p-4">
+          <div className="h-24 bg-crypto-surface rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  const config = whaleData ? getDirectionConfig(whaleData.direction) : getDirectionConfig('NEUTRAL');
+  const DirectionIcon = config.icon;
 
   return (
     <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="whale-alert-card">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-2">
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('whaleAlerts')}</h3>
+          <span className="text-lg">🐋</span>
+          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">Whale Activity</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
@@ -34,127 +95,149 @@ export function WhaleAlertCard({ compact = false }) {
                   <HelpCircle className="w-3.5 h-3.5 text-whale cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
-                  <p className="text-xs">{t('learnWhaleAlerts')}</p>
+                  <p className="text-xs">Analyzes volume spikes, order book pressure, liquidation data, and OI momentum to detect institutional activity.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
         </div>
-        {data_source && <span className="text-xs text-zinc-500 font-mono">{data_source}</span>}
+        <button 
+          onClick={fetchWhaleActivity}
+          className="p-1.5 hover:bg-white/10 rounded-sm transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
+        </button>
       </div>
 
       {/* Content */}
       <div className="p-4">
-        <ScrollArea className={compact ? "h-[200px]" : "h-[300px]"}>
-          {alerts.length > 0 ? (
-            <div className="space-y-3">
-              {alerts.map((alert, idx) => {
-                const isLong = alert.signal === 'LONG';
-                return (
-                  <div 
-                    key={alert.id || idx}
-                    className={cn(
-                      "p-3 rounded-sm border-l-2",
-                      isLong 
-                        ? "bg-bullish/5 border-bullish" 
-                        : "bg-bearish/5 border-bearish"
-                    )}
-                  >
-                    {/* Signal Header */}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        {isLong ? (
-                          <TrendingUp className="w-4 h-4 text-bullish" />
-                        ) : (
-                          <TrendingDown className="w-4 h-4 text-bearish" />
-                        )}
-                        <span className={cn(
-                          "font-mono font-bold text-sm",
-                          isLong ? "text-bullish" : "text-bearish"
-                        )}>
-                          {alert.signal}
-                        </span>
-                        <span className="text-xs text-zinc-500 font-mono">
-                          {alert.confidence?.toFixed(0)}%
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-zinc-500">
-                        {formatTime(alert.timestamp)}
-                      </span>
-                    </div>
-
-                    {/* Price Targets */}
-                    <div className="grid grid-cols-2 gap-2 mb-2">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-zinc-500">Entry:</span>
-                        <span className="font-mono text-xs">${formatPrice(alert.entry)}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Target className="w-3 h-3 text-whale" />
-                        <span className="font-mono text-xs">${formatPrice(alert.target)}</span>
-                      </div>
-                    </div>
-
-                    {/* Stop Loss & R/R */}
-                    {(alert.stop_loss || alert.risk_reward) && (
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        {alert.stop_loss && (
-                          <div className="flex items-center gap-1">
-                            <Shield className="w-3 h-3 text-bearish" />
-                            <span className="font-mono text-[10px] text-zinc-400">
-                              SL: ${formatPrice(alert.stop_loss)}
-                            </span>
-                          </div>
-                        )}
-                        {alert.risk_reward && (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-zinc-500">R/R:</span>
-                            <span className={cn(
-                              "font-mono text-[10px]",
-                              alert.risk_reward >= 2 ? "text-bullish" : "text-zinc-400"
-                            )}>
-                              {alert.risk_reward.toFixed(1)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Move & Timeframe */}
-                    <div className="flex items-center justify-between">
-                      <span className={cn(
-                        "font-mono text-xs font-semibold",
-                        isLong ? "text-bullish" : "text-bearish"
-                      )}>
-                        {alert.estimated_move > 0 ? '+' : ''}{alert.estimated_move?.toFixed(2)}%
-                      </span>
-                      <span className="text-[10px] text-zinc-500">{alert.timeframe}</span>
-                    </div>
-
-                    {/* Reason */}
-                    <div className="mt-2 pt-2 border-t border-white/5">
-                      <span className="text-xs text-zinc-400">{alert.reason}</span>
-                    </div>
-
-                    {/* Exchanges */}
-                    {alert.exchanges_detected && alert.exchanges_detected.length > 0 && (
-                      <div className="flex items-center gap-1 mt-2 pt-2 border-t border-white/5">
-                        <Globe className="w-2.5 h-2.5 text-zinc-500" />
-                        <span className="text-[10px] text-zinc-500">
-                          {alert.exchanges_detected.join(', ')}
-                        </span>
-                      </div>
-                    )}
+        {whaleData ? (
+          <div className="space-y-4">
+            {/* Direction Badge */}
+            <div className={cn(
+              "flex items-center justify-between p-3 rounded-sm border-l-2",
+              config.bgClass,
+              config.borderClass
+            )}>
+              <div className="flex items-center gap-3">
+                <DirectionIcon className={cn("w-6 h-6", config.textClass)} />
+                <div>
+                  <div className={cn("font-mono font-bold text-sm", config.textClass)}>
+                    {config.label}
                   </div>
-                );
-              })}
+                  <div className="text-xs text-zinc-500">Direction</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xl font-mono font-bold">{whaleData.strength?.toFixed(0)}%</div>
+                <div className="text-xs text-zinc-500">Strength</div>
+              </div>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-              <span className="text-xs">No whale signals detected</span>
+
+            {/* Pressure Bars */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-crypto-surface/30 p-3 rounded-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-zinc-500 flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3 text-bullish" />
+                    Buy Pressure
+                  </span>
+                  <span className="font-mono text-xs text-bullish">{whaleData.buy_pressure?.toFixed(0)}</span>
+                </div>
+                <Progress 
+                  value={whaleData.buy_pressure || 0} 
+                  className="h-1.5 bg-zinc-800"
+                  indicatorClassName="bg-bullish"
+                />
+              </div>
+              <div className="bg-crypto-surface/30 p-3 rounded-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-zinc-500 flex items-center gap-1">
+                    <TrendingDown className="w-3 h-3 text-bearish" />
+                    Sell Pressure
+                  </span>
+                  <span className="font-mono text-xs text-bearish">{whaleData.sell_pressure?.toFixed(0)}</span>
+                </div>
+                <Progress 
+                  value={whaleData.sell_pressure || 0} 
+                  className="h-1.5 bg-zinc-800"
+                  indicatorClassName="bg-bearish"
+                />
+              </div>
             </div>
-          )}
-        </ScrollArea>
+
+            {/* Indicators */}
+            {!compact && (
+              <div className="grid grid-cols-2 gap-2">
+                {/* Volume Spike */}
+                <div className={cn(
+                  "flex items-center gap-2 p-2 rounded-sm text-xs",
+                  whaleData.volume_spike ? "bg-yellow-500/10 text-yellow-400" : "bg-crypto-surface/20 text-zinc-500"
+                )}>
+                  <Waves className="w-3 h-3" />
+                  <span>Volume Spike: {whaleData.volume_spike ? `${whaleData.volume_ratio?.toFixed(1)}x` : 'None'}</span>
+                </div>
+                
+                {/* Liquidation Bias */}
+                <div className={cn(
+                  "flex items-center gap-2 p-2 rounded-sm text-xs",
+                  whaleData.liquidation_bias ? (
+                    whaleData.liquidation_bias === 'shorts_liquidated' ? "bg-bullish/10 text-bullish" : "bg-bearish/10 text-bearish"
+                  ) : "bg-crypto-surface/20 text-zinc-500"
+                )}>
+                  <BarChart3 className="w-3 h-3" />
+                  <span>
+                    {whaleData.liquidation_bias === 'shorts_liquidated' ? 'Short Squeeze' :
+                     whaleData.liquidation_bias === 'longs_liquidated' ? 'Long Cascade' : 'Balanced'}
+                  </span>
+                </div>
+
+                {/* Order Book Aggression */}
+                {whaleData.orderbook_aggression && (
+                  <div className={cn(
+                    "col-span-2 flex items-center gap-2 p-2 rounded-sm text-xs",
+                    whaleData.orderbook_aggression === 'aggressive_buying' ? "bg-bullish/10 text-bullish" : "bg-bearish/10 text-bearish"
+                  )}>
+                    <Activity className="w-3 h-3" />
+                    <span>
+                      {whaleData.orderbook_aggression === 'aggressive_buying' ? 'Aggressive Buying Detected' : 'Aggressive Selling Detected'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Explanation */}
+            <div className="pt-3 border-t border-white/5">
+              <p className="text-xs text-zinc-400">{whaleData.explanation}</p>
+            </div>
+
+            {/* Signals List */}
+            {!compact && whaleData.signals && whaleData.signals.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] text-zinc-500 uppercase">Detected Signals</div>
+                {whaleData.signals.slice(0, 4).map((signal, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-xs text-zinc-400">
+                    <span className="w-1 h-1 rounded-full bg-whale" />
+                    {signal}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Last Update */}
+            {lastUpdate && (
+              <div className="text-[10px] text-zinc-500 text-right">
+                Updated: {lastUpdate.toLocaleTimeString()}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-32 text-zinc-500">
+            <span className="text-xs">Loading whale activity...</span>
+          </div>
+        )}
       </div>
     </div>
   );
