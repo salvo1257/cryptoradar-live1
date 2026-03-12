@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, MinusCircle, Target, Shield, 
   AlertTriangle, Activity, RefreshCw, ChevronDown, ChevronUp,
-  Zap
+  Zap, Droplets, RotateCcw
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
@@ -31,7 +31,7 @@ export function TradeSignalCard({ compact = false }) {
 
   useEffect(() => {
     fetchSignal();
-    const interval = setInterval(fetchSignal, 60000); // Refresh every minute
+    const interval = setInterval(fetchSignal, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -75,6 +75,30 @@ export function TradeSignalCard({ compact = false }) {
     }
   };
 
+  const getSetupTypeBadge = (setupType) => {
+    switch (setupType) {
+      case 'sweep_reversal':
+        return (
+          <span className="flex items-center gap-1 px-2 py-0.5 bg-whale/20 text-whale border border-whale/30 rounded text-[10px] font-mono">
+            <RotateCcw className="w-3 h-3" />
+            SWEEP & REVERSAL
+          </span>
+        );
+      case 'continuation':
+        return (
+          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-mono">
+            CONTINUATION
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2 py-0.5 bg-zinc-700/50 text-zinc-400 border border-zinc-600/30 rounded text-[10px] font-mono">
+            STANDARD
+          </span>
+        );
+    }
+  };
+
   if (loading && !signal) {
     return (
       <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-6 animate-pulse">
@@ -103,6 +127,7 @@ export function TradeSignalCard({ compact = false }) {
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-whale" />
             <h3 className="font-heading font-bold text-sm uppercase tracking-wider">Trade Signal</h3>
+            {signal.setup_type && getSetupTypeBadge(signal.setup_type)}
           </div>
           <button 
             onClick={fetchSignal}
@@ -151,13 +176,51 @@ export function TradeSignalCard({ compact = false }) {
         {/* Estimated Move */}
         {signal.direction !== 'NO TRADE' && signal.estimated_move !== 0 && (
           <div className={cn(
-            "flex items-center justify-center py-3 rounded-sm mb-4",
+            "flex items-center justify-between py-3 px-4 rounded-sm mb-4",
             config.bgClass
           )}>
-            <span className="text-xs text-zinc-400 mr-2">Expected Move:</span>
-            <span className={cn("text-xl font-mono font-bold", config.textClass)}>
-              {signal.estimated_move > 0 ? '+' : ''}{signal.estimated_move?.toFixed(2)}%
-            </span>
+            <div>
+              <span className="text-xs text-zinc-400">Expected Move:</span>
+              <span className={cn("text-xl font-mono font-bold ml-2", config.textClass)}>
+                {signal.estimated_move > 0 ? '+' : ''}{signal.estimated_move?.toFixed(2)}%
+              </span>
+            </div>
+            {Math.abs(signal.estimated_move) >= 0.5 ? (
+              <span className="text-xs text-bullish">✓ Tradeable move</span>
+            ) : (
+              <span className="text-xs text-bearish">✗ Below 0.50% minimum</span>
+            )}
+          </div>
+        )}
+
+        {/* Liquidity Sweep Zone Alert */}
+        {signal.liquidity_sweep_zone && signal.direction !== 'NO TRADE' && (
+          <div className="mb-4 p-3 bg-whale/10 border border-whale/20 rounded-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Droplets className="w-4 h-4 text-whale" />
+              <span className="text-xs text-whale font-semibold uppercase">Liquidity Sweep Zone</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] text-zinc-500">Stop Hunt Zone</div>
+                <div className="font-mono text-sm text-yellow-400">
+                  ${formatPrice(signal.liquidity_sweep_zone)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-zinc-500">Safe Invalidation</div>
+                <div className="font-mono text-sm text-white">
+                  ${formatPrice(signal.safe_invalidation)}
+                </div>
+              </div>
+            </div>
+            {signal.sweep_detected && (
+              <div className="mt-2 pt-2 border-t border-whale/20">
+                <span className="text-[10px] text-whale">
+                  ⚠️ Sweep pattern detected - wait for reclaim confirmation
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -179,7 +242,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Shield className="w-3 h-3 text-bearish" />
-                Stop Loss
+                Smart Stop (Beyond Sweep)
               </div>
               <div className="font-mono text-sm text-bearish">
                 ${formatPrice(signal.stop_loss)}
@@ -214,23 +277,28 @@ export function TradeSignalCard({ compact = false }) {
         {signal.direction !== 'NO TRADE' && signal.risk_reward_ratio > 0 && (
           <div className="flex items-center justify-between py-2 px-3 bg-crypto-surface/30 rounded-sm mb-4">
             <span className="text-xs text-zinc-500">Risk/Reward Ratio</span>
-            <span className={cn(
-              "font-mono font-bold",
-              signal.risk_reward_ratio >= 2 ? "text-bullish" : 
-              signal.risk_reward_ratio >= 1 ? "text-yellow-500" : "text-bearish"
-            )}>
-              {signal.risk_reward_ratio?.toFixed(1)}:1
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                "font-mono font-bold",
+                signal.risk_reward_ratio >= 2 ? "text-bullish" : 
+                signal.risk_reward_ratio >= 1.5 ? "text-yellow-500" : "text-bearish"
+              )}>
+                {signal.risk_reward_ratio?.toFixed(1)}:1
+              </span>
+              {signal.risk_reward_ratio >= 2 && <span className="text-[10px] text-bullish">✓ Good</span>}
+              {signal.risk_reward_ratio >= 1.5 && signal.risk_reward_ratio < 2 && <span className="text-[10px] text-yellow-500">Acceptable</span>}
+              {signal.risk_reward_ratio < 1.5 && <span className="text-[10px] text-bearish">⚠️ Low</span>}
+            </div>
           </div>
         )}
 
         {/* Warnings */}
         {signal.warnings && signal.warnings.length > 0 && (
-          <div className="mb-4">
+          <div className="mb-4 space-y-1">
             {signal.warnings.map((warning, idx) => (
               <div 
                 key={idx}
-                className="flex items-start gap-2 py-2 px-3 bg-yellow-500/10 border border-yellow-500/20 rounded-sm mb-1"
+                className="flex items-start gap-2 py-2 px-3 bg-yellow-500/10 border border-yellow-500/20 rounded-sm"
               >
                 <AlertTriangle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
                 <span className="text-xs text-yellow-400">{warning}</span>
@@ -242,12 +310,12 @@ export function TradeSignalCard({ compact = false }) {
         {/* Invalidation */}
         {signal.invalidation_reason && signal.direction !== 'NO TRADE' && (
           <div className="py-2 px-3 bg-bearish/5 border border-bearish/20 rounded-sm mb-4">
-            <div className="text-xs text-zinc-500 mb-1">Invalidation</div>
+            <div className="text-xs text-zinc-500 mb-1">Invalidation Logic</div>
             <div className="text-xs text-bearish">{signal.invalidation_reason}</div>
           </div>
         )}
 
-        {/* Expand/Collapse for Details */}
+        {/* Expand/Collapse */}
         <button
           onClick={() => setExpanded(!expanded)}
           className="w-full flex items-center justify-center gap-1 py-2 text-xs text-zinc-400 hover:text-white transition-colors"
@@ -269,6 +337,17 @@ export function TradeSignalCard({ compact = false }) {
                 {signal.reasoning}
               </pre>
             </div>
+
+            {/* Sweep Analysis */}
+            {signal.sweep_analysis && (
+              <div className="bg-whale/5 border border-whale/20 p-3 rounded-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <Droplets className="w-3 h-3 text-whale" />
+                  <span className="text-xs text-whale">Liquidity Sweep Analysis</span>
+                </div>
+                <p className="text-xs text-zinc-300">{signal.sweep_analysis}</p>
+              </div>
+            )}
 
             {/* Factor Breakdown */}
             <div className="bg-crypto-surface/30 p-3 rounded-sm">

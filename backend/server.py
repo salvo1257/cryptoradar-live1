@@ -132,6 +132,12 @@ class TradeSignal(BaseModel):
     timestamp: datetime
     valid_for: str  # e.g., "4H", "1D"
     warnings: List[str]  # Risk warnings
+    # New fields for advanced BTC trading logic
+    setup_type: str = "standard"  # "standard", "sweep_reversal", "continuation"
+    liquidity_sweep_zone: Optional[float] = None  # Where liquidity sweep likely to occur
+    safe_invalidation: Optional[float] = None  # True invalidation beyond sweep zone
+    sweep_detected: bool = False  # Whether a liquidity sweep pattern is detected
+    sweep_analysis: Optional[str] = None  # Explanation of liquidity sweep context
 
 class WhaleAlert(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1889,6 +1895,12 @@ def generate_trade_signal(
     """
     Generate a final actionable trading signal by synthesizing all intelligence.
     
+    ENHANCED BTC TRADING LOGIC:
+    1. Minimum move filter: No signal if estimated move < 0.50%
+    2. Smart stop placement: Beyond liquidity sweep zones
+    3. Liquidity sweep detection: Identify sweep-and-reversal setups
+    4. Setup type classification: continuation vs sweep_reversal
+    
     Scoring System:
     - Market Bias: +/-3 points
     - Liquidity Direction: +/-2 points
@@ -1902,13 +1914,77 @@ def generate_trade_signal(
     Signal thresholds:
     - LONG: score >= 4
     - SHORT: score <= -4
-    - NO TRADE: -3 to +3
+    - NO TRADE: -3 to +3 (or move < 0.50%)
     """
+    
+    MINIMUM_MOVE_PERCENT = 0.50  # Minimum move required for a valid signal
+    LIQUIDITY_SWEEP_BUFFER = 0.003  # 0.3% beyond obvious levels for stop placement
     
     score = 0
     factors = {}
     reasoning_parts = []
     warnings = []
+    
+    # Organize S/R levels
+    supports = sorted([l for l in sr_levels if l.level_type == "support"], key=lambda x: abs(x.distance_percent))
+    resistances = sorted([l for l in sr_levels if l.level_type == "resistance"], key=lambda x: abs(x.distance_percent))
+    
+    # Find obvious stop levels (where most traders place stops)
+    obvious_long_stop = supports[0].price if supports else current_price * 0.99
+    obvious_short_stop = resistances[0].price if resistances else current_price * 1.01
+    
+    # Calculate liquidity sweep zones (just beyond obvious stops)
+    long_sweep_zone = obvious_long_stop * (1 - LIQUIDITY_SWEEP_BUFFER)  # Below obvious support
+    short_sweep_zone = obvious_short_stop * (1 + LIQUIDITY_SWEEP_BUFFER)  # Above obvious resistance
+    
+    # Safe invalidation levels (beyond sweep zone)
+    safe_long_invalidation = supports[1].price * 0.995 if len(supports) > 1 else current_price * 0.975
+    safe_short_invalidation = resistances[1].price * 1.005 if len(resistances) > 1 else current_price * 1.025
+    
+    # ================== LIQUIDITY SWEEP DETECTION ==================
+    sweep_detected = False
+    sweep_analysis = None
+    setup_type = "standard"
+    
+    # Check for potential liquidity sweep setup
+    # A sweep setup occurs when:
+    # 1. Price is near a key level (within 0.5%)
+    # 2. There's significant liquidity just beyond that level
+    # 3. The broader bias suggests reversal after the sweep
+    
+    nearest_support_dist = abs(supports[0].distance_percent) if supports else 100
+    nearest_resistance_dist = abs(resistances[0].distance_percent) if resistances else 100
+    
+    # Detect if price is approaching liquidity sweep zone
+    approaching_support_sweep = nearest_support_dist < 0.5 and supports
+    approaching_resistance_sweep = nearest_resistance_dist < 0.5 and resistances
+    
+    if approaching_support_sweep:
+        # Price near support - potential long sweep then reversal up
+        support_level = supports[0]
+        liquidity_below = sum(c.estimated_value for c in [LiquidityCluster(
+            price=support_level.price * 0.99,
+            strength="medium",
+            distance_percent=-1,
+            side="below",
+            estimated_value=support_level.volume_at_level or 100000
+        )] if hasattr(support_level, 'volume_at_level'))
+        
+        if market_bias.bias == "BULLISH" and market_bias.confidence >= 60:
+            sweep_detected = True
+            setup_type = "sweep_reversal"
+            sweep_analysis = f"Price approaching ${support_level.price:,.0f} support. Likely liquidity sweep below ${long_sweep_zone:,.0f} before bullish reversal. Wait for reclaim of ${support_level.price:,.0f} to confirm long entry."
+    
+    elif approaching_resistance_sweep:
+        # Price near resistance - potential short sweep then reversal down
+        resistance_level = resistances[0]
+        
+        if market_bias.bias == "BEARISH" and market_bias.confidence >= 60:
+            sweep_detected = True
+            setup_type = "sweep_reversal"
+            sweep_analysis = f"Price approaching ${resistance_level.price:,.0f} resistance. Likely liquidity sweep above ${short_sweep_zone:,.0f} before bearish reversal. Wait for rejection of ${resistance_level.price:,.0f} to confirm short entry."
+    
+    # ================== FACTOR SCORING ==================
     
     # 1. Market Bias Analysis (+/-3)
     bias_score = 0
@@ -1985,13 +2061,13 @@ def generate_trade_signal(
         elif funding_rate.sentiment == "bearish":
             funding_score = -1
         
-        # Overcrowded warning
+        # Overcrowded = potential squeeze = reversal opportunity
         if funding_rate.overcrowded:
-            warnings.append(f"⚠️ {funding_rate.overcrowded.capitalize()} are overcrowded - squeeze risk")
-            # Overcrowded longs is actually bearish (potential long squeeze)
             if funding_rate.overcrowded == "longs":
+                warnings.append("⚠️ Longs overcrowded - long squeeze risk / potential short opportunity")
                 funding_score -= 1
             elif funding_rate.overcrowded == "shorts":
+                warnings.append("⚠️ Shorts overcrowded - short squeeze risk / potential long opportunity")
                 funding_score += 1
     
     score += funding_score
@@ -2009,7 +2085,6 @@ def generate_trade_signal(
     oi_score = 0
     if open_interest:
         if open_interest.trend == "increasing":
-            # Increasing OI with bullish bias = bullish, with bearish bias = bearish
             if score > 0:
                 oi_score = 1
                 reasoning_parts.append("Open Interest increasing with bullish trend (new longs entering)")
@@ -2017,12 +2092,9 @@ def generate_trade_signal(
                 oi_score = -1
                 reasoning_parts.append("Open Interest increasing with bearish trend (new shorts entering)")
         elif open_interest.trend == "decreasing":
-            # Decreasing OI usually means positions closing - can signal reversal
             if score > 0:
-                oi_score = 0  # Neutral - might be profit taking
                 warnings.append("⚠️ OI decreasing - possible profit taking / exhaustion")
             elif score < 0:
-                oi_score = 0
                 warnings.append("⚠️ OI decreasing - shorts may be covering")
     
     score += oi_score
@@ -2037,7 +2109,7 @@ def generate_trade_signal(
     # 6. Pattern Signals (+/-2)
     pattern_score = 0
     if patterns:
-        for pattern in patterns[:2]:  # Consider top 2 patterns
+        for pattern in patterns[:2]:
             if pattern.direction == "BULLISH" and pattern.confidence >= 65:
                 pattern_score += 1
                 reasoning_parts.append(f"{pattern.pattern} pattern detected (bullish, {pattern.confidence:.0f}% conf)")
@@ -2045,7 +2117,7 @@ def generate_trade_signal(
                 pattern_score -= 1
                 reasoning_parts.append(f"{pattern.pattern} pattern detected (bearish, {pattern.confidence:.0f}% conf)")
     
-    pattern_score = max(-2, min(2, pattern_score))  # Clamp to +/-2
+    pattern_score = max(-2, min(2, pattern_score))
     score += pattern_score
     factors["patterns"] = {
         "count": len(patterns),
@@ -2076,10 +2148,10 @@ def generate_trade_signal(
     
     # 8. Trap Risk Assessment
     if market_bias.trap_risk == "high":
-        warnings.append("⚠️ High trap risk - potential fake breakout")
-        # High trap risk reduces confidence but doesn't change direction
+        warnings.append("⚠️ High trap risk - potential fake breakout / liquidity grab")
     
-    # Determine final direction
+    # ================== DETERMINE DIRECTION ==================
+    
     if score >= 4:
         direction = "LONG"
     elif score <= -4:
@@ -2087,61 +2159,53 @@ def generate_trade_signal(
     else:
         direction = "NO TRADE"
     
-    # Calculate confidence (normalize score to 0-100)
-    max_score = 12
-    raw_confidence = (abs(score) / max_score) * 100
-    
-    # Adjust confidence based on factor alignment
-    aligned_factors = sum(1 for f in factors.values() if isinstance(f, dict) and f.get("score", 0) * score > 0)
-    total_factors = len([f for f in factors.values() if isinstance(f, dict) and f.get("score", 0) != 0])
-    
-    if total_factors > 0:
-        alignment_bonus = (aligned_factors / total_factors) * 15
-        confidence = min(95, raw_confidence + alignment_bonus)
-    else:
-        confidence = raw_confidence
-    
-    # Reduce confidence for NO TRADE
-    if direction == "NO TRADE":
-        confidence = max(30, 60 - abs(score) * 5)  # Low confidence for mixed signals
-    
-    # Calculate entry zone, stops, and targets using S/R levels
-    supports = sorted([l for l in sr_levels if l.level_type == "support"], key=lambda x: abs(x.distance_percent))
-    resistances = sorted([l for l in sr_levels if l.level_type == "resistance"], key=lambda x: abs(x.distance_percent))
+    # ================== CALCULATE TRADE PARAMETERS ==================
     
     if direction == "LONG":
         # Entry zone: current price to nearest support
-        nearest_support = supports[0].price if supports else current_price * 0.995
-        entry_zone_low = nearest_support
+        entry_zone_low = supports[0].price if supports else current_price * 0.995
         entry_zone_high = current_price
         
-        # Stop loss: below second support or 1.5% below entry
-        stop_loss = supports[1].price * 0.998 if len(supports) > 1 else current_price * 0.985
-        invalidation_reason = f"Break below ${stop_loss:,.0f} support invalidates long thesis"
+        # SMART STOP LOSS: Beyond the liquidity sweep zone, not at obvious level
+        # Obvious stop = just below first support
+        # Smart stop = below second support OR below sweep zone
+        if len(supports) > 1:
+            # Use second support as true invalidation
+            stop_loss = safe_long_invalidation
+            invalidation_reason = f"True invalidation below ${stop_loss:,.0f} (beyond sweep zone). Obvious stops at ${obvious_long_stop:,.0f} may get swept first."
+        else:
+            stop_loss = long_sweep_zone * 0.995  # Below sweep zone
+            invalidation_reason = f"Stop placed at ${stop_loss:,.0f}, beyond likely sweep zone of ${long_sweep_zone:,.0f}"
         
-        # Targets: first two resistances
+        # Targets
         target_1 = resistances[0].price if resistances else current_price * 1.02
         target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.04
         
-        # Estimated move to target 1
         estimated_move = ((target_1 - current_price) / current_price) * 100
         
+        # Sweep zone info for LONG
+        liquidity_sweep_zone = long_sweep_zone
+        safe_invalidation = stop_loss
+        
     elif direction == "SHORT":
-        # Entry zone: current price to nearest resistance
-        nearest_resistance = resistances[0].price if resistances else current_price * 1.005
         entry_zone_low = current_price
-        entry_zone_high = nearest_resistance
+        entry_zone_high = resistances[0].price if resistances else current_price * 1.005
         
-        # Stop loss: above second resistance or 1.5% above entry
-        stop_loss = resistances[1].price * 1.002 if len(resistances) > 1 else current_price * 1.015
-        invalidation_reason = f"Break above ${stop_loss:,.0f} resistance invalidates short thesis"
+        # SMART STOP LOSS for SHORT
+        if len(resistances) > 1:
+            stop_loss = safe_short_invalidation
+            invalidation_reason = f"True invalidation above ${stop_loss:,.0f} (beyond sweep zone). Obvious stops at ${obvious_short_stop:,.0f} may get swept first."
+        else:
+            stop_loss = short_sweep_zone * 1.005
+            invalidation_reason = f"Stop placed at ${stop_loss:,.0f}, beyond likely sweep zone of ${short_sweep_zone:,.0f}"
         
-        # Targets: first two supports
         target_1 = supports[0].price if supports else current_price * 0.98
         target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
         
-        # Estimated move to target 1
         estimated_move = ((target_1 - current_price) / current_price) * 100
+        
+        liquidity_sweep_zone = short_sweep_zone
+        safe_invalidation = stop_loss
         
     else:  # NO TRADE
         entry_zone_low = current_price * 0.99
@@ -2151,35 +2215,109 @@ def generate_trade_signal(
         target_1 = 0
         target_2 = 0
         estimated_move = 0
+        liquidity_sweep_zone = None
+        safe_invalidation = None
     
-    # Calculate risk/reward ratio
+    # ================== MINIMUM MOVE FILTER ==================
+    
+    no_trade_reason = None
+    if direction != "NO TRADE":
+        if abs(estimated_move) < MINIMUM_MOVE_PERCENT:
+            no_trade_reason = f"Estimated move ({abs(estimated_move):.2f}%) is below minimum threshold ({MINIMUM_MOVE_PERCENT}%)"
+            direction = "NO TRADE"
+            warnings.append(f"⚠️ Move too small: {abs(estimated_move):.2f}% < {MINIMUM_MOVE_PERCENT}% minimum")
+    
+    # ================== CALCULATE RISK/REWARD ==================
+    
     if direction != "NO TRADE" and stop_loss > 0:
         risk = abs(current_price - stop_loss)
         reward = abs(target_1 - current_price)
         risk_reward_ratio = reward / risk if risk > 0 else 0
+        
+        # Check if R:R is acceptable (at least 1.5:1)
+        if risk_reward_ratio < 1.5:
+            warnings.append(f"⚠️ Risk/Reward ({risk_reward_ratio:.1f}:1) below ideal 1.5:1")
     else:
         risk_reward_ratio = 0
     
-    # Build final reasoning text
+    # ================== CALCULATE CONFIDENCE ==================
+    
+    max_score = 12
+    raw_confidence = (abs(score) / max_score) * 100
+    
+    aligned_factors = sum(1 for f in factors.values() if isinstance(f, dict) and f.get("score", 0) * score > 0)
+    total_factors = len([f for f in factors.values() if isinstance(f, dict) and f.get("score", 0) != 0])
+    
+    if total_factors > 0:
+        alignment_bonus = (aligned_factors / total_factors) * 15
+        confidence = min(95, raw_confidence + alignment_bonus)
+    else:
+        confidence = raw_confidence
+    
+    # Adjust confidence for sweep setups (higher confidence if sweep + reversal confirmed)
+    if sweep_detected and setup_type == "sweep_reversal":
+        confidence = min(95, confidence + 5)  # Bonus for recognizing sweep pattern
+    
     if direction == "NO TRADE":
-        reasoning = "⚠️ MIXED SIGNALS - NO CLEAR TRADE SETUP\n\n"
+        confidence = max(30, 60 - abs(score) * 5)
+    
+    # ================== BUILD REASONING TEXT ==================
+    
+    if direction == "NO TRADE":
+        if no_trade_reason:
+            reasoning = f"⚠️ NO TRADE - INSUFFICIENT MOVE\n\n{no_trade_reason}\n\n"
+        else:
+            reasoning = "⚠️ MIXED SIGNALS - NO CLEAR TRADE SETUP\n\n"
+        
         reasoning += "The intelligence factors are not aligned:\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
+        
+        if sweep_analysis:
+            reasoning += f"\n📊 Liquidity Context:\n{sweep_analysis}\n"
+        
         reasoning += "\nWait for clearer directional bias before entering a position."
+        
     else:
         dir_emoji = "🟢" if direction == "LONG" else "🔴"
-        reasoning = f"{dir_emoji} {direction} OPPORTUNITY DETECTED\n\n"
+        
+        if setup_type == "sweep_reversal":
+            reasoning = f"{dir_emoji} {direction} - SWEEP & REVERSAL SETUP\n\n"
+        else:
+            reasoning = f"{dir_emoji} {direction} - CONTINUATION SETUP\n\n"
+        
+        # Move size assessment
+        if abs(estimated_move) >= 2.0:
+            reasoning += f"✅ Large move potential: {abs(estimated_move):.2f}%\n\n"
+        elif abs(estimated_move) >= 1.0:
+            reasoning += f"✅ Decent move potential: {abs(estimated_move):.2f}%\n\n"
+        else:
+            reasoning += f"⚠️ Small move: {abs(estimated_move):.2f}% (minimum is {MINIMUM_MOVE_PERCENT}%)\n\n"
+        
         reasoning += "Key factors supporting this trade:\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
+        
+        # Liquidity sweep context
+        reasoning += f"\n📊 Liquidity & Stop Placement:\n"
+        if direction == "LONG":
+            reasoning += f"• Obvious stop hunt zone: ${long_sweep_zone:,.0f} (below first support)\n"
+            reasoning += f"• Safe invalidation: ${safe_long_invalidation:,.0f} (beyond sweep)\n"
+            reasoning += f"• Stop placed at ${stop_loss:,.0f} to avoid stop hunts\n"
+        else:
+            reasoning += f"• Obvious stop hunt zone: ${short_sweep_zone:,.0f} (above first resistance)\n"
+            reasoning += f"• Safe invalidation: ${safe_short_invalidation:,.0f} (beyond sweep)\n"
+            reasoning += f"• Stop placed at ${stop_loss:,.0f} to avoid stop hunts\n"
+        
+        if sweep_analysis:
+            reasoning += f"\n🔄 Sweep Analysis:\n{sweep_analysis}\n"
         
         if warnings:
             reasoning += "\n⚠️ Risk Warnings:\n"
             for warning in warnings:
                 reasoning += f"{warning}\n"
         
-        reasoning += f"\nRisk/Reward: {risk_reward_ratio:.1f}:1"
+        reasoning += f"\n📈 Risk/Reward: {risk_reward_ratio:.1f}:1"
     
     return TradeSignal(
         direction=direction,
@@ -2196,7 +2334,12 @@ def generate_trade_signal(
         factors=factors,
         timestamp=datetime.now(timezone.utc),
         valid_for="4H",
-        warnings=warnings
+        warnings=warnings,
+        setup_type=setup_type,
+        liquidity_sweep_zone=round(liquidity_sweep_zone, 2) if liquidity_sweep_zone else None,
+        safe_invalidation=round(safe_invalidation, 2) if safe_invalidation else None,
+        sweep_detected=sweep_detected,
+        sweep_analysis=sweep_analysis
     )
 
 # ============== API ROUTES ==============
