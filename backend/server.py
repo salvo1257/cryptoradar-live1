@@ -1749,15 +1749,15 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
     if above_value > below_value * 1.3 or len(above_clusters) > len(below_clusters) * 1.5:
         direction = "UP"
         next_target = min(c.price for c in above_clusters) if above_clusters else current_price
-        dir_explanation = f"More liquidity above current price (${above_value:,.0f} sell orders vs ${below_value:,.0f} buy orders). Price tends to seek liquidity - expect move upward to hunt stops."
+        dir_explanation = f"Più liquidità sopra il prezzo attuale (${above_value:,.0f} ordini di vendita vs ${below_value:,.0f} ordini di acquisto). Il prezzo tende a cercare liquidità - attendersi movimento verso l'alto per cacciare stop."
     elif below_value > above_value * 1.3 or len(below_clusters) > len(above_clusters) * 1.5:
         direction = "DOWN"
         next_target = max(c.price for c in below_clusters) if below_clusters else current_price
-        dir_explanation = f"More liquidity below current price (${below_value:,.0f} buy orders vs ${above_value:,.0f} sell orders). Price tends to seek liquidity - expect move downward to hunt stops."
+        dir_explanation = f"Più liquidità sotto il prezzo attuale (${below_value:,.0f} ordini di acquisto vs ${above_value:,.0f} ordini di vendita). Il prezzo tende a cercare liquidità - attendersi movimento verso il basso per cacciare stop."
     else:
         direction = "BALANCED"
         next_target = current_price
-        dir_explanation = "Balanced liquidity distribution. No clear direction - market may consolidate until imbalance develops."
+        dir_explanation = "Distribuzione liquidità bilanciata. Nessuna direzione chiara - il mercato potrebbe consolidare fino a sviluppo di sbilanciamento."
     
     imbalance_ratio = (above_value / below_value) if below_value > 0 else 1.0
     
@@ -2295,24 +2295,24 @@ def analyze_whale_activity(
     # BUILD EXPLANATION
     if direction == "BUY":
         if volume_spike and orderbook_aggression == "aggressive_buying":
-            explanation = "Large buy pressure detected: volume spike combined with heavy bid-side order book."
+            explanation = "Forte pressione di acquisto rilevata: picco di volume combinato con order book pesantemente lato bid."
         elif liquidation_bias == "shorts_liquidated":
-            explanation = "Whale buying pressure: short squeeze in progress with heavy short liquidations."
+            explanation = "Pressione di acquisto delle balene: short squeeze in corso con pesanti liquidazioni short."
         elif signals:
-            explanation = f"Buy pressure detected: {signals[0]}"
+            explanation = f"Pressione di acquisto rilevata: {signals[0]}"
         else:
-            explanation = "Moderate whale buying activity detected across exchanges."
+            explanation = "Attività moderata di acquisto balene rilevata sugli exchange."
     elif direction == "SELL":
         if volume_spike and orderbook_aggression == "aggressive_selling":
-            explanation = "Large sell pressure detected: volume spike combined with heavy ask-side order book."
+            explanation = "Forte pressione di vendita rilevata: picco di volume combinato con order book pesantemente lato ask."
         elif liquidation_bias == "longs_liquidated":
-            explanation = "Whale selling pressure: long liquidation cascade with heavy long liquidations."
+            explanation = "Pressione di vendita delle balene: cascata di liquidazioni long in corso."
         elif signals:
-            explanation = f"Sell pressure detected: {signals[0]}"
+            explanation = f"Pressione di vendita rilevata: {signals[0]}"
         else:
-            explanation = "Moderate whale selling activity detected across exchanges."
+            explanation = "Attività moderata di vendita balene rilevata sugli exchange."
     else:
-        explanation = "No clear whale directional bias. Activity is balanced or insufficient for signal."
+        explanation = "Nessun bias direzionale chiaro delle balene. Attività bilanciata o insufficiente per generare segnale."
     
     return WhaleActivity(
         direction=direction,
@@ -2525,19 +2525,19 @@ def build_liquidity_ladder(
         # If much more liquidity above and closer, expect upward sweep first
         if more_attractive_side == "above" and above_dist < below_dist * 1.5:
             sweep_expectation = "sweep_above_first"
-            path_analysis = f"Upper liquidity ladder is stronger (${above_total_value/1000000:.1f}M above vs ${below_total_value/1000000:.1f}M below). Price likely to sweep ${nearest_above.price:,.0f} before potential reversal."
+            path_analysis = f"Scala di liquidità superiore più forte (${above_total_value/1000000:.1f}M sopra vs ${below_total_value/1000000:.1f}M sotto). Prezzo probabile sweep verso ${nearest_above.price:,.0f} prima di potenziale inversione."
         elif more_attractive_side == "below" and below_dist < above_dist * 1.5:
             sweep_expectation = "sweep_below_first"
-            path_analysis = f"Lower liquidity ladder is stronger (${below_total_value/1000000:.1f}M below vs ${above_total_value/1000000:.1f}M above). Price likely to sweep ${nearest_below.price:,.0f} before potential reversal."
+            path_analysis = f"Scala di liquidità inferiore più forte (${below_total_value/1000000:.1f}M sotto vs ${above_total_value/1000000:.1f}M sopra). Prezzo probabile sweep verso ${nearest_below.price:,.0f} prima di potenziale inversione."
         elif more_attractive_side == "balanced":
             sweep_expectation = "balanced"
-            path_analysis = f"Balanced liquidity distribution. No clear sweep direction - watch for breakout catalyst."
+            path_analysis = f"Distribuzione liquidità bilanciata. Nessuna direzione di sweep chiara - monitorare per catalizzatore di breakout."
         else:
             sweep_expectation = "no_clear_sweep"
-            path_analysis = f"Liquidity levels present but no clear sweep setup. Monitor for accumulation/distribution."
+            path_analysis = f"Livelli di liquidità presenti ma nessun setup di sweep chiaro. Monitorare accumulazione/distribuzione."
     else:
         sweep_expectation = "no_clear_sweep"
-        path_analysis = "Insufficient liquidity data for path analysis."
+        path_analysis = "Dati di liquidità insufficienti per l'analisi del percorso."
     
     return LiquidityLadder(
         current_price=round(current_price, 2),
@@ -2653,7 +2653,7 @@ def generate_trade_signal(
         if market_bias.bias == "BULLISH" and market_bias.confidence >= 60:
             sweep_detected = True
             setup_type = "sweep_reversal"
-            sweep_analysis = f"Price approaching ${support_level.price:,.0f} support. Likely liquidity sweep below ${long_sweep_zone:,.0f} before bullish reversal. Wait for reclaim of ${support_level.price:,.0f} to confirm long entry."
+            sweep_analysis = f"Il prezzo si avvicina al supporto ${support_level.price:,.0f}. Probabile sweep della liquidità sotto ${long_sweep_zone:,.0f} prima di un'inversione bullish. Attendere il recupero di ${support_level.price:,.0f} per confermare l'ingresso long."
     
     elif approaching_resistance_sweep:
         # Price near resistance - potential short sweep then reversal down
@@ -2662,7 +2662,7 @@ def generate_trade_signal(
         if market_bias.bias == "BEARISH" and market_bias.confidence >= 60:
             sweep_detected = True
             setup_type = "sweep_reversal"
-            sweep_analysis = f"Price approaching ${resistance_level.price:,.0f} resistance. Likely liquidity sweep above ${short_sweep_zone:,.0f} before bearish reversal. Wait for rejection of ${resistance_level.price:,.0f} to confirm short entry."
+            sweep_analysis = f"Il prezzo si avvicina alla resistenza ${resistance_level.price:,.0f}. Probabile sweep della liquidità sopra ${short_sweep_zone:,.0f} prima di un'inversione bearish. Attendere il rigetto di ${resistance_level.price:,.0f} per confermare l'ingresso short."
     
     # ================== FACTOR SCORING ==================
     
@@ -2682,9 +2682,9 @@ def generate_trade_signal(
     }
     
     if bias_score > 0:
-        reasoning_parts.append(f"Market Bias is {market_bias.bias} with {market_bias.confidence:.0f}% confidence")
+        reasoning_parts.append(f"Bias di Mercato è {market_bias.bias} con confidenza del {market_bias.confidence:.0f}%")
     elif bias_score < 0:
-        reasoning_parts.append(f"Market Bias is {market_bias.bias} with {market_bias.confidence:.0f}% confidence")
+        reasoning_parts.append(f"Bias di Mercato è {market_bias.bias} con confidenza del {market_bias.confidence:.0f}%")
     
     # 2. Liquidity Direction (+/-2)
     liq_score = 0
@@ -2703,7 +2703,7 @@ def generate_trade_signal(
     }
     
     if liq_score != 0:
-        reasoning_parts.append(f"Liquidity points {liquidity_direction.direction} toward ${liquidity_direction.next_target:,.0f}")
+        reasoning_parts.append(f"La liquidità punta verso {liquidity_direction.direction} in direzione ${liquidity_direction.next_target:,.0f}")
     
     # 3. Exchange Consensus (+/-2)
     exchange_score = 0
@@ -2717,9 +2717,9 @@ def generate_trade_signal(
         elif bearish_count >= 2:
             exchange_score = -2 if bearish_count == total else -1
         
-        consensus_text = f"{bullish_count}/{total} exchanges bullish, {bearish_count}/{total} bearish"
+        consensus_text = f"{bullish_count}/{total} exchange bullish, {bearish_count}/{total} bearish"
     else:
-        consensus_text = "Exchange data unavailable"
+        consensus_text = "Dati exchange non disponibili"
     
     score += exchange_score
     factors["exchange_consensus"] = {
@@ -2729,9 +2729,9 @@ def generate_trade_signal(
     }
     
     if exchange_score > 0:
-        reasoning_parts.append(f"Multi-exchange consensus is bullish ({consensus_text})")
+        reasoning_parts.append(f"Consenso multi-exchange è bullish ({consensus_text})")
     elif exchange_score < 0:
-        reasoning_parts.append(f"Multi-exchange consensus is bearish ({consensus_text})")
+        reasoning_parts.append(f"Consenso multi-exchange è bearish ({consensus_text})")
     
     # 4. Funding Rate (+/-1)
     funding_score = 0
@@ -2744,10 +2744,10 @@ def generate_trade_signal(
         # Overcrowded = potential squeeze = reversal opportunity
         if funding_rate.overcrowded:
             if funding_rate.overcrowded == "longs":
-                warnings.append("⚠️ Longs overcrowded - long squeeze risk / potential short opportunity")
+                warnings.append("⚠️ Long affollati - rischio squeeze long / opportunità short potenziale")
                 funding_score -= 1
             elif funding_rate.overcrowded == "shorts":
-                warnings.append("⚠️ Shorts overcrowded - short squeeze risk / potential long opportunity")
+                warnings.append("⚠️ Short affollati - rischio squeeze short / opportunità long potenziale")
                 funding_score += 1
     
     score += funding_score
@@ -2759,7 +2759,7 @@ def generate_trade_signal(
     }
     
     if funding_score != 0:
-        reasoning_parts.append(f"Funding rate sentiment is {funding_rate.sentiment}")
+        reasoning_parts.append(f"Il sentiment del funding rate è {funding_rate.sentiment}")
     
     # 5. Open Interest Trend (+/-1)
     oi_score = 0
@@ -2767,15 +2767,15 @@ def generate_trade_signal(
         if open_interest.trend == "increasing":
             if score > 0:
                 oi_score = 1
-                reasoning_parts.append("Open Interest increasing with bullish trend (new longs entering)")
+                reasoning_parts.append("Open Interest in aumento con trend bullish (nuovi long in ingresso)")
             elif score < 0:
                 oi_score = -1
-                reasoning_parts.append("Open Interest increasing with bearish trend (new shorts entering)")
+                reasoning_parts.append("Open Interest in aumento con trend bearish (nuovi short in ingresso)")
         elif open_interest.trend == "decreasing":
             if score > 0:
-                warnings.append("⚠️ OI decreasing - possible profit taking / exhaustion")
+                warnings.append("⚠️ OI in diminuzione - possibile presa di profitto / esaurimento")
             elif score < 0:
-                warnings.append("⚠️ OI decreasing - shorts may be covering")
+                warnings.append("⚠️ OI in diminuzione - gli short potrebbero stare coprendo")
     
     score += oi_score
     factors["open_interest"] = {
@@ -2792,10 +2792,10 @@ def generate_trade_signal(
         for pattern in patterns[:2]:
             if pattern.direction == "BULLISH" and pattern.confidence >= 65:
                 pattern_score += 1
-                reasoning_parts.append(f"{pattern.pattern} pattern detected (bullish, {pattern.confidence:.0f}% conf)")
+                reasoning_parts.append(f"Pattern {pattern.pattern} rilevato (bullish, {pattern.confidence:.0f}% conf)")
             elif pattern.direction == "BEARISH" and pattern.confidence >= 65:
                 pattern_score -= 1
-                reasoning_parts.append(f"{pattern.pattern} pattern detected (bearish, {pattern.confidence:.0f}% conf)")
+                reasoning_parts.append(f"Pattern {pattern.pattern} rilevato (bearish, {pattern.confidence:.0f}% conf)")
     
     pattern_score = max(-2, min(2, pattern_score))
     score += pattern_score
@@ -2814,10 +2814,10 @@ def generate_trade_signal(
         
         if long_signals > short_signals:
             whale_score = 1
-            reasoning_parts.append(f"Whale activity favors longs ({long_signals} long vs {short_signals} short signals)")
+            reasoning_parts.append(f"Attività balene favorisce i long ({long_signals} long vs {short_signals} short)")
         elif short_signals > long_signals:
             whale_score = -1
-            reasoning_parts.append(f"Whale activity favors shorts ({short_signals} short vs {long_signals} long signals)")
+            reasoning_parts.append(f"Attività balene favorisce gli short ({short_signals} short vs {long_signals} long)")
     
     score += whale_score
     factors["whale_alerts"] = {
@@ -2833,21 +2833,21 @@ def generate_trade_signal(
     if whale_activity:
         if whale_activity.direction == "BUY" and whale_activity.strength >= 40:
             whale_engine_score = 2 if whale_activity.strength >= 70 else 1
-            reasoning_parts.append(f"Whale Engine detects BUY pressure ({whale_activity.strength:.0f}% strength): {whale_activity.explanation}")
+            reasoning_parts.append(f"Whale Engine rileva pressione di ACQUISTO ({whale_activity.strength:.0f}% forza): {whale_activity.explanation}")
         elif whale_activity.direction == "SELL" and whale_activity.strength >= 40:
             whale_engine_score = -2 if whale_activity.strength >= 70 else -1
-            reasoning_parts.append(f"Whale Engine detects SELL pressure ({whale_activity.strength:.0f}% strength): {whale_activity.explanation}")
+            reasoning_parts.append(f"Whale Engine rileva pressione di VENDITA ({whale_activity.strength:.0f}% forza): {whale_activity.explanation}")
         
         # Add specific whale signals as warnings/context
         if whale_activity.volume_spike:
-            warnings.append(f"🐋 Volume spike detected: {whale_activity.volume_ratio:.1f}x average")
+            warnings.append(f"🐋 Picco di volume rilevato: {whale_activity.volume_ratio:.1f}x la media")
         if whale_activity.liquidation_bias == "longs_liquidated":
-            warnings.append("🐋 Long liquidation cascade in progress")
+            warnings.append("🐋 Cascata di liquidazioni long in corso")
         elif whale_activity.liquidation_bias == "shorts_liquidated":
-            warnings.append("🐋 Short squeeze in progress")
+            warnings.append("🐋 Short squeeze in corso")
         if whale_activity.orderbook_aggression:
-            aggression_text = "aggressive buying" if whale_activity.orderbook_aggression == "aggressive_buying" else "aggressive selling"
-            warnings.append(f"🐋 Order book shows {aggression_text}")
+            aggression_text = "acquisto aggressivo" if whale_activity.orderbook_aggression == "aggressive_buying" else "vendita aggressiva"
+            warnings.append(f"🐋 L'order book mostra {aggression_text}")
     
     score += whale_engine_score
     factors["whale_engine"] = {
@@ -2867,20 +2867,20 @@ def generate_trade_signal(
         # If ladder shows more attractive liquidity in one direction, that's where price will seek
         if liquidity_ladder.more_attractive_side == "above":
             ladder_score = 1  # Bullish - price seeks upside liquidity
-            reasoning_parts.append(f"Liquidity Ladder: More liquidity above - path analysis suggests upward sweep toward ${liquidity_ladder.major_above.price:,.0f}" if liquidity_ladder.major_above else "Liquidity Ladder: Path favors upside")
+            reasoning_parts.append(f"Liquidity Ladder: Più liquidità sopra - analisi percorso suggerisce sweep verso ${liquidity_ladder.major_above.price:,.0f}" if liquidity_ladder.major_above else "Liquidity Ladder: Percorso favorisce il rialzo")
         elif liquidity_ladder.more_attractive_side == "below":
             ladder_score = -1  # Bearish - price seeks downside liquidity
-            reasoning_parts.append(f"Liquidity Ladder: More liquidity below - path analysis suggests downward sweep toward ${liquidity_ladder.major_below.price:,.0f}" if liquidity_ladder.major_below else "Liquidity Ladder: Path favors downside")
+            reasoning_parts.append(f"Liquidity Ladder: Più liquidità sotto - analisi percorso suggerisce sweep verso ${liquidity_ladder.major_below.price:,.0f}" if liquidity_ladder.major_below else "Liquidity Ladder: Percorso favorisce il ribasso")
         
         # Determine sweep expectation
         if liquidity_ladder.sweep_expectation == "sweep_below_first":
             sweep_first_expected = True
             if score > 0:  # Currently bullish
-                warnings.append(f"⚠️ Sweep expected: Price may dip to ${liquidity_ladder.nearest_below.price:,.0f} before moving up" if liquidity_ladder.nearest_below else "⚠️ Potential dip before move up")
+                warnings.append(f"⚠️ Sweep atteso: Il prezzo potrebbe scendere a ${liquidity_ladder.nearest_below.price:,.0f} prima di salire" if liquidity_ladder.nearest_below else "⚠️ Possibile discesa prima del rialzo")
         elif liquidity_ladder.sweep_expectation == "sweep_above_first":
             sweep_first_expected = True
             if score < 0:  # Currently bearish
-                warnings.append(f"⚠️ Sweep expected: Price may spike to ${liquidity_ladder.nearest_above.price:,.0f} before moving down" if liquidity_ladder.nearest_above else "⚠️ Potential spike before move down")
+                warnings.append(f"⚠️ Sweep atteso: Il prezzo potrebbe salire a ${liquidity_ladder.nearest_above.price:,.0f} prima di scendere" if liquidity_ladder.nearest_above else "⚠️ Possibile spike prima del ribasso")
     
     score += ladder_score
     factors["liquidity_ladder"] = {
@@ -2894,7 +2894,7 @@ def generate_trade_signal(
     
     # 10. Trap Risk Assessment
     if market_bias.trap_risk == "high":
-        warnings.append("⚠️ High trap risk - potential fake breakout / liquidity grab")
+        warnings.append("⚠️ Alto rischio di trappola - possibile falso breakout / caccia alla liquidità")
     
     # ================== DETERMINE DIRECTION ==================
     
@@ -2918,10 +2918,10 @@ def generate_trade_signal(
         if len(supports) > 1:
             # Use second support as true invalidation
             stop_loss = safe_long_invalidation
-            invalidation_reason = f"True invalidation below ${stop_loss:,.0f} (beyond sweep zone). Obvious stops at ${obvious_long_stop:,.0f} may get swept first."
+            invalidation_reason = f"Invalidazione reale sotto ${stop_loss:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${obvious_long_stop:,.0f} potrebbero essere spazzati prima."
         else:
             stop_loss = long_sweep_zone * 0.995  # Below sweep zone
-            invalidation_reason = f"Stop placed at ${stop_loss:,.0f}, beyond likely sweep zone of ${long_sweep_zone:,.0f}"
+            invalidation_reason = f"Stop posizionato a ${stop_loss:,.0f}, oltre la probabile zona di sweep di ${long_sweep_zone:,.0f}"
         
         # Targets
         target_1 = resistances[0].price if resistances else current_price * 1.02
@@ -2940,10 +2940,10 @@ def generate_trade_signal(
         # SMART STOP LOSS for SHORT
         if len(resistances) > 1:
             stop_loss = safe_short_invalidation
-            invalidation_reason = f"True invalidation above ${stop_loss:,.0f} (beyond sweep zone). Obvious stops at ${obvious_short_stop:,.0f} may get swept first."
+            invalidation_reason = f"Invalidazione reale sopra ${stop_loss:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${obvious_short_stop:,.0f} potrebbero essere spazzati prima."
         else:
             stop_loss = short_sweep_zone * 1.005
-            invalidation_reason = f"Stop placed at ${stop_loss:,.0f}, beyond likely sweep zone of ${short_sweep_zone:,.0f}"
+            invalidation_reason = f"Stop posizionato a ${stop_loss:,.0f}, oltre la probabile zona di sweep di ${short_sweep_zone:,.0f}"
         
         target_1 = supports[0].price if supports else current_price * 0.98
         target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
@@ -2957,7 +2957,7 @@ def generate_trade_signal(
         entry_zone_low = current_price * 0.99
         entry_zone_high = current_price * 1.01
         stop_loss = 0
-        invalidation_reason = "Mixed signals - wait for clearer setup"
+        invalidation_reason = "Segnali misti - attendere configurazione più chiara"
         target_1 = 0
         target_2 = 0
         estimated_move = 0
@@ -2969,9 +2969,9 @@ def generate_trade_signal(
     no_trade_reason = None
     if direction != "NO TRADE":
         if abs(estimated_move) < MINIMUM_MOVE_PERCENT:
-            no_trade_reason = f"Estimated move ({abs(estimated_move):.2f}%) is below minimum threshold ({MINIMUM_MOVE_PERCENT}%)"
+            no_trade_reason = f"Movimento stimato ({abs(estimated_move):.2f}%) è sotto la soglia minima ({MINIMUM_MOVE_PERCENT}%)"
             direction = "NO TRADE"
-            warnings.append(f"⚠️ Move too small: {abs(estimated_move):.2f}% < {MINIMUM_MOVE_PERCENT}% minimum")
+            warnings.append(f"⚠️ Movimento troppo piccolo: {abs(estimated_move):.2f}% < {MINIMUM_MOVE_PERCENT}% minimo")
     
     # ================== CALCULATE RISK/REWARD ==================
     
@@ -2982,7 +2982,7 @@ def generate_trade_signal(
         
         # Check if R:R is acceptable (at least 1.5:1)
         if risk_reward_ratio < 1.5:
-            warnings.append(f"⚠️ Risk/Reward ({risk_reward_ratio:.1f}:1) below ideal 1.5:1")
+            warnings.append(f"⚠️ Risk/Reward ({risk_reward_ratio:.1f}:1) sotto l'ideale 1.5:1")
     else:
         risk_reward_ratio = 0
     
@@ -3011,63 +3011,63 @@ def generate_trade_signal(
     
     if direction == "NO TRADE":
         if no_trade_reason:
-            reasoning = f"⚠️ NO TRADE - INSUFFICIENT MOVE\n\n{no_trade_reason}\n\n"
+            reasoning = f"⚠️ NO TRADE - MOVIMENTO INSUFFICIENTE\n\n{no_trade_reason}\n\n"
         else:
-            reasoning = "⚠️ MIXED SIGNALS - NO CLEAR TRADE SETUP\n\n"
+            reasoning = "⚠️ SEGNALI MISTI - NESSUNA CONFIGURAZIONE CHIARA\n\n"
         
-        reasoning += "The intelligence factors are not aligned:\n"
+        reasoning += "I fattori di intelligence non sono allineati:\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
         
         if sweep_analysis:
-            reasoning += f"\n📊 Liquidity Context:\n{sweep_analysis}\n"
+            reasoning += f"\n📊 Contesto Liquidità:\n{sweep_analysis}\n"
         
-        reasoning += "\nWait for clearer directional bias before entering a position."
+        reasoning += "\nAttendere un bias direzionale più chiaro prima di entrare in posizione."
         
     else:
         dir_emoji = "🟢" if direction == "LONG" else "🔴"
         
         if setup_type == "sweep_reversal":
-            reasoning = f"{dir_emoji} {direction} - SWEEP & REVERSAL SETUP\n\n"
+            reasoning = f"{dir_emoji} {direction} - CONFIGURAZIONE SWEEP E INVERSIONE\n\n"
         else:
-            reasoning = f"{dir_emoji} {direction} - CONTINUATION SETUP\n\n"
+            reasoning = f"{dir_emoji} {direction} - CONFIGURAZIONE CONTINUAZIONE\n\n"
         
         # Move size assessment
         if abs(estimated_move) >= 2.0:
-            reasoning += f"✅ Large move potential: {abs(estimated_move):.2f}%\n\n"
+            reasoning += f"✅ Grande potenziale di movimento: {abs(estimated_move):.2f}%\n\n"
         elif abs(estimated_move) >= 1.0:
-            reasoning += f"✅ Decent move potential: {abs(estimated_move):.2f}%\n\n"
+            reasoning += f"✅ Discreto potenziale di movimento: {abs(estimated_move):.2f}%\n\n"
         else:
-            reasoning += f"⚠️ Small move: {abs(estimated_move):.2f}% (minimum is {MINIMUM_MOVE_PERCENT}%)\n\n"
+            reasoning += f"⚠️ Movimento ridotto: {abs(estimated_move):.2f}% (minimo è {MINIMUM_MOVE_PERCENT}%)\n\n"
         
-        reasoning += "Key factors supporting this trade:\n"
+        reasoning += "Fattori chiave a supporto del trade:\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
         
         # Liquidity sweep context
-        reasoning += f"\n📊 Liquidity & Stop Placement:\n"
+        reasoning += f"\n📊 Liquidità & Posizionamento Stop:\n"
         if direction == "LONG":
-            reasoning += f"• Obvious stop hunt zone: ${long_sweep_zone:,.0f} (below first support)\n"
-            reasoning += f"• Safe invalidation: ${safe_long_invalidation:,.0f} (beyond sweep)\n"
-            reasoning += f"• Stop placed at ${stop_loss:,.0f} to avoid stop hunts\n"
+            reasoning += f"• Zona di caccia stop ovvia: ${long_sweep_zone:,.0f} (sotto primo supporto)\n"
+            reasoning += f"• Invalidazione sicura: ${safe_long_invalidation:,.0f} (oltre lo sweep)\n"
+            reasoning += f"• Stop posizionato a ${stop_loss:,.0f} per evitare caccia agli stop\n"
         else:
-            reasoning += f"• Obvious stop hunt zone: ${short_sweep_zone:,.0f} (above first resistance)\n"
-            reasoning += f"• Safe invalidation: ${safe_short_invalidation:,.0f} (beyond sweep)\n"
-            reasoning += f"• Stop placed at ${stop_loss:,.0f} to avoid stop hunts\n"
+            reasoning += f"• Zona di caccia stop ovvia: ${short_sweep_zone:,.0f} (sopra prima resistenza)\n"
+            reasoning += f"• Invalidazione sicura: ${safe_short_invalidation:,.0f} (oltre lo sweep)\n"
+            reasoning += f"• Stop posizionato a ${stop_loss:,.0f} per evitare caccia agli stop\n"
         
         if sweep_analysis:
-            reasoning += f"\n🔄 Sweep Analysis:\n{sweep_analysis}\n"
+            reasoning += f"\n🔄 Analisi Sweep:\n{sweep_analysis}\n"
         
         # Add liquidity ladder path analysis
         if liquidity_ladder and liquidity_ladder.path_analysis:
-            reasoning += f"\n🪜 Liquidity Path:\n{liquidity_ladder.path_analysis}\n"
+            reasoning += f"\n🪜 Percorso Liquidità:\n{liquidity_ladder.path_analysis}\n"
         
         # Add whale activity summary
         if whale_activity and whale_activity.direction != "NEUTRAL":
-            reasoning += f"\n🐋 Whale Activity:\n{whale_activity.explanation}\n"
+            reasoning += f"\n🐋 Attività Balene:\n{whale_activity.explanation}\n"
         
         if warnings:
-            reasoning += "\n⚠️ Risk Warnings:\n"
+            reasoning += "\n⚠️ Avvisi di Rischio:\n"
             for warning in warnings:
                 reasoning += f"{warning}\n"
         

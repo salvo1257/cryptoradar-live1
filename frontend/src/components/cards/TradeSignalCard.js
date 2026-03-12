@@ -91,13 +91,13 @@ export function TradeSignalCard({ compact = false }) {
         return (
           <span className="flex items-center gap-1 px-2 py-0.5 bg-whale/20 text-whale border border-whale/30 rounded text-[10px] font-mono">
             <RotateCcw className="w-3 h-3" />
-            SWEEP & REVERSAL
+            {language === 'it' ? 'SWEEP E INVERSIONE' : 'SWEEP & REVERSAL'}
           </span>
         );
       case 'continuation':
         return (
           <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-mono">
-            CONTINUATION
+            {language === 'it' ? 'CONTINUAZIONE' : 'CONTINUATION'}
           </span>
         );
       default:
@@ -227,7 +227,7 @@ export function TradeSignalCard({ compact = false }) {
             {signal.sweep_detected && (
               <div className="mt-2 pt-2 border-t border-whale/20">
                 <span className="text-[10px] text-whale">
-                  ⚠️ Sweep pattern detected - wait for reclaim confirmation
+                  {language === 'it' ? '⚠️ Pattern sweep rilevato - attendere conferma di recupero' : '⚠️ Sweep pattern detected - wait for reclaim confirmation'}
                 </span>
               </div>
             )}
@@ -240,33 +240,33 @@ export function TradeSignalCard({ compact = false }) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">🐋</span>
-                <span className="text-xs text-blue-400 font-semibold uppercase">Whale Activity Engine</span>
+                <span className="text-xs text-blue-400 font-semibold uppercase">{language === 'it' ? 'Motore Attività Balene' : 'Whale Activity Engine'}</span>
               </div>
               <span className={cn(
                 "px-2 py-0.5 rounded text-[10px] font-mono font-bold",
                 signal.whale_activity.direction === 'BUY' ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
               )}>
-                {signal.whale_activity.direction}
+                {signal.whale_activity.direction === 'BUY' ? (language === 'it' ? 'ACQUISTO' : 'BUY') : (language === 'it' ? 'VENDITA' : 'SELL')}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2 mb-2">
               <div>
-                <div className="text-[10px] text-zinc-500">Strength</div>
+                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Forza' : 'Strength'}</div>
                 <div className="font-mono text-sm">{signal.whale_activity.strength?.toFixed(0)}%</div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">Buy Pressure</div>
+                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Press. Acquisto' : 'Buy Pressure'}</div>
                 <div className="font-mono text-sm text-bullish">{signal.whale_activity.buy_pressure?.toFixed(0)}</div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">Sell Pressure</div>
+                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Press. Vendita' : 'Sell Pressure'}</div>
                 <div className="font-mono text-sm text-bearish">{signal.whale_activity.sell_pressure?.toFixed(0)}</div>
               </div>
             </div>
             <p className="text-[10px] text-zinc-400">{signal.whale_activity.explanation}</p>
             {signal.whale_confirms_direction && (
               <div className="mt-2 pt-2 border-t border-blue-500/20">
-                <span className="text-[10px] text-bullish">✓ Whale activity confirms signal direction</span>
+                <span className="text-[10px] text-bullish">{language === 'it' ? '✓ Attività balene conferma la direzione del segnale' : '✓ Whale activity confirms signal direction'}</span>
               </div>
             )}
           </div>
@@ -278,7 +278,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">🪜</span>
-                <span className="text-xs text-purple-400 font-semibold uppercase">Liquidity Ladder</span>
+                <span className="text-xs text-purple-400 font-semibold uppercase">{language === 'it' ? 'Scala Liquidità' : 'Liquidity Ladder'}</span>
               </div>
               <span className={cn(
                 "px-2 py-0.5 rounded text-[10px] font-mono",
@@ -286,12 +286,14 @@ export function TradeSignalCard({ compact = false }) {
                 signal.liquidity_ladder_summary.more_attractive_side === 'below' ? "bg-bearish/20 text-bearish" :
                 "bg-zinc-700 text-zinc-400"
               )}>
-                {signal.liquidity_ladder_summary.more_attractive_side?.toUpperCase()}
+                {signal.liquidity_ladder_summary.more_attractive_side === 'above' ? (language === 'it' ? 'SOPRA' : 'ABOVE') :
+                 signal.liquidity_ladder_summary.more_attractive_side === 'below' ? (language === 'it' ? 'SOTTO' : 'BELOW') :
+                 (language === 'it' ? 'BILANCIATO' : 'BALANCED')}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-2">
               <div>
-                <div className="text-[10px] text-zinc-500">Nearest Above ({signal.liquidity_ladder_summary.levels_above_count || 0} levels)</div>
+                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Più Vicino Sopra' : 'Nearest Above'} ({signal.liquidity_ladder_summary.levels_above_count || 0} {language === 'it' ? 'livelli' : 'levels'})</div>
                 {signal.liquidity_ladder_summary.nearest_above ? (
                   <div className="font-mono text-sm text-bullish">
                     ${formatPrice(signal.liquidity_ladder_summary.nearest_above.price)}
@@ -302,7 +304,7 @@ export function TradeSignalCard({ compact = false }) {
                 ) : <div className="text-sm text-zinc-500">-</div>}
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">Nearest Below ({signal.liquidity_ladder_summary.levels_below_count || 0} levels)</div>
+                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Più Vicino Sotto' : 'Nearest Below'} ({signal.liquidity_ladder_summary.levels_below_count || 0} {language === 'it' ? 'livelli' : 'levels'})</div>
                 {signal.liquidity_ladder_summary.nearest_below ? (
                   <div className="font-mono text-sm text-bearish">
                     ${formatPrice(signal.liquidity_ladder_summary.nearest_below.price)}
@@ -316,7 +318,7 @@ export function TradeSignalCard({ compact = false }) {
             {signal.sweep_first_expected && (
               <div className="mt-2 pt-2 border-t border-purple-500/20">
                 <span className="text-[10px] text-yellow-400">
-                  ⚠️ Sweep expected: {signal.liquidity_ladder_summary.sweep_expectation?.replace(/_/g, ' ')}
+                  {language === 'it' ? '⚠️ Sweep atteso' : '⚠️ Sweep expected'}: {signal.liquidity_ladder_summary.sweep_expectation?.replace(/_/g, ' ')}
                 </span>
               </div>
             )}
@@ -331,7 +333,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Activity className="w-3 h-3" />
-                Entry Zone
+                {language === 'it' ? 'Zona di Ingresso' : 'Entry Zone'}
               </div>
               <div className="font-mono text-sm">
                 ${formatPrice(signal.entry_zone_low)} - ${formatPrice(signal.entry_zone_high)}
@@ -342,7 +344,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Shield className="w-3 h-3 text-bearish" />
-                Smart Stop (Beyond Sweep)
+                {language === 'it' ? 'Stop Intelligente (Oltre Sweep)' : 'Smart Stop (Beyond Sweep)'}
               </div>
               <div className="font-mono text-sm text-bearish">
                 ${formatPrice(signal.stop_loss)}
@@ -353,7 +355,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-bullish" />
-                Target 1
+                {language === 'it' ? 'Obiettivo 1' : 'Target 1'}
               </div>
               <div className="font-mono text-sm text-bullish">
                 ${formatPrice(signal.target_1)}
@@ -364,7 +366,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-whale" />
-                Target 2
+                {language === 'it' ? 'Obiettivo 2' : 'Target 2'}
               </div>
               <div className="font-mono text-sm text-whale">
                 ${formatPrice(signal.target_2)}
@@ -376,7 +378,7 @@ export function TradeSignalCard({ compact = false }) {
         {/* Risk/Reward */}
         {signal.direction !== 'NO TRADE' && signal.risk_reward_ratio > 0 && (
           <div className="flex items-center justify-between py-2 px-3 bg-crypto-surface/30 rounded-sm mb-4">
-            <span className="text-xs text-zinc-500">Risk/Reward Ratio</span>
+            <span className="text-xs text-zinc-500">{language === 'it' ? 'Rapporto Rischio/Rendimento' : 'Risk/Reward Ratio'}</span>
             <div className="flex items-center gap-2">
               <span className={cn(
                 "font-mono font-bold",
@@ -385,9 +387,9 @@ export function TradeSignalCard({ compact = false }) {
               )}>
                 {signal.risk_reward_ratio?.toFixed(1)}:1
               </span>
-              {signal.risk_reward_ratio >= 2 && <span className="text-[10px] text-bullish">✓ Good</span>}
-              {signal.risk_reward_ratio >= 1.5 && signal.risk_reward_ratio < 2 && <span className="text-[10px] text-yellow-500">Acceptable</span>}
-              {signal.risk_reward_ratio < 1.5 && <span className="text-[10px] text-bearish">⚠️ Low</span>}
+              {signal.risk_reward_ratio >= 2 && <span className="text-[10px] text-bullish">{language === 'it' ? '✓ Buono' : '✓ Good'}</span>}
+              {signal.risk_reward_ratio >= 1.5 && signal.risk_reward_ratio < 2 && <span className="text-[10px] text-yellow-500">{language === 'it' ? 'Accettabile' : 'Acceptable'}</span>}
+              {signal.risk_reward_ratio < 1.5 && <span className="text-[10px] text-bearish">{language === 'it' ? '⚠️ Basso' : '⚠️ Low'}</span>}
             </div>
           </div>
         )}
@@ -410,7 +412,7 @@ export function TradeSignalCard({ compact = false }) {
         {/* Invalidation */}
         {signal.invalidation_reason && signal.direction !== 'NO TRADE' && (
           <div className="py-2 px-3 bg-bearish/5 border border-bearish/20 rounded-sm mb-4">
-            <div className="text-xs text-zinc-500 mb-1">Invalidation Logic</div>
+            <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Logica di Invalidazione' : 'Invalidation Logic'}</div>
             <div className="text-xs text-bearish">{signal.invalidation_reason}</div>
           </div>
         )}
@@ -421,9 +423,9 @@ export function TradeSignalCard({ compact = false }) {
           className="w-full flex items-center justify-center gap-1 py-2 text-xs text-zinc-400 hover:text-white transition-colors"
         >
           {expanded ? (
-            <>Hide Details <ChevronUp className="w-4 h-4" /></>
+            <>{language === 'it' ? 'Nascondi Dettagli' : 'Hide Details'} <ChevronUp className="w-4 h-4" /></>
           ) : (
-            <>Show Details <ChevronDown className="w-4 h-4" /></>
+            <>{language === 'it' ? 'Mostra Dettagli' : 'Show Details'} <ChevronDown className="w-4 h-4" /></>
           )}
         </button>
 
@@ -432,7 +434,7 @@ export function TradeSignalCard({ compact = false }) {
           <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
             {/* Reasoning */}
             <div className="bg-crypto-surface/30 p-3 rounded-sm">
-              <div className="text-xs text-zinc-500 mb-2">Signal Reasoning</div>
+              <div className="text-xs text-zinc-500 mb-2">{language === 'it' ? 'Ragionamento del Segnale' : 'Signal Reasoning'}</div>
               <pre className="text-xs text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed">
                 {signal.reasoning}
               </pre>
@@ -443,7 +445,7 @@ export function TradeSignalCard({ compact = false }) {
               <div className="bg-whale/5 border border-whale/20 p-3 rounded-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <Droplets className="w-3 h-3 text-whale" />
-                  <span className="text-xs text-whale">Liquidity Sweep Analysis</span>
+                  <span className="text-xs text-whale">{language === 'it' ? 'Analisi Sweep Liquidità' : 'Liquidity Sweep Analysis'}</span>
                 </div>
                 <p className="text-xs text-zinc-300">{signal.sweep_analysis}</p>
               </div>
@@ -451,7 +453,7 @@ export function TradeSignalCard({ compact = false }) {
 
             {/* Factor Breakdown */}
             <div className="bg-crypto-surface/30 p-3 rounded-sm">
-              <div className="text-xs text-zinc-500 mb-2">Factor Breakdown</div>
+              <div className="text-xs text-zinc-500 mb-2">{language === 'it' ? 'Dettaglio Fattori' : 'Factor Breakdown'}</div>
               <div className="space-y-2">
                 {Object.entries(signal.factors || {}).map(([key, factor]) => {
                   if (!factor || typeof factor !== 'object') return null;
@@ -459,11 +461,25 @@ export function TradeSignalCard({ compact = false }) {
                   const max = factor.max || 1;
                   const percentage = (Math.abs(score) / max) * 100;
                   
+                  // Translate factor names
+                  const factorTranslations = {
+                    'market_bias': language === 'it' ? 'Bias di Mercato' : 'Market Bias',
+                    'liquidity': language === 'it' ? 'Liquidità' : 'Liquidity',
+                    'exchange_consensus': language === 'it' ? 'Consenso Exchange' : 'Exchange Consensus',
+                    'funding_rate': 'Funding Rate',
+                    'open_interest': 'Open Interest',
+                    'patterns': language === 'it' ? 'Pattern' : 'Patterns',
+                    'whale_alerts': language === 'it' ? 'Alert Balene' : 'Whale Alerts',
+                    'whale_engine': language === 'it' ? 'Motore Balene' : 'Whale Engine',
+                    'liquidity_ladder': language === 'it' ? 'Scala Liquidità' : 'Liquidity Ladder'
+                  };
+                  const displayName = factorTranslations[key] || key.replace(/_/g, ' ');
+                  
                   return (
                     <div key={key} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-zinc-400 capitalize">
-                          {key.replace(/_/g, ' ')}
+                          {displayName}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -491,9 +507,9 @@ export function TradeSignalCard({ compact = false }) {
 
             {/* Validity */}
             <div className="flex items-center justify-between text-xs text-zinc-500">
-              <span>Valid for: {signal.valid_for}</span>
+              <span>{language === 'it' ? 'Valido per' : 'Valid for'}: {signal.valid_for}</span>
               {lastUpdate && (
-                <span>Updated: {lastUpdate.toLocaleTimeString()}</span>
+                <span>{language === 'it' ? 'Aggiornato' : 'Updated'}: {lastUpdate.toLocaleTimeString()}</span>
               )}
             </div>
           </div>

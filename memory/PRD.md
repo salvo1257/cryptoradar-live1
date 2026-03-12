@@ -7,6 +7,7 @@
 - Config Endpoint: `/api/system/config` - Configuration verification
 - All 6 PDF manuals downloadable
 - Dashboard fully operational in Italian
+- **Trade Signal Reasoning: FULLY TRANSLATED TO ITALIAN** ✅
 - Startup checks implemented with logging
 - Auto-restart configured via Supervisor
 
