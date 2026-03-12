@@ -1,233 +1,26 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { translations } from '../translations';
 
 const API_URL = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const WS_URL = process.env.REACT_APP_BACKEND_URL?.replace('https://', 'wss://').replace('http://', 'ws://') + '/api/ws/price';
 
 const AppContext = createContext(null);
 
-// Translations
-const translations = {
-  en: {
-    dashboard: "Dashboard",
-    supportResistance: "Support & Resistance",
-    whaleAlerts: "Whale Alerts",
-    liquidity: "Liquidity",
-    patterns: "Patterns",
-    candlesticks: "Candlesticks",
-    news: "News",
-    alerts: "Alerts",
-    alertHistory: "Alert History",
-    notes: "Notes",
-    settings: "Settings",
-    marketBias: "Market Bias",
-    bullish: "BULLISH",
-    bearish: "BEARISH",
-    neutral: "NEUTRAL",
-    confidence: "Confidence",
-    estimatedMove: "Est. Move",
-    trapRisk: "Trap Risk",
-    squeezeProbability: "Squeeze Probability",
-    live: "LIVE",
-    delayed: "DELAYED",
-    offline: "OFFLINE",
-    learnMode: "Learn Mode",
-    refresh: "Refresh",
-    timeframe: "Timeframe",
-    language: "Language",
-    price: "Price",
-    change24h: "24h Change",
-    volume: "Volume",
-    support: "Support",
-    resistance: "Resistance",
-    strength: "Strength",
-    distance: "Distance",
-    signal: "Signal",
-    entry: "Entry",
-    target: "Target",
-    long: "LONG",
-    short: "SHORT",
-    up: "UP",
-    down: "DOWN",
-    balanced: "BALANCED",
-    liquidityDirection: "Liquidity Direction",
-    nextTarget: "Next Target",
-    orderBook: "Order Book",
-    bidWall: "Top Bid Wall",
-    askWall: "Top Ask Wall",
-    imbalance: "Imbalance",
-    createAlert: "Create Alert",
-    condition: "Condition",
-    above: "Above",
-    below: "Below",
-    telegram: "Telegram",
-    enabled: "Enabled",
-    disabled: "Disabled",
-    save: "Save",
-    cancel: "Cancel",
-    delete: "Delete",
-    addNote: "Add Note",
-    english: "English",
-    italian: "Italian",
-    german: "German",
-    // Learn mode explanations
-    learnMarketBias: "Market Bias analyzes multiple indicators to determine overall market direction. Confidence shows how strong the signal is.",
-    learnSupportResistance: "Support levels are prices where buying pressure historically prevents further decline. Resistance levels are where selling pressure prevents further rise.",
-    learnLiquidity: "Liquidity clusters show where large amounts of stop-losses or liquidations may accumulate, potentially causing rapid price movements.",
-    learnWhaleAlerts: "Whale alerts detect abnormally large trading activity that may indicate institutional moves.",
-    learnPatterns: "Chart patterns are formations that may predict future price movement based on historical behavior.",
-    learnCandlesticks: "Candlestick patterns are specific candle formations that traders use to predict short-term price direction.",
-    learnTrapRisk: "Trap risk indicates the probability of a false breakout that could trap traders on the wrong side.",
-    learnSqueeze: "Squeeze probability shows the likelihood of a volatility compression followed by a sharp move."
-  },
-  it: {
-    dashboard: "Dashboard",
-    supportResistance: "Supporti e Resistenze",
-    whaleAlerts: "Avvisi Balene",
-    liquidity: "Liquidita",
-    patterns: "Pattern",
-    candlesticks: "Candele",
-    news: "Notizie",
-    alerts: "Avvisi",
-    alertHistory: "Storico Avvisi",
-    notes: "Note",
-    settings: "Impostazioni",
-    marketBias: "Bias di Mercato",
-    bullish: "RIALZISTA",
-    bearish: "RIBASSISTA",
-    neutral: "NEUTRALE",
-    confidence: "Confidenza",
-    estimatedMove: "Mov. Stimato",
-    trapRisk: "Rischio Trappola",
-    squeezeProbability: "Prob. Squeeze",
-    live: "LIVE",
-    delayed: "RITARDATO",
-    offline: "OFFLINE",
-    learnMode: "Modalita Apprendimento",
-    refresh: "Aggiorna",
-    timeframe: "Timeframe",
-    language: "Lingua",
-    price: "Prezzo",
-    change24h: "Var. 24h",
-    volume: "Volume",
-    support: "Supporto",
-    resistance: "Resistenza",
-    strength: "Forza",
-    distance: "Distanza",
-    signal: "Segnale",
-    entry: "Entrata",
-    target: "Obiettivo",
-    long: "LONG",
-    short: "SHORT",
-    up: "SU",
-    down: "GIU",
-    balanced: "BILANCIATO",
-    liquidityDirection: "Direzione Liquidita",
-    nextTarget: "Prossimo Obiettivo",
-    orderBook: "Order Book",
-    bidWall: "Muro Bid Principale",
-    askWall: "Muro Ask Principale",
-    imbalance: "Squilibrio",
-    createAlert: "Crea Avviso",
-    condition: "Condizione",
-    above: "Sopra",
-    below: "Sotto",
-    telegram: "Telegram",
-    enabled: "Attivato",
-    disabled: "Disattivato",
-    save: "Salva",
-    cancel: "Annulla",
-    delete: "Elimina",
-    addNote: "Aggiungi Nota",
-    english: "Inglese",
-    italian: "Italiano",
-    german: "Tedesco",
-    learnMarketBias: "Il Bias di Mercato analizza diversi indicatori per determinare la direzione generale del mercato.",
-    learnSupportResistance: "I livelli di supporto sono prezzi dove la pressione di acquisto storicamente impedisce ulteriori cali.",
-    learnLiquidity: "I cluster di liquidita mostrano dove grandi quantita di stop-loss possono accumularsi.",
-    learnWhaleAlerts: "Gli avvisi balene rilevano attivita di trading anormalmente grandi.",
-    learnPatterns: "I pattern grafici sono formazioni che possono prevedere i movimenti futuri dei prezzi.",
-    learnCandlesticks: "I pattern a candela sono formazioni specifiche usate per prevedere la direzione a breve termine.",
-    learnTrapRisk: "Il rischio trappola indica la probabilita di un falso breakout.",
-    learnSqueeze: "La probabilita di squeeze mostra la probabilita di una compressione della volatilita."
-  },
-  de: {
-    dashboard: "Dashboard",
-    supportResistance: "Unterstutzung & Widerstand",
-    whaleAlerts: "Wal-Warnungen",
-    liquidity: "Liquiditat",
-    patterns: "Muster",
-    candlesticks: "Kerzen",
-    news: "Nachrichten",
-    alerts: "Warnungen",
-    alertHistory: "Warnungsverlauf",
-    notes: "Notizen",
-    settings: "Einstellungen",
-    marketBias: "Marktneigung",
-    bullish: "BULLISCH",
-    bearish: "BARISCH",
-    neutral: "NEUTRAL",
-    confidence: "Konfidenz",
-    estimatedMove: "Gesch. Bewegung",
-    trapRisk: "Fallenrisiko",
-    squeezeProbability: "Squeeze-Wahrsch.",
-    live: "LIVE",
-    delayed: "VERZOGERT",
-    offline: "OFFLINE",
-    learnMode: "Lernmodus",
-    refresh: "Aktualisieren",
-    timeframe: "Zeitrahmen",
-    language: "Sprache",
-    price: "Preis",
-    change24h: "24h Anderung",
-    volume: "Volumen",
-    support: "Unterstutzung",
-    resistance: "Widerstand",
-    strength: "Starke",
-    distance: "Abstand",
-    signal: "Signal",
-    entry: "Einstieg",
-    target: "Ziel",
-    long: "LONG",
-    short: "SHORT",
-    up: "HOCH",
-    down: "RUNTER",
-    balanced: "AUSGEGLICHEN",
-    liquidityDirection: "Liquiditatsrichtung",
-    nextTarget: "Nachstes Ziel",
-    orderBook: "Orderbuch",
-    bidWall: "Hauptkaufwand",
-    askWall: "Hauptverkaufswand",
-    imbalance: "Ungleichgewicht",
-    createAlert: "Warnung erstellen",
-    condition: "Bedingung",
-    above: "Uber",
-    below: "Unter",
-    telegram: "Telegram",
-    enabled: "Aktiviert",
-    disabled: "Deaktiviert",
-    save: "Speichern",
-    cancel: "Abbrechen",
-    delete: "Loschen",
-    addNote: "Notiz hinzufugen",
-    english: "Englisch",
-    italian: "Italienisch",
-    german: "Deutsch",
-    learnMarketBias: "Die Marktneigung analysiert mehrere Indikatoren, um die allgemeine Marktrichtung zu bestimmen.",
-    learnSupportResistance: "Unterstutzungsniveaus sind Preise, bei denen der Kaufdruck historisch weitere Ruckgange verhindert.",
-    learnLiquidity: "Liquiditatszonen zeigen, wo grosse Mengen an Stop-Losses angesammelt werden konnen.",
-    learnWhaleAlerts: "Wal-Warnungen erkennen ungewohnlich grosse Handelsaktivitaten.",
-    learnPatterns: "Chartmuster sind Formationen, die zukunftige Preisbewegungen vorhersagen konnen.",
-    learnCandlesticks: "Kerzenmuster sind spezifische Formationen zur Vorhersage kurzfristiger Preisrichtungen.",
-    learnTrapRisk: "Das Fallenrisiko zeigt die Wahrscheinlichkeit eines falschen Ausbruchs.",
-    learnSqueeze: "Die Squeeze-Wahrscheinlichkeit zeigt die Wahrscheinlichkeit einer Volatilitatskompression."
-  }
-};
-
 export function AppProvider({ children }) {
-  const [language, setLanguage] = useState('en');
+  // Default language is Italian - saved to localStorage
+  const [language, setLanguageState] = useState(() => {
+    const saved = localStorage.getItem('cryptoradar_language');
+    return saved || 'it';  // Default to Italian
+  });
+  
+  const setLanguage = useCallback((lang) => {
+    setLanguageState(lang);
+    localStorage.setItem('cryptoradar_language', lang);
+  }, []);
+  
   const [learnMode, setLearnMode] = useState(false);
-  const [timeframe, setTimeframe] = useState('1h');
+  const [timeframe, setTimeframe] = useState('4h');  // Default to 4H
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState(null);
   const [candles, setCandles] = useState([]);
@@ -334,13 +127,95 @@ export function AppProvider({ children }) {
     try {
       const res = await axios.get(`${API_URL}/settings`);
       setSettings(res.data);
-      if (res.data?.language) {
-        setLanguage(res.data.language);
-      }
     } catch (error) {
       console.error('Error fetching settings:', error);
     }
   }, []);
+
+  // WebSocket connection for live price
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    
+    try {
+      wsRef.current = new WebSocket(WS_URL);
+      
+      wsRef.current.onopen = () => {
+        console.log('WebSocket connected');
+        setConnectionStatus('LIVE');
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.price) {
+            setMarketStatus(prev => prev ? { ...prev, price: data.price, change_24h: data.change_24h } : data);
+          }
+        } catch (e) {
+          console.error('WebSocket message parse error:', e);
+        }
+      };
+      
+      wsRef.current.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionStatus('DELAYED');
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('OFFLINE');
+      };
+    } catch (error) {
+      console.error('WebSocket connection error:', error);
+      setConnectionStatus('OFFLINE');
+    }
+  }, []);
+
+  // Initial data fetch
+  useEffect(() => {
+    const initData = async () => {
+      setIsLoading(true);
+      await Promise.all([
+        fetchMarketData(),
+        fetchAnalysisData(),
+        fetchNews(),
+        fetchAlerts(),
+        fetchNotes(),
+        fetchSettings()
+      ]);
+      setIsLoading(false);
+    };
+    
+    initData();
+    connectWebSocket();
+    
+    // Set up refresh intervals
+    const marketInterval = setInterval(fetchMarketData, 60000);
+    const analysisInterval = setInterval(fetchAnalysisData, 120000);
+    const newsInterval = setInterval(fetchNews, 300000);
+    
+    return () => {
+      clearInterval(marketInterval);
+      clearInterval(analysisInterval);
+      clearInterval(newsInterval);
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    };
+  }, [fetchMarketData, fetchAnalysisData, fetchNews, fetchAlerts, fetchNotes, fetchSettings, connectWebSocket]);
+
+  // Refresh on timeframe change
+  useEffect(() => {
+    fetchMarketData();
+    fetchAnalysisData();
+  }, [timeframe, fetchMarketData, fetchAnalysisData]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([
+      fetchMarketData(),
+      fetchAnalysisData(),
+      fetchNews()
+    ]);
+  }, [fetchMarketData, fetchAnalysisData, fetchNews]);
 
   const createAlert = useCallback(async (alertData) => {
     try {
@@ -364,9 +239,9 @@ export function AppProvider({ children }) {
     }
   }, [fetchAlerts]);
 
-  const createNote = useCallback(async (content) => {
+  const createNote = useCallback(async (noteData) => {
     try {
-      await axios.post(`${API_URL}/notes`, { content });
+      await axios.post(`${API_URL}/notes`, noteData);
       await fetchNotes();
       return true;
     } catch (error) {
@@ -375,9 +250,9 @@ export function AppProvider({ children }) {
     }
   }, [fetchNotes]);
 
-  const updateNote = useCallback(async (noteId, content) => {
+  const updateNote = useCallback(async (noteId, noteData) => {
     try {
-      await axios.put(`${API_URL}/notes/${noteId}`, { content });
+      await axios.put(`${API_URL}/notes/${noteId}`, noteData);
       await fetchNotes();
       return true;
     } catch (error) {
@@ -400,118 +275,23 @@ export function AppProvider({ children }) {
   const updateSettings = useCallback(async (newSettings) => {
     try {
       await axios.put(`${API_URL}/settings`, newSettings);
-      setSettings(newSettings);
-      if (newSettings.language) {
-        setLanguage(newSettings.language);
-      }
+      await fetchSettings();
       return true;
     } catch (error) {
       console.error('Error updating settings:', error);
       return false;
     }
-  }, []);
+  }, [fetchSettings]);
 
-  const testTelegram = useCallback(async (message) => {
+  const testTelegram = useCallback(async () => {
     try {
-      await axios.post(`${API_URL}/telegram/test`, { message });
-      return true;
+      const res = await axios.post(`${API_URL}/settings/test-telegram`);
+      return res.data;
     } catch (error) {
       console.error('Error testing telegram:', error);
-      return false;
+      return { success: false, error: error.message };
     }
   }, []);
-
-  const refreshAll = useCallback(async () => {
-    setIsLoading(true);
-    await Promise.all([
-      fetchMarketData(),
-      fetchAnalysisData(),
-      fetchNews(),
-      fetchAlerts(),
-      fetchNotes(),
-      fetchSettings()
-    ]);
-    setIsLoading(false);
-  }, [fetchMarketData, fetchAnalysisData, fetchNews, fetchAlerts, fetchNotes, fetchSettings]);
-
-  useEffect(() => {
-    refreshAll();
-  }, []);
-
-  useEffect(() => {
-    fetchMarketData();
-    fetchAnalysisData();
-  }, [timeframe, fetchMarketData, fetchAnalysisData]);
-
-  // Auto-refresh market data every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchMarketData();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [fetchMarketData]);
-
-  // WebSocket connection for real-time price updates
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    
-    try {
-      wsRef.current = new WebSocket(WS_URL);
-      
-      wsRef.current.onopen = () => {
-        console.log('WebSocket connected for real-time prices');
-        setConnectionStatus('LIVE');
-      };
-      
-      wsRef.current.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === 'price_update' && message.data) {
-            setMarketStatus(prev => ({
-              ...prev,
-              price: message.data.price,
-              price_change_percent_24h: message.data.change_24h,
-              high_24h: message.data.high_24h,
-              low_24h: message.data.low_24h,
-              volume_24h: message.data.volume_24h,
-              status: 'LIVE',
-              timestamp: message.data.timestamp
-            }));
-          }
-        } catch (e) {
-          console.error('Error parsing WebSocket message:', e);
-        }
-      };
-      
-      wsRef.current.onclose = () => {
-        console.log('WebSocket disconnected');
-        setConnectionStatus('DELAYED');
-        // Attempt to reconnect after 5 seconds
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
-      };
-      
-      wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionStatus('DELAYED');
-      };
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error);
-    }
-  }, []);
-
-  // Connect WebSocket on mount
-  useEffect(() => {
-    connectWebSocket();
-    
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, [connectWebSocket]);
 
   const value = {
     // State

@@ -6,10 +6,12 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
+import { useApp } from '../../contexts/AppContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function TradeSignalCard({ compact = false }) {
+  const { t, language } = useApp();
   const [signal, setSignal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -41,6 +43,14 @@ export function TradeSignalCard({ compact = false }) {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(p);
+  };
+
+  // Translate direction for display
+  const translateDirection = (direction) => {
+    if (direction === 'LONG') return t('long');
+    if (direction === 'SHORT') return t('short');
+    if (direction === 'NO TRADE') return t('noTrade');
+    return direction;
   };
 
   const getDirectionConfig = (direction) => {
@@ -126,13 +136,13 @@ export function TradeSignalCard({ compact = false }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-whale" />
-            <h3 className="font-heading font-bold text-sm uppercase tracking-wider">Trade Signal</h3>
+            <h3 className="font-heading font-bold text-sm uppercase tracking-wider">{t('tradeSignal')}</h3>
             {signal.setup_type && getSetupTypeBadge(signal.setup_type)}
           </div>
           <button 
             onClick={fetchSignal}
             className="p-1.5 hover:bg-white/10 rounded-sm transition-colors"
-            title="Refresh signal"
+            title={t('refresh')}
           >
             <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
           </button>
@@ -151,16 +161,16 @@ export function TradeSignalCard({ compact = false }) {
             <DirectionIcon className={cn("w-10 h-10", config.textClass)} />
             <div>
               <div className={cn("text-2xl font-mono font-bold", config.textClass)}>
-                {signal.direction}
+                {translateDirection(signal.direction)}
               </div>
-              <div className="text-xs text-zinc-500">Signal Direction</div>
+              <div className="text-xs text-zinc-500">{t('direction')}</div>
             </div>
           </div>
           
           {/* Confidence */}
           <div className="text-right">
             <div className="text-3xl font-mono font-bold">{signal.confidence?.toFixed(0)}%</div>
-            <div className="text-xs text-zinc-500">Confidence</div>
+            <div className="text-xs text-zinc-500">{t('confidence')}</div>
             <Progress 
               value={signal.confidence || 0} 
               className="h-1.5 w-24 mt-1 bg-zinc-800"
@@ -180,13 +190,13 @@ export function TradeSignalCard({ compact = false }) {
             config.bgClass
           )}>
             <div>
-              <span className="text-xs text-zinc-400">Expected Move:</span>
+              <span className="text-xs text-zinc-400">{t('estimatedMovePercent')}:</span>
               <span className={cn("text-xl font-mono font-bold ml-2", config.textClass)}>
                 {signal.estimated_move > 0 ? '+' : ''}{signal.estimated_move?.toFixed(2)}%
               </span>
             </div>
             {Math.abs(signal.estimated_move) >= 0.5 ? (
-              <span className="text-xs text-bullish">✓ Tradeable move</span>
+              <span className="text-xs text-bullish">✓ {language === 'it' ? 'Movimento operabile' : 'Tradeable move'}</span>
             ) : (
               <span className="text-xs text-bearish">✗ Below 0.50% minimum</span>
             )}

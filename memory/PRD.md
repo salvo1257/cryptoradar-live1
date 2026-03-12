@@ -200,8 +200,19 @@ Features:
 - `/app/test_reports/iteration_8.json` - Whale & Liquidity Ladder v1.7 (100% pass)
 
 ## Documentation
-- `/app/OPERATIONAL_MANUAL.md` - Trader's Guide (how to use signals)
-- `/app/TECHNICAL_MANUAL.md` - System Logic (how the engine works)
+- `/app/OPERATIONAL_MANUAL.md` - Trader's Guide (English)
+- `/app/TECHNICAL_MANUAL.md` - System Logic (English)
+- `/app/MANUALE_OPERATIVO_IT.md` - Guida Trader (Italiano)
+- `/app/MANUALE_TECNICO_IT.md` - Logica Sistema (Italiano)
+
+**Download URLs:**
+- English: `/OPERATIONAL_MANUAL.pdf`, `/TECHNICAL_MANUAL.pdf`
+- Italiano: `/MANUALE_OPERATIVO_IT.pdf`, `/MANUALE_TECNICO_IT.pdf`
+
+## Language Support
+- **Default Language:** Italian (Italiano)
+- **Supported Languages:** Italian, English, German
+- **Language Toggle:** Available in top bar (globe icon)
 
 ## Key Files
 - `/app/backend/server.py` - All backend logic
