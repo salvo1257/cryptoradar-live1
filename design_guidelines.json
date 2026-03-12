@@ -1,0 +1,129 @@
+{
+  "project_name": "CryptoRadar",
+  "design_philosophy": {
+    "identity": "The Performance Pro x Electric Neon",
+    "vibe": "Precision, Institutional, High-Frequency, Deep Void",
+    "core_principles": [
+      "Data Density over White Space: In trading, density = information.",
+      "Zero Distraction: Dark mode is mandatory. No bright backgrounds.",
+      "Color is Signal: Green means Money/Long. Red means Danger/Short. Blue means Whale/Info. Everything else is Grey.",
+      "Tactical Aesthetics: Sharp edges, thin borders, glass surfaces."
+    ]
+  },
+  "typography": {
+    "font_families": {
+      "headings": "Rajdhani, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl font-bold tracking-tight uppercase",
+      "h2": "text-2xl font-bold tracking-tight",
+      "h3": "text-xl font-semibold tracking-wide",
+      "body": "text-sm text-zinc-400",
+      "data": "text-sm font-mono tracking-wide text-zinc-100",
+      "label": "text-xs font-medium text-zinc-500 uppercase tracking-wider"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap');"
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": {
+        "default": "#09090b",
+        "surface": "#121214",
+        "overlay": "#18181b"
+      },
+      "border": {
+        "default": "#27272a",
+        "active": "#3f3f46"
+      },
+      "text": {
+        "primary": "#fafafa",
+        "secondary": "#a1a1aa",
+        "muted": "#52525b"
+      },
+      "signal": {
+        "bullish": "#00dc82",
+        "bullish_glow": "rgba(0, 220, 130, 0.2)",
+        "bearish": "#ff3b30",
+        "bearish_glow": "rgba(255, 59, 48, 0.2)",
+        "neutral": "#3b82f6",
+        "whale": "#8b5cf6"
+      }
+    },
+    "tailwind_extension": {
+      "colors": {
+        "bullish": "#00dc82",
+        "bearish": "#ff3b30",
+        "whale": "#8b5cf6",
+        "crypto-bg": "#09090b",
+        "crypto-card": "#121214",
+        "crypto-border": "#27272a"
+      }
+    }
+  },
+  "layout_strategy": {
+    "grid_system": "Bento Grid (High Density)",
+    "columns": 12,
+    "gap": "gap-4",
+    "containers": {
+      "dashboard": "grid grid-cols-1 md:grid-cols-12 gap-4 p-4 h-[calc(100vh-64px)] overflow-hidden",
+      "sidebar": "w-64 border-r border-crypto-border bg-crypto-card/50 backdrop-blur-md hidden md:flex flex-col",
+      "topbar": "h-16 border-b border-crypto-border bg-crypto-bg/80 backdrop-blur-md flex items-center px-6 justify-between sticky top-0 z-50"
+    }
+  },
+  "components": {
+    "TechCard": {
+      "base": "bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm relative overflow-hidden group hover:border-zinc-700 transition-colors",
+      "header": "flex items-center justify-between px-4 py-3 border-b border-white/5",
+      "content": "p-4"
+    },
+    "StatusBadge": {
+      "bullish": "bg-bullish/10 text-bullish border border-bullish/20 px-2 py-0.5 rounded-sm text-xs font-mono font-bold uppercase",
+      "bearish": "bg-bearish/10 text-bearish border border-bearish/20 px-2 py-0.5 rounded-sm text-xs font-mono font-bold uppercase",
+      "neutral": "bg-zinc-800 text-zinc-400 border border-zinc-700 px-2 py-0.5 rounded-sm text-xs font-mono font-bold uppercase"
+    },
+    "Button": {
+      "primary": "bg-white text-black hover:bg-zinc-200 rounded-sm font-semibold px-4 py-2 transition-all active:scale-95",
+      "ghost": "text-zinc-400 hover:text-white hover:bg-white/5 rounded-sm px-3 py-2 transition-colors",
+      "bullish": "bg-bullish text-black hover:bg-bullish/90 shadow-[0_0_15px_rgba(0,220,130,0.4)]",
+      "bearish": "bg-bearish text-white hover:bg-bearish/90 shadow-[0_0_15px_rgba(255,59,48,0.4)]"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-md bg-opacity-70",
+    "neon_glow": "box-shadow: 0 0 10px var(--color)",
+    "grid_lines": "background-image: linear-gradient(to right, #27272a 1px, transparent 1px), linear-gradient(to bottom, #27272a 1px, transparent 1px); background-size: 40px 40px; mask-image: linear-gradient(to bottom, transparent, black, transparent);"
+  },
+  "image_urls": {
+    "backgrounds": [
+      "https://images.unsplash.com/photo-1642432556591-72cbc671b707?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxiaXRjb2luJTIwY3J5cHRvJTIwM2QlMjBkYXJrJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzczMzI2NzQxfDA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1642239817395-6cfe3bada398?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwzfHxiaXRjb2luJTIwY3J5cHRvJTIwM2QlMjBkYXJrJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzczMzI2NzQxfDA&ixlib=rb-4.1.0&q=85"
+    ],
+    "bull_bear": [
+      "https://images.unsplash.com/photo-1655494215364-b1abfaa089cb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxzdG9jayUyMG1hcmtldCUyMGJ1bGwlMjBhbmQlMjBiZWFyJTIwYWJzdHJhY3QlMjBkYXJrfGVufDB8fHx8MTc3MzMyNjc0M3ww&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1573364399591-09bf85ab85a8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwzfHxzdG9jayUyMG1hcmtldCUyMGJ1bGwlMjBhbmQlMjBiZWFyJTIwYWJzdHJhY3QlMjBkYXJrfGVufDB8fHx8MTc3MzMyNjc0M3ww&ixlib=rb-4.1.0&q=85"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "INSTALL: `npm install lightweight-charts framer-motion` (or yarn add)",
+    "TAILWIND: Update tailwind.config.js with the custom colors (bullish, bearish, crypto-bg, etc) and fonts (Rajdhani, JetBrains Mono).",
+    "CHARTS: Create a reusable component `TradingChart.js` wrapping `lightweight-charts`. It MUST resize automatically.",
+    "NAVIGATION: Create a `Sidebar.js` with Lucide icons (LayoutDashboard, Activity, Zap, waves (Liquidity), Search (Patterns), CandlestickChart, Newspaper, Bell, Settings).",
+    "THEME: Force DARK mode. Do not create a light mode toggle. The persona is 'Professional Trader' who works in the dark.",
+    "DATA: Mock data for the 'Engines' (Bias, Whale, Liquidity) but structure it so it can be easily connected to an API later.",
+    "RESPONSIVE: On mobile, hide the sidebar behind a hamburger menu. Stack the grid items vertically.",
+    "CRITICAL: Do not use rounded-xl or rounded-2xl. Use rounded-sm (2px) or rounded-none for that sharp, institutional feel."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Don't make generic centered layouts.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12px blur) for floating elements like the Topbar.",
+    "Every interaction needs micro-animations - hover states (border glow), transitions.",
+    "Use 'JetBrains Mono' for ALL numbers, prices, and percentages.",
+    "Use 'sonner' for toasts.",
+    "All interactive elements MUST include `data-testid`."
+  ]
+}
