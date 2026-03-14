@@ -59,6 +59,17 @@ export function MarketEnergyCard({ compact = false }) {
     }
   };
 
+  const getExpansionReadinessConfig = (level) => {
+    switch (level) {
+      case 'HIGH':
+        return { color: 'text-yellow-400', bgColor: 'bg-yellow-500/20', pulse: true };
+      case 'MEDIUM':
+        return { color: 'text-orange-400', bgColor: 'bg-orange-500/20', pulse: false };
+      default:
+        return { color: 'text-zinc-400', bgColor: 'bg-zinc-800', pulse: false };
+    }
+  };
+
   const getBreakoutConfig = (probability) => {
     switch (probability) {
       case 'HIGH':
@@ -83,6 +94,7 @@ export function MarketEnergyCard({ compact = false }) {
 
   const config = energyData ? getCompressionConfig(energyData.compression_level) : getCompressionConfig('LOW');
   const breakoutConfig = energyData ? getBreakoutConfig(energyData.breakout_probability) : getBreakoutConfig('LOW');
+  const expansionConfig = energyData ? getExpansionReadinessConfig(energyData.expansion_readiness) : getExpansionReadinessConfig('LOW');
 
   return (
     <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="market-energy-card">
@@ -146,10 +158,35 @@ export function MarketEnergyCard({ compact = false }) {
                   <div className="text-xs text-zinc-500">{t('energyScore')}</div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-zinc-500">{t('rangeWidth')}</div>
-                <div className="font-mono text-sm">{energyData.range_width_percent?.toFixed(2)}%</div>
+              <div className="text-right space-y-1">
+                <div>
+                  <div className="text-xs text-zinc-500">{t('rangeWidth')}</div>
+                  <div className="font-mono text-sm">{energyData.range_width_percent?.toFixed(2)}%</div>
+                </div>
+                <div className="text-[10px] text-zinc-600">
+                  {t('compressionThreshold')}: &lt;{energyData.compression_threshold?.toFixed(2)}%
+                </div>
               </div>
+            </div>
+
+            {/* Expansion Readiness Indicator */}
+            <div className={cn(
+              "flex items-center justify-between p-3 rounded-sm border",
+              expansionConfig.bgColor,
+              energyData.expansion_readiness === 'HIGH' ? 'border-yellow-500/40' :
+              energyData.expansion_readiness === 'MEDIUM' ? 'border-orange-500/30' : 'border-zinc-700'
+            )}>
+              <div className="flex items-center gap-2">
+                <Activity className={cn(
+                  "w-4 h-4",
+                  expansionConfig.color,
+                  expansionConfig.pulse && "animate-pulse"
+                )} />
+                <span className="text-xs text-zinc-400">{t('expansionReadiness')}</span>
+              </div>
+              <span className={cn("font-mono text-sm font-bold", expansionConfig.color)}>
+                {t(energyData.expansion_readiness?.toLowerCase() || 'low')}
+              </span>
             </div>
 
             {/* Metrics Grid */}

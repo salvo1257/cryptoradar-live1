@@ -149,6 +149,8 @@ class MarketEnergy(BaseModel):
     energy_score: float  # 0-100 overall energy score
     compression_level: str  # "LOW", "MEDIUM", "HIGH"
     range_width_percent: float  # Current trading range width as percentage
+    compression_threshold: float  # The threshold below which compression is considered active
+    expansion_readiness: str  # "LOW", "MEDIUM", "HIGH" - how close to volatility expansion
     volatility_compression: float  # 0-100 volatility compression score
     oi_trend: str  # "RISING", "FALLING", "STABLE"
     oi_change_percent: float  # OI change percentage
@@ -3253,6 +3255,8 @@ def analyze_market_energy(
     # ======== 1. PRICE RANGE COMPRESSION ========
     range_width_percent = 0
     compression_score = 0
+    compression_threshold = 3.0  # Default threshold (percentage)
+    expansion_readiness = "LOW"
     
     if candles and len(candles) >= 20:
         # Calculate recent trading range (last 20 candles = ~80 hours on 4H)
@@ -3271,6 +3275,9 @@ def analyze_market_energy(
             longer_range = max(longer_highs) - min(longer_lows)
             longer_range_pct = (longer_range / current_price) * 100
             
+            # Calculate dynamic compression threshold (50% of longer range = HIGH compression zone)
+            compression_threshold = round(longer_range_pct * 0.5, 2)
+            
             # Compression ratio: if recent range is much smaller than longer range
             if longer_range_pct > 0:
                 compression_ratio = range_width_percent / longer_range_pct
@@ -3286,6 +3293,20 @@ def analyze_market_energy(
                     signals.append(get_translation("moderate_compression", lang, range_width_percent))
                 else:
                     compression_score = 25
+                
+                # ======== EXPANSION READINESS ========
+                # Measures how close the market is to volatility expansion
+                # Based on: compression_ratio (lower = more compressed = closer to expansion)
+                # Also considers time in compression and energy buildup
+                if compression_ratio < 0.3:
+                    # Extremely compressed - expansion is imminent
+                    expansion_readiness = "HIGH"
+                elif compression_ratio < 0.5:
+                    # Significantly compressed - expansion is building
+                    expansion_readiness = "MEDIUM"
+                else:
+                    # Not yet in compression zone
+                    expansion_readiness = "LOW"
         
         # Also check very recent compression (last 5 candles)
         if len(candles) >= 5:
@@ -3295,6 +3316,9 @@ def analyze_market_energy(
             if very_recent_pct < 0.5:
                 compression_score += 20
                 signals.append(get_translation("tight_recent_range", lang, very_recent_pct))
+                # Ultra-tight recent range boosts expansion readiness
+                if expansion_readiness == "MEDIUM":
+                    expansion_readiness = "HIGH"
     
     energy_score += compression_score * 0.25  # 25% weight
     
@@ -3523,6 +3547,8 @@ def analyze_market_energy(
         energy_score=round(energy_score, 1),
         compression_level=compression_level,
         range_width_percent=round(range_width_percent, 2),
+        compression_threshold=round(compression_threshold, 2),
+        expansion_readiness=expansion_readiness,
         volatility_compression=round(volatility_compression, 1),
         oi_trend=oi_trend,
         oi_change_percent=round(oi_change_percent, 2),
