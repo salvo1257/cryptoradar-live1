@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Progress } from '../ui/progress';
 
 import { useApp } from '../../contexts/AppContext';
 
@@ -13,17 +14,24 @@ export function AlertHistoryPage() {
   const { language } = useApp();
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
+  const [performanceStats, setPerformanceStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [directionFilter, setDirectionFilter] = useState('all');
+  const [outcomeFilter, setOutcomeFilter] = useState('all');
   const [recording, setRecording] = useState(false);
+  const [checkingOutcomes, setCheckingOutcomes] = useState(false);
+  const [showPerformance, setShowPerformance] = useState(true);
 
   const fetchHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const filterParam = directionFilter !== 'all' ? `&direction=${directionFilter}` : '';
+      let filterParam = directionFilter !== 'all' ? `&direction=${directionFilter}` : '';
+      if (outcomeFilter !== 'all') {
+        filterParam += `&outcome=${outcomeFilter}`;
+      }
       const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`);
       const data = await response.json();
       setSignals(data.signals || []);
@@ -34,7 +42,7 @@ export function AlertHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, directionFilter]);
+  }, [page, directionFilter, outcomeFilter]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -46,6 +54,16 @@ export function AlertHistoryPage() {
     }
   }, []);
 
+  const fetchPerformanceStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/signal-history/statistics`);
+      const data = await response.json();
+      setPerformanceStats(data);
+    } catch (error) {
+      console.error('Error fetching performance stats:', error);
+    }
+  }, []);
+
   const recordCurrentSignal = async () => {
     try {
       setRecording(true);
@@ -54,6 +72,7 @@ export function AlertHistoryPage() {
       if (data.recorded) {
         fetchHistory();
         fetchStats();
+        fetchPerformanceStats();
       }
     } catch (error) {
       console.error('Error recording signal:', error);
@@ -62,10 +81,28 @@ export function AlertHistoryPage() {
     }
   };
 
+  const checkOutcomes = async () => {
+    try {
+      setCheckingOutcomes(true);
+      const response = await fetch(`${API_URL}/api/signal-history/check-outcomes`, { method: 'POST' });
+      const data = await response.json();
+      if (data.updated > 0) {
+        fetchHistory();
+        fetchPerformanceStats();
+      }
+      return data;
+    } catch (error) {
+      console.error('Error checking outcomes:', error);
+    } finally {
+      setCheckingOutcomes(false);
+    }
+  };
+
   useEffect(() => {
     fetchHistory();
     fetchStats();
-  }, [fetchHistory, fetchStats]);
+    fetchPerformanceStats();
+  }, [fetchHistory, fetchStats, fetchPerformanceStats]);
 
   const getDirectionConfig = (direction) => {
     switch (direction) {
@@ -78,16 +115,22 @@ export function AlertHistoryPage() {
     }
   };
 
-  const getStatusConfig = (status) => {
-    switch (status) {
-      case 'active':
-        return { label: 'ATTIVO', color: 'text-bullish', bg: 'bg-bullish/20', border: 'border-bullish/30' };
-      case 'invalidated':
-        return { label: 'INVALIDATO', color: 'text-bearish', bg: 'bg-bearish/20', border: 'border-bearish/30' };
-      case 'expired':
-        return { label: 'SCADUTO', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30' };
+  const getOutcomeConfig = (outcome) => {
+    switch (outcome) {
+      case 'WIN':
+        return { icon: CheckCircle, label: language === 'it' ? 'VINTO' : 'WIN', color: 'text-bullish', bg: 'bg-bullish/20', border: 'border-bullish/30' };
+      case 'PARTIAL_WIN':
+        return { icon: Activity, label: language === 'it' ? 'PARZIALE' : 'PARTIAL', color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/30' };
+      case 'LOSS':
+        return { icon: XCircle, label: language === 'it' ? 'PERSO' : 'LOSS', color: 'text-bearish', bg: 'bg-bearish/20', border: 'border-bearish/30' };
+      case 'EXPIRED':
+        return { icon: Clock, label: language === 'it' ? 'SCADUTO' : 'EXPIRED', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30' };
+      case 'PENDING':
+        return { icon: AlertTriangle, label: language === 'it' ? 'IN ATTESA' : 'PENDING', color: 'text-blue-400', bg: 'bg-blue-500/20', border: 'border-blue-500/30' };
+      case 'NO_TRADE':
+        return { icon: MinusCircle, label: 'NO TRADE', color: 'text-zinc-500', bg: 'bg-zinc-800', border: 'border-zinc-600' };
       default:
-        return { label: '-', color: 'text-zinc-500', bg: 'bg-zinc-800', border: 'border-zinc-600' };
+        return { icon: MinusCircle, label: '-', color: 'text-zinc-500', bg: 'bg-zinc-800', border: 'border-zinc-600' };
     }
   };
 
@@ -116,22 +159,156 @@ export function AlertHistoryPage() {
             <p className="text-sm text-zinc-500">{language === 'it' ? 'Traccia i segnali passati e analizza le performance' : 'Track past trade signals and analyze performance'}</p>
           </div>
         </div>
-        <Button
-          onClick={recordCurrentSignal}
-          disabled={recording}
-          className="bg-crypto-accent hover:bg-crypto-accent/80"
-          data-testid="record-signal-btn"
-        >
-          {recording ? (
-            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Zap className="w-4 h-4 mr-2" />
-          )}
-          {language === 'it' ? 'Registra Segnale' : 'Record Current Signal'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={checkOutcomes}
+            disabled={checkingOutcomes}
+            variant="outline"
+            className="border-crypto-border"
+            data-testid="check-outcomes-btn"
+          >
+            {checkingOutcomes ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Activity className="w-4 h-4 mr-2" />
+            )}
+            {language === 'it' ? 'Verifica Outcomes' : 'Check Outcomes'}
+          </Button>
+          <Button
+            onClick={recordCurrentSignal}
+            disabled={recording}
+            className="bg-crypto-accent hover:bg-crypto-accent/80"
+            data-testid="record-signal-btn"
+          >
+            {recording ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Zap className="w-4 h-4 mr-2" />
+            )}
+            {language === 'it' ? 'Registra Segnale' : 'Record Signal'}
+          </Button>
+        </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Performance Stats Panel */}
+      {performanceStats && showPerformance && (
+        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-yellow-400" />
+              <h2 className="font-heading font-semibold">{language === 'it' ? 'Performance Trading' : 'Trading Performance'}</h2>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setShowPerformance(false)}>
+              <XCircle className="w-4 h-4" />
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+            {/* Win Rate */}
+            <div className="bg-crypto-surface/30 p-3 rounded-sm">
+              <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Win Rate Totale' : 'Overall Win Rate'}</div>
+              <div className={cn(
+                "text-2xl font-mono font-bold",
+                performanceStats.win_rates?.overall >= 50 ? "text-bullish" : "text-bearish"
+              )}>
+                {performanceStats.win_rates?.overall || 0}%
+              </div>
+              <Progress 
+                value={performanceStats.win_rates?.overall || 0} 
+                className="h-1 mt-2 bg-zinc-800"
+              />
+            </div>
+            
+            {/* LONG Win Rate */}
+            <div className="bg-crypto-surface/30 p-3 rounded-sm">
+              <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Win Rate LONG' : 'LONG Win Rate'}</div>
+              <div className={cn(
+                "text-2xl font-mono font-bold",
+                performanceStats.win_rates?.long >= 50 ? "text-bullish" : "text-yellow-400"
+              )}>
+                {performanceStats.win_rates?.long || 0}%
+              </div>
+              <div className="text-xs text-zinc-500 mt-1">
+                {performanceStats.total_long || 0} {language === 'it' ? 'segnali' : 'signals'}
+              </div>
+            </div>
+            
+            {/* SHORT Win Rate */}
+            <div className="bg-crypto-surface/30 p-3 rounded-sm">
+              <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Win Rate SHORT' : 'SHORT Win Rate'}</div>
+              <div className={cn(
+                "text-2xl font-mono font-bold",
+                performanceStats.win_rates?.short >= 50 ? "text-bullish" : "text-yellow-400"
+              )}>
+                {performanceStats.win_rates?.short || 0}%
+              </div>
+              <div className="text-xs text-zinc-500 mt-1">
+                {performanceStats.total_short || 0} {language === 'it' ? 'segnali' : 'signals'}
+              </div>
+            </div>
+            
+            {/* Avg PnL */}
+            <div className="bg-crypto-surface/30 p-3 rounded-sm">
+              <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'PnL Medio' : 'Avg PnL'}</div>
+              <div className={cn(
+                "text-2xl font-mono font-bold",
+                performanceStats.performance?.avg_pnl_percent >= 0 ? "text-bullish" : "text-bearish"
+              )}>
+                {performanceStats.performance?.avg_pnl_percent >= 0 ? '+' : ''}{performanceStats.performance?.avg_pnl_percent || 0}%
+              </div>
+            </div>
+            
+            {/* Best/Worst */}
+            <div className="bg-crypto-surface/30 p-3 rounded-sm">
+              <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Miglior / Peggior' : 'Best / Worst'}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-bullish font-mono text-sm">+{performanceStats.performance?.best_trade_pnl || 0}%</span>
+                <span className="text-zinc-500">/</span>
+                <span className="text-bearish font-mono text-sm">{performanceStats.performance?.worst_trade_pnl || 0}%</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Outcome Distribution */}
+          <div className="grid grid-cols-5 gap-2 text-center text-xs">
+            <div className="bg-bullish/20 p-2 rounded-sm">
+              <CheckCircle className="w-4 h-4 text-bullish mx-auto mb-1" />
+              <div className="font-mono font-bold text-bullish">{performanceStats.outcomes?.wins || 0}</div>
+              <div className="text-zinc-500">WIN</div>
+            </div>
+            <div className="bg-green-500/20 p-2 rounded-sm">
+              <Activity className="w-4 h-4 text-green-400 mx-auto mb-1" />
+              <div className="font-mono font-bold text-green-400">{performanceStats.outcomes?.partial_wins || 0}</div>
+              <div className="text-zinc-500">PARTIAL</div>
+            </div>
+            <div className="bg-bearish/20 p-2 rounded-sm">
+              <XCircle className="w-4 h-4 text-bearish mx-auto mb-1" />
+              <div className="font-mono font-bold text-bearish">{performanceStats.outcomes?.losses || 0}</div>
+              <div className="text-zinc-500">LOSS</div>
+            </div>
+            <div className="bg-yellow-500/20 p-2 rounded-sm">
+              <Clock className="w-4 h-4 text-yellow-400 mx-auto mb-1" />
+              <div className="font-mono font-bold text-yellow-400">{performanceStats.outcomes?.expired || 0}</div>
+              <div className="text-zinc-500">EXPIRED</div>
+            </div>
+            <div className="bg-blue-500/20 p-2 rounded-sm">
+              <AlertTriangle className="w-4 h-4 text-blue-400 mx-auto mb-1" />
+              <div className="font-mono font-bold text-blue-400">{performanceStats.outcomes?.pending || 0}</div>
+              <div className="text-zinc-500">PENDING</div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Toggle Performance Panel Button */}
+      {!showPerformance && (
+        <Button variant="outline" size="sm" onClick={() => setShowPerformance(true)} className="border-crypto-border">
+          <PieChart className="w-4 h-4 mr-2" />
+          {language === 'it' ? 'Mostra Performance' : 'Show Performance'}
+        </Button>
+      )}
+
+      {/* Basic Stats Cards */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
@@ -159,13 +336,26 @@ export function AlertHistoryPage() {
           <Filter className="w-4 h-4 text-zinc-500" />
           <Select value={directionFilter} onValueChange={(val) => { setDirectionFilter(val); setPage(1); }}>
             <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
-              <SelectValue placeholder={language === 'it' ? 'Filtra' : 'Filter'} />
+              <SelectValue placeholder={language === 'it' ? 'Direzione' : 'Direction'} />
             </SelectTrigger>
             <SelectContent className="bg-crypto-surface border-crypto-border">
-              <SelectItem value="all">{language === 'it' ? 'Tutti i Segnali' : 'All Signals'}</SelectItem>
-              <SelectItem value="LONG">{language === 'it' ? 'Solo LONG' : 'LONG Only'}</SelectItem>
-              <SelectItem value="SHORT">{language === 'it' ? 'Solo SHORT' : 'SHORT Only'}</SelectItem>
+              <SelectItem value="all">{language === 'it' ? 'Tutte' : 'All'}</SelectItem>
+              <SelectItem value="LONG">LONG</SelectItem>
+              <SelectItem value="SHORT">SHORT</SelectItem>
               <SelectItem value="NO TRADE">NO TRADE</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={outcomeFilter} onValueChange={(val) => { setOutcomeFilter(val); setPage(1); }}>
+            <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="outcome-filter">
+              <SelectValue placeholder="Outcome" />
+            </SelectTrigger>
+            <SelectContent className="bg-crypto-surface border-crypto-border">
+              <SelectItem value="all">{language === 'it' ? 'Tutti' : 'All'}</SelectItem>
+              <SelectItem value="WIN">WIN</SelectItem>
+              <SelectItem value="PARTIAL_WIN">PARTIAL</SelectItem>
+              <SelectItem value="LOSS">LOSS</SelectItem>
+              <SelectItem value="EXPIRED">EXPIRED</SelectItem>
+              <SelectItem value="PENDING">PENDING</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -193,8 +383,9 @@ export function AlertHistoryPage() {
           <div className="divide-y divide-crypto-border">
             {signals.map((signal, idx) => {
               const config = getDirectionConfig(signal.direction);
-              const statusConfig = getStatusConfig(signal.status);
+              const outcomeConfig = getOutcomeConfig(signal.outcome);
               const Icon = config.icon;
+              const OutcomeIcon = outcomeConfig.icon;
               
               return (
                 <div 
@@ -213,9 +404,11 @@ export function AlertHistoryPage() {
                           <Badge className={cn("font-mono text-xs", config.bg, config.color, config.border)}>
                             {signal.direction}
                           </Badge>
-                          {signal.status && (
-                            <Badge className={cn("font-mono text-[10px]", statusConfig.bg, statusConfig.color, statusConfig.border)}>
-                              {statusConfig.label}
+                          {/* Outcome Badge */}
+                          {signal.outcome && signal.outcome !== 'NO_TRADE' && (
+                            <Badge className={cn("font-mono text-[10px] flex items-center gap-1", outcomeConfig.bg, outcomeConfig.color, outcomeConfig.border)}>
+                              <OutcomeIcon className="w-3 h-3" />
+                              {outcomeConfig.label}
                             </Badge>
                           )}
                           <span className="text-xs text-zinc-500">{signal.setup_type}</span>
@@ -228,10 +421,19 @@ export function AlertHistoryPage() {
                           <span className="font-mono">
                             BTC: {formatPrice(signal.btc_price)}
                           </span>
+                          {/* PnL if available */}
+                          {signal.pnl_percent !== null && signal.pnl_percent !== undefined && (
+                            <span className={cn(
+                              "font-mono font-bold text-sm",
+                              signal.pnl_percent >= 0 ? "text-bullish" : "text-bearish"
+                            )}>
+                              {signal.pnl_percent >= 0 ? '+' : ''}{signal.pnl_percent?.toFixed(2)}%
+                            </span>
+                          )}
                         </div>
-                        {signal.reason && (
+                        {signal.outcome_notes && (
                           <div className="text-[10px] text-zinc-500 mt-1 italic">
-                            {signal.reason}
+                            {signal.outcome_notes}
                           </div>
                         )}
                       </div>

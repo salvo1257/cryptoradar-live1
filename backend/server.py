@@ -254,7 +254,7 @@ class SignalHistoryEntry(BaseModel):
     """Stored trade signal for history tracking"""
     signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime
-    direction: str
+    direction: str  # LONG, SHORT, NO_TRADE
     confidence: float
     estimated_move: float
     entry_zone_low: float
@@ -264,16 +264,68 @@ class SignalHistoryEntry(BaseModel):
     target_2: float
     risk_reward_ratio: float
     setup_type: str
+    timeframe: str = "4H"
     btc_price: float
     market_bias: str
     whale_direction: Optional[str] = None
+    whale_strength: Optional[float] = None
     liquidity_direction: Optional[str] = None
+    magnet_direction: Optional[str] = None
+    magnet_score: Optional[float] = None
+    energy_score: Optional[float] = None
+    compression_level: Optional[str] = None
     warnings: List[str] = []
     reasoning_summary: str = ""
-    # Tracking fields (for performance analysis)
-    outcome: Optional[str] = None  # "win", "loss", "active", "expired"
-    actual_move: Optional[float] = None
-    closed_at: Optional[datetime] = None
+    
+    # Outcome Tracking Fields
+    outcome: str = "PENDING"  # PENDING, WIN, LOSS, PARTIAL_WIN, EXPIRED, NO_HIT
+    outcome_timestamp: Optional[datetime] = None
+    outcome_price: Optional[float] = None
+    pnl_percent: Optional[float] = None
+    target_1_hit: bool = False
+    target_2_hit: bool = False
+    stop_hit: bool = False
+    validity_hours: int = 24  # Signal validity window (24h for 4H timeframe)
+    price_at_check: Optional[float] = None
+    outcome_notes: str = ""
+
+
+class SignalOutcomeStats(BaseModel):
+    """Performance statistics for signal tracking"""
+    total_signals: int = 0
+    total_long: int = 0
+    total_short: int = 0
+    total_no_trade: int = 0
+    
+    # Outcomes
+    wins: int = 0
+    losses: int = 0
+    partial_wins: int = 0
+    expired: int = 0
+    pending: int = 0
+    
+    # Win rates
+    overall_win_rate: float = 0.0
+    long_win_rate: float = 0.0
+    short_win_rate: float = 0.0
+    
+    # Performance metrics
+    avg_winning_confidence: float = 0.0
+    avg_losing_confidence: float = 0.0
+    avg_pnl_percent: float = 0.0
+    avg_rr_ratio: float = 0.0
+    best_trade_pnl: float = 0.0
+    worst_trade_pnl: float = 0.0
+    
+    # By setup type
+    setup_performance: dict = {}
+    
+    # By market condition
+    condition_performance: dict = {}
+    
+    # Time-based
+    last_7d_win_rate: float = 0.0
+    last_30d_win_rate: float = 0.0
 
 
 class SignalHistoryResponse(BaseModel):
@@ -6720,12 +6772,33 @@ async def record_signal():
         
         should_record = True
         if last_signal:
-            time_diff = (datetime.now(timezone.utc) - last_signal["timestamp"]).total_seconds()
+            last_ts = last_signal["timestamp"]
+            # Ensure timezone-aware comparison
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.replace(tzinfo=timezone.utc)
+            time_diff = (datetime.now(timezone.utc) - last_ts).total_seconds()
             if time_diff < 3600 and last_signal["direction"] == signal.direction:
                 should_record = False  # Same signal within 1 hour
         
         if should_record:
-            # Create history entry
+            # Get market energy and liquidity magnet for complete snapshot
+            market_energy = analyze_market_energy(
+                candles=candles,
+                current_price=current_price,
+                aggregated_orderbook=aggregated_orderbook,
+                open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
+                liquidity_clusters=clusters
+            )
+            
+            liquidity_magnet = analyze_liquidity_magnet(
+                current_price=current_price,
+                aggregated_orderbook=aggregated_orderbook,
+                liquidity_clusters=clusters,
+                liquidation_data=liquidation_data,
+                open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None
+            )
+            
+            # Create comprehensive history entry with outcome tracking fields
             history_entry = {
                 "signal_id": str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc),
@@ -6739,15 +6812,33 @@ async def record_signal():
                 "target_2": signal.target_2,
                 "risk_reward_ratio": signal.risk_reward_ratio,
                 "setup_type": signal.setup_type,
+                "timeframe": "4H",
                 "btc_price": current_price,
                 "market_bias": market_bias.bias,
+                
+                # Market condition snapshot
                 "whale_direction": whale_activity.direction if whale_activity else None,
-                "liquidity_direction": liquidity_direction.direction,
-                "warnings": signal.warnings[:3],  # Keep top 3 warnings
+                "whale_strength": whale_activity.strength if whale_activity else None,
+                "liquidity_direction": liquidity_direction.direction if liquidity_direction else None,
+                "magnet_direction": liquidity_magnet.target_direction if liquidity_magnet else None,
+                "magnet_score": liquidity_magnet.magnet_score if liquidity_magnet else None,
+                "energy_score": market_energy.energy_score if market_energy else None,
+                "compression_level": market_energy.compression_level if market_energy else None,
+                
+                "warnings": signal.warnings[:3],
                 "reasoning_summary": signal.reasoning[:500] if signal.reasoning else "",
-                "outcome": "active" if signal.direction != "NO TRADE" else None,
-                "actual_move": None,
-                "closed_at": None
+                
+                # Outcome tracking fields - initialized
+                "outcome": "PENDING" if signal.direction in ["LONG", "SHORT"] else "NO_TRADE",
+                "outcome_timestamp": None,
+                "outcome_price": None,
+                "pnl_percent": None,
+                "target_1_hit": False,
+                "target_2_hit": False,
+                "stop_hit": False,
+                "validity_hours": 24,  # 24 hours for 4H timeframe signals
+                "price_at_check": None,
+                "outcome_notes": ""
             }
             
             await signal_history_collection.insert_one(history_entry)
@@ -6856,6 +6947,468 @@ async def clear_signal_history():
         return {"deleted": result.deleted_count}
     except Exception as e:
         logger.error(f"Error clearing history: {e}")
+        return {"error": str(e)}
+
+
+@api_router.post("/signal-history/migrate-outcomes")
+async def migrate_signal_outcomes():
+    """
+    Migrate old signals to have the new outcome field.
+    - NO TRADE signals get outcome "NO_TRADE"
+    - Old LONG/SHORT signals without outcome get "EXPIRED" (since they're old)
+    """
+    try:
+        # Update NO TRADE signals
+        no_trade_result = await signal_history_collection.update_many(
+            {"direction": "NO TRADE", "outcome": {"$exists": False}},
+            {"$set": {"outcome": "NO_TRADE"}}
+        )
+        
+        # Update old LONG/SHORT signals to EXPIRED
+        trade_result = await signal_history_collection.update_many(
+            {"direction": {"$in": ["LONG", "SHORT"]}, "outcome": {"$exists": False}},
+            {"$set": {"outcome": "EXPIRED", "outcome_notes": "Migrated from legacy format"}}
+        )
+        
+        return {
+            "migrated_no_trade": no_trade_result.modified_count,
+            "migrated_trades_to_expired": trade_result.modified_count,
+            "total_migrated": no_trade_result.modified_count + trade_result.modified_count
+        }
+    except Exception as e:
+        logger.error(f"Error migrating outcomes: {e}")
+        return {"error": str(e)}
+
+
+# ============== SIGNAL OUTCOME TRACKING ==============
+
+@api_router.post("/signal-history/check-outcomes")
+async def check_signal_outcomes():
+    """
+    Check and update outcomes for all pending signals.
+    This should be called periodically (e.g., every hour via cron or frontend timer).
+    
+    For LONG signals:
+    - WIN: Target 2 reached before stop
+    - PARTIAL_WIN: Target 1 reached but not Target 2
+    - LOSS: Stop loss hit
+    - EXPIRED: Neither target nor stop hit within validity window
+    
+    For SHORT signals:
+    - Same logic, mirrored
+    """
+    try:
+        # Get current price
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker["price"] if ticker else 0
+        
+        if current_price == 0:
+            return {"error": "Cannot fetch current price", "updated": 0}
+        
+        # Fetch all PENDING signals
+        pending_signals = await signal_history_collection.find(
+            {"outcome": "PENDING"},
+            {"_id": 1, "signal_id": 1, "direction": 1, "btc_price": 1, 
+             "stop_loss": 1, "target_1": 1, "target_2": 1, 
+             "timestamp": 1, "validity_hours": 1, "target_1_hit": 1}
+        ).to_list(100)
+        
+        now = datetime.now(timezone.utc)
+        updated_count = 0
+        results = []
+        
+        for signal in pending_signals:
+            signal_id = signal["signal_id"]
+            direction = signal["direction"]
+            entry_price = signal["btc_price"]
+            stop_loss = signal["stop_loss"]
+            target_1 = signal["target_1"]
+            target_2 = signal["target_2"]
+            validity_hours = signal.get("validity_hours", 24)
+            target_1_already_hit = signal.get("target_1_hit", False)
+            
+            # Check if signal has expired
+            signal_ts = signal["timestamp"]
+            if signal_ts.tzinfo is None:
+                signal_ts = signal_ts.replace(tzinfo=timezone.utc)
+            signal_age_hours = (now - signal_ts).total_seconds() / 3600
+            is_expired = signal_age_hours > validity_hours
+            
+            outcome = None
+            outcome_notes = ""
+            pnl_percent = 0
+            target_1_hit = target_1_already_hit
+            target_2_hit = False
+            stop_hit = False
+            
+            if direction == "LONG":
+                # LONG: price needs to go UP to targets, DOWN to stop
+                if current_price <= stop_loss:
+                    outcome = "LOSS"
+                    stop_hit = True
+                    pnl_percent = ((stop_loss - entry_price) / entry_price) * 100
+                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
+                    
+                elif current_price >= target_2:
+                    outcome = "WIN"
+                    target_1_hit = True
+                    target_2_hit = True
+                    pnl_percent = ((target_2 - entry_price) / entry_price) * 100
+                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
+                    
+                elif current_price >= target_1:
+                    target_1_hit = True
+                    if is_expired:
+                        outcome = "PARTIAL_WIN"
+                        pnl_percent = ((target_1 - entry_price) / entry_price) * 100
+                        outcome_notes = f"Target 1 reached, expired before T2"
+                    else:
+                        # Still running, update target_1_hit flag
+                        await signal_history_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
+                        )
+                        continue
+                        
+                elif is_expired:
+                    outcome = "EXPIRED"
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                    outcome_notes = f"Expired without hitting targets or stop"
+                    
+            elif direction == "SHORT":
+                # SHORT: price needs to go DOWN to targets, UP to stop
+                if current_price >= stop_loss:
+                    outcome = "LOSS"
+                    stop_hit = True
+                    pnl_percent = ((entry_price - stop_loss) / entry_price) * 100
+                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
+                    
+                elif current_price <= target_2:
+                    outcome = "WIN"
+                    target_1_hit = True
+                    target_2_hit = True
+                    pnl_percent = ((entry_price - target_2) / entry_price) * 100
+                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
+                    
+                elif current_price <= target_1:
+                    target_1_hit = True
+                    if is_expired:
+                        outcome = "PARTIAL_WIN"
+                        pnl_percent = ((entry_price - target_1) / entry_price) * 100
+                        outcome_notes = f"Target 1 reached, expired before T2"
+                    else:
+                        await signal_history_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
+                        )
+                        continue
+                        
+                elif is_expired:
+                    outcome = "EXPIRED"
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                    outcome_notes = f"Expired without hitting targets or stop"
+            
+            # Update signal if outcome determined
+            if outcome:
+                await signal_history_collection.update_one(
+                    {"signal_id": signal_id},
+                    {"$set": {
+                        "outcome": outcome,
+                        "outcome_timestamp": now,
+                        "outcome_price": current_price,
+                        "pnl_percent": round(pnl_percent, 2),
+                        "target_1_hit": target_1_hit,
+                        "target_2_hit": target_2_hit,
+                        "stop_hit": stop_hit,
+                        "price_at_check": current_price,
+                        "outcome_notes": outcome_notes
+                    }}
+                )
+                updated_count += 1
+                results.append({
+                    "signal_id": signal_id,
+                    "direction": direction,
+                    "outcome": outcome,
+                    "pnl_percent": round(pnl_percent, 2)
+                })
+        
+        return {
+            "checked": len(pending_signals),
+            "updated": updated_count,
+            "current_price": current_price,
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking outcomes: {e}")
+        return {"error": str(e), "updated": 0}
+
+
+@api_router.get("/signal-history/statistics")
+async def get_signal_statistics():
+    """
+    Get comprehensive performance statistics for signal tracking.
+    
+    Returns:
+    - Win/loss rates overall and by direction
+    - Average confidence of winning vs losing trades
+    - Average R:R ratio
+    - Performance by setup type
+    - Performance by market condition
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        last_7d = now - timedelta(days=7)
+        last_30d = now - timedelta(days=30)
+        
+        # Base counts
+        total_signals = await signal_history_collection.count_documents({})
+        total_long = await signal_history_collection.count_documents({"direction": "LONG"})
+        total_short = await signal_history_collection.count_documents({"direction": "SHORT"})
+        total_no_trade = await signal_history_collection.count_documents({"direction": "NO TRADE"})
+        
+        # Outcome counts (only for tradeable signals)
+        wins = await signal_history_collection.count_documents({"outcome": "WIN"})
+        losses = await signal_history_collection.count_documents({"outcome": "LOSS"})
+        partial_wins = await signal_history_collection.count_documents({"outcome": "PARTIAL_WIN"})
+        expired = await signal_history_collection.count_documents({"outcome": "EXPIRED"})
+        pending = await signal_history_collection.count_documents({"outcome": "PENDING"})
+        
+        # Win rates
+        tradeable_closed = wins + losses + partial_wins + expired
+        overall_win_rate = ((wins + partial_wins) / tradeable_closed * 100) if tradeable_closed > 0 else 0
+        
+        # Win rate by direction
+        long_wins = await signal_history_collection.count_documents({"direction": "LONG", "outcome": {"$in": ["WIN", "PARTIAL_WIN"]}})
+        long_closed = await signal_history_collection.count_documents({"direction": "LONG", "outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}})
+        long_win_rate = (long_wins / long_closed * 100) if long_closed > 0 else 0
+        
+        short_wins = await signal_history_collection.count_documents({"direction": "SHORT", "outcome": {"$in": ["WIN", "PARTIAL_WIN"]}})
+        short_closed = await signal_history_collection.count_documents({"direction": "SHORT", "outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}})
+        short_win_rate = (short_wins / short_closed * 100) if short_closed > 0 else 0
+        
+        # Average confidence by outcome
+        winning_conf_pipeline = [
+            {"$match": {"outcome": {"$in": ["WIN", "PARTIAL_WIN"]}}},
+            {"$group": {"_id": None, "avg": {"$avg": "$confidence"}}}
+        ]
+        losing_conf_pipeline = [
+            {"$match": {"outcome": "LOSS"}},
+            {"$group": {"_id": None, "avg": {"$avg": "$confidence"}}}
+        ]
+        
+        winning_conf = await signal_history_collection.aggregate(winning_conf_pipeline).to_list(1)
+        losing_conf = await signal_history_collection.aggregate(losing_conf_pipeline).to_list(1)
+        
+        avg_winning_confidence = winning_conf[0]["avg"] if winning_conf and winning_conf[0].get("avg") else 0
+        avg_losing_confidence = losing_conf[0]["avg"] if losing_conf and losing_conf[0].get("avg") else 0
+        
+        # Average PnL and R:R
+        pnl_pipeline = [
+            {"$match": {"pnl_percent": {"$ne": None}}},
+            {"$group": {
+                "_id": None,
+                "avg_pnl": {"$avg": "$pnl_percent"},
+                "best_pnl": {"$max": "$pnl_percent"},
+                "worst_pnl": {"$min": "$pnl_percent"},
+                "avg_rr": {"$avg": "$risk_reward_ratio"}
+            }}
+        ]
+        pnl_stats = await signal_history_collection.aggregate(pnl_pipeline).to_list(1)
+        
+        avg_pnl = pnl_stats[0]["avg_pnl"] if pnl_stats and pnl_stats[0].get("avg_pnl") else 0
+        best_pnl = pnl_stats[0]["best_pnl"] if pnl_stats and pnl_stats[0].get("best_pnl") else 0
+        worst_pnl = pnl_stats[0]["worst_pnl"] if pnl_stats and pnl_stats[0].get("worst_pnl") else 0
+        avg_rr = pnl_stats[0]["avg_rr"] if pnl_stats and pnl_stats[0].get("avg_rr") else 0
+        
+        # Performance by setup type
+        setup_pipeline = [
+            {"$match": {"outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}}},
+            {"$group": {
+                "_id": "$setup_type",
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$in": ["$outcome", ["WIN", "PARTIAL_WIN"]]}, 1, 0]}},
+                "losses": {"$sum": {"$cond": [{"$eq": ["$outcome", "LOSS"]}, 1, 0]}},
+                "avg_confidence": {"$avg": "$confidence"},
+                "avg_pnl": {"$avg": "$pnl_percent"}
+            }}
+        ]
+        setup_stats = await signal_history_collection.aggregate(setup_pipeline).to_list(20)
+        
+        setup_performance = {}
+        for item in setup_stats:
+            setup_type = item["_id"] or "Unknown"
+            total = item["total"]
+            wins_count = item["wins"]
+            setup_performance[setup_type] = {
+                "total": total,
+                "wins": wins_count,
+                "losses": item["losses"],
+                "win_rate": round((wins_count / total * 100) if total > 0 else 0, 1),
+                "avg_confidence": round(item["avg_confidence"] or 0, 1),
+                "avg_pnl": round(item["avg_pnl"] or 0, 2)
+            }
+        
+        # Performance by market condition (compression level)
+        condition_pipeline = [
+            {"$match": {"outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}, "compression_level": {"$ne": None}}},
+            {"$group": {
+                "_id": "$compression_level",
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$in": ["$outcome", ["WIN", "PARTIAL_WIN"]]}, 1, 0]}},
+                "avg_pnl": {"$avg": "$pnl_percent"}
+            }}
+        ]
+        condition_stats = await signal_history_collection.aggregate(condition_pipeline).to_list(10)
+        
+        condition_performance = {}
+        for item in condition_stats:
+            condition = item["_id"] or "Unknown"
+            total = item["total"]
+            wins_count = item["wins"]
+            condition_performance[condition] = {
+                "total": total,
+                "wins": wins_count,
+                "win_rate": round((wins_count / total * 100) if total > 0 else 0, 1),
+                "avg_pnl": round(item["avg_pnl"] or 0, 2)
+            }
+        
+        # Time-based win rates
+        last_7d_pipeline = [
+            {"$match": {
+                "timestamp": {"$gte": last_7d},
+                "outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}
+            }},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$in": ["$outcome", ["WIN", "PARTIAL_WIN"]]}, 1, 0]}}
+            }}
+        ]
+        last_7d_stats = await signal_history_collection.aggregate(last_7d_pipeline).to_list(1)
+        last_7d_win_rate = 0
+        if last_7d_stats and last_7d_stats[0].get("total", 0) > 0:
+            last_7d_win_rate = (last_7d_stats[0]["wins"] / last_7d_stats[0]["total"]) * 100
+        
+        last_30d_pipeline = [
+            {"$match": {
+                "timestamp": {"$gte": last_30d},
+                "outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]}
+            }},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$in": ["$outcome", ["WIN", "PARTIAL_WIN"]]}, 1, 0]}}
+            }}
+        ]
+        last_30d_stats = await signal_history_collection.aggregate(last_30d_pipeline).to_list(1)
+        last_30d_win_rate = 0
+        if last_30d_stats and last_30d_stats[0].get("total", 0) > 0:
+            last_30d_win_rate = (last_30d_stats[0]["wins"] / last_30d_stats[0]["total"]) * 100
+        
+        return {
+            "total_signals": total_signals,
+            "total_long": total_long,
+            "total_short": total_short,
+            "total_no_trade": total_no_trade,
+            
+            "outcomes": {
+                "wins": wins,
+                "losses": losses,
+                "partial_wins": partial_wins,
+                "expired": expired,
+                "pending": pending
+            },
+            
+            "win_rates": {
+                "overall": round(overall_win_rate, 1),
+                "long": round(long_win_rate, 1),
+                "short": round(short_win_rate, 1),
+                "last_7d": round(last_7d_win_rate, 1),
+                "last_30d": round(last_30d_win_rate, 1)
+            },
+            
+            "performance": {
+                "avg_winning_confidence": round(avg_winning_confidence, 1),
+                "avg_losing_confidence": round(avg_losing_confidence, 1),
+                "avg_pnl_percent": round(avg_pnl, 2),
+                "best_trade_pnl": round(best_pnl, 2),
+                "worst_trade_pnl": round(worst_pnl, 2),
+                "avg_rr_ratio": round(avg_rr, 2)
+            },
+            
+            "by_setup_type": setup_performance,
+            "by_market_condition": condition_performance
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting signal statistics: {e}")
+        return {"error": str(e)}
+
+
+@api_router.put("/signal-history/{signal_id}/outcome")
+async def update_signal_outcome(
+    signal_id: str,
+    outcome: str = Query(..., description="WIN, LOSS, PARTIAL_WIN, EXPIRED"),
+    notes: str = Query(default="", description="Optional notes")
+):
+    """
+    Manually update a signal's outcome (for corrections or manual closing).
+    """
+    try:
+        valid_outcomes = ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED", "PENDING"]
+        if outcome.upper() not in valid_outcomes:
+            return {"error": f"Invalid outcome. Must be one of: {valid_outcomes}"}
+        
+        # Get current price for PnL calculation
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker["price"] if ticker else 0
+        
+        # Get the signal
+        signal = await signal_history_collection.find_one(
+            {"signal_id": signal_id},
+            {"_id": 0, "direction": 1, "btc_price": 1, "stop_loss": 1, "target_1": 1, "target_2": 1}
+        )
+        
+        if not signal:
+            return {"error": "Signal not found"}
+        
+        # Calculate PnL based on outcome
+        entry_price = signal["btc_price"]
+        pnl_percent = 0
+        
+        if outcome.upper() in ["WIN", "PARTIAL_WIN"]:
+            target = signal["target_2"] if outcome.upper() == "WIN" else signal["target_1"]
+            if signal["direction"] == "LONG":
+                pnl_percent = ((target - entry_price) / entry_price) * 100
+            else:
+                pnl_percent = ((entry_price - target) / entry_price) * 100
+        elif outcome.upper() == "LOSS":
+            stop = signal["stop_loss"]
+            if signal["direction"] == "LONG":
+                pnl_percent = ((stop - entry_price) / entry_price) * 100
+            else:
+                pnl_percent = ((entry_price - stop) / entry_price) * 100
+        
+        # Update the signal
+        result = await signal_history_collection.update_one(
+            {"signal_id": signal_id},
+            {"$set": {
+                "outcome": outcome.upper(),
+                "outcome_timestamp": datetime.now(timezone.utc),
+                "outcome_price": current_price,
+                "pnl_percent": round(pnl_percent, 2),
+                "outcome_notes": notes or f"Manually set to {outcome.upper()}"
+            }}
+        )
+        
+        if result.modified_count > 0:
+            return {"success": True, "signal_id": signal_id, "outcome": outcome.upper(), "pnl_percent": round(pnl_percent, 2)}
+        else:
+            return {"error": "Failed to update signal"}
+            
+    except Exception as e:
+        logger.error(f"Error updating signal outcome: {e}")
         return {"error": str(e)}
 
 
