@@ -9,7 +9,8 @@ import {
   OrderBookCard,
   OpenInterestCard,
   FundingRateCard,
-  TradeSignalCard
+  TradeSignalCard,
+  MarketEnergyCard
 } from '../cards';
 
 export function DashboardPage() {
@@ -52,16 +53,17 @@ export function DashboardPage() {
         <FundingRateCard />
       </div>
 
+      {/* Market Energy & Whale Activity Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <MarketEnergyCard />
+        <WhaleAlertCard compact />
+      </div>
+
       {/* Secondary Analysis Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <OrderBookCard />
         <LiquidityCard compact />
         <SupportResistanceCard compact />
-      </div>
-
-      {/* Alerts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <WhaleAlertCard compact />
       </div>
     </div>
   );

@@ -9,3 +9,4 @@ export { NewsCard } from './NewsCard';
 export { OpenInterestCard } from './OpenInterestCard';
 export { FundingRateCard } from './FundingRateCard';
 export { TradeSignalCard } from './TradeSignalCard';
+export { MarketEnergyCard } from './MarketEnergyCard';

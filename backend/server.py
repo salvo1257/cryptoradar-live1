@@ -142,6 +142,27 @@ class WhaleActivity(BaseModel):
     liquidation_zones: List[dict] = []  # List of nearby liquidation targets
     whale_behavior: str = "unknown"  # "accumulating", "distributing", "hunting_stops", "position_building"
 
+# ============== MARKET ENERGY / COMPRESSION DETECTOR ==============
+
+class MarketEnergy(BaseModel):
+    """Market Energy / Compression Detector - identifies energy build-up before significant moves"""
+    energy_score: float  # 0-100 overall energy score
+    compression_level: str  # "LOW", "MEDIUM", "HIGH"
+    range_width_percent: float  # Current trading range width as percentage
+    volatility_compression: float  # 0-100 volatility compression score
+    oi_trend: str  # "RISING", "FALLING", "STABLE"
+    oi_change_percent: float  # OI change percentage
+    liquidity_buildup: str  # "NONE", "WEAK", "MODERATE", "STRONG"
+    liquidity_above: float  # Liquidity value above current price
+    liquidity_below: float  # Liquidity value below current price
+    orderbook_pressure_buildup: str  # "NONE", "BUILDING", "STRONG"
+    breakout_probability: str  # "LOW", "MEDIUM", "HIGH"
+    expected_direction: Optional[str] = None  # "UP", "DOWN", "UNCLEAR"
+    explanation: str  # Summary explanation
+    signals: List[str] = []  # Detected signals
+    expansion_warning: bool = False  # True if expansion likely soon
+    data_source: str = "Multi-Exchange + CoinGlass"
+
 # ============== LIQUIDITY LADDER ==============
 
 class LiquidityLevel(BaseModel):
@@ -591,6 +612,37 @@ BACKEND_TRANSLATIONS = {
         "vol_ob_bearish": "Volume elevato con order book aggressivo lato sell - forte offerta.",
         "liq_context_bullish": "Short squeeze in corso - short liquidati forzatamente.",
         "liq_context_bearish": "Cascata di liquidazioni long - pressione ribassista.",
+        
+        # Market Energy / Compression Detector
+        "extreme_compression": "Compressione estrema: range {0:.2f}% - energia in accumulo.",
+        "high_compression": "Alta compressione: range {0:.2f}% - movimento significativo probabile.",
+        "moderate_compression": "Compressione moderata: range {0:.2f}%.",
+        "tight_recent_range": "Range recente molto stretto: {0:.2f}% - breakout imminente possibile.",
+        "extreme_vol_compression": "Volatilità estremamente compressa - espansione imminente.",
+        "high_vol_compression": "Volatilità compressa - energia in accumulo.",
+        "oi_rising_compression": "OI in aumento +{0:.1f}% - posizionamento in costruzione.",
+        "oi_building_during_compression": "OI in crescita durante compressione - forte setup di breakout.",
+        "strong_liquidity_both_sides": "Forte liquidità su entrambi i lati (${0:.1f}M sopra, ${1:.1f}M sotto) - squeeze setup.",
+        "moderate_liquidity_buildup": "Accumulo liquidità moderato su entrambi i lati.",
+        "strong_orderbook_buildup": "Forte accumulo order book: {0} muri bid, {1} muri ask.",
+        "expansion_likely": "ESPANSIONE PROBABILE - compressione + posizionamento = movimento imminente.",
+        "energy_expansion_bullish": "BTC compresso in range {0:.2f}% con OI +{1:.1f}%. Liquidità in accumulo. Espansione rialzista probabile.",
+        "energy_expansion_bearish": "BTC compresso in range {0:.2f}% con OI +{1:.1f}%. Liquidità in accumulo. Espansione ribassista probabile.",
+        "energy_expansion_unclear": "BTC compresso in range {0:.2f}% con energia in accumulo. Direzione non chiara - attendere conferma.",
+        "energy_high_building": "BTC in forte compressione ({0:.2f}% range) con OI crescente e liquidità in accumulo. Movimento significativo in arrivo.",
+        "energy_high_oi_rising": "BTC compresso in range {0:.2f}% mentre OI cresce +{1:.1f}%. Posizionamento istituzionale in corso.",
+        "energy_high_compressed": "BTC in trading range stretto ({0:.2f}%). Energia in accumulo per prossimo movimento.",
+        "energy_medium_building": "Compressione moderata con posizionamento in costruzione. Monitorare per breakout.",
+        "energy_medium_consolidating": "Mercato in consolidamento. Energia neutra.",
+        "energy_low_ranging": "Mercato in range ampio. Bassa probabilità di breakout imminente.",
+        "energy_low_normal": "Condizioni di mercato normali. Nessuna compressione significativa.",
+        "energy_boosts_confidence": "Alta energia di mercato aumenta la confidenza.",
+        "high_energy_expansion": "Alta energia di mercato ({0:.0f}) - espansione imminente.",
+        "high_energy_wait": "Alta energia ({0:.0f}) ma direzione non confermata - attendere setup.",
+        "energy_reduces_confidence": "Bassa energia di mercato riduce la confidenza.",
+        "low_energy_caution": "Bassa energia di mercato - cautela su breakout.",
+        "expansion_likely_direction": "Espansione probabile verso {0}.",
+        "expansion_likely_no_direction": "Espansione probabile ma direzione non chiara - attendere conferma.",
     },
     "en": {
         # Market Bias
@@ -801,6 +853,37 @@ BACKEND_TRANSLATIONS = {
         "vol_ob_bearish": "High volume with aggressive sell-side order book - strong supply.",
         "liq_context_bullish": "Short squeeze in progress - shorts being forcibly liquidated.",
         "liq_context_bearish": "Long liquidation cascade - bearish pressure.",
+        
+        # Market Energy / Compression Detector
+        "extreme_compression": "Extreme compression: {0:.2f}% range - energy building.",
+        "high_compression": "High compression: {0:.2f}% range - significant move likely.",
+        "moderate_compression": "Moderate compression: {0:.2f}% range.",
+        "tight_recent_range": "Very tight recent range: {0:.2f}% - breakout imminent possible.",
+        "extreme_vol_compression": "Extremely compressed volatility - expansion imminent.",
+        "high_vol_compression": "Compressed volatility - energy building.",
+        "oi_rising_compression": "OI rising +{0:.1f}% - positioning building.",
+        "oi_building_during_compression": "OI growing during compression - strong breakout setup.",
+        "strong_liquidity_both_sides": "Strong liquidity on both sides (${0:.1f}M above, ${1:.1f}M below) - squeeze setup.",
+        "moderate_liquidity_buildup": "Moderate liquidity buildup on both sides.",
+        "strong_orderbook_buildup": "Strong order book buildup: {0} bid walls, {1} ask walls.",
+        "expansion_likely": "EXPANSION LIKELY - compression + positioning = move imminent.",
+        "energy_expansion_bullish": "BTC compressed in {0:.2f}% range with OI +{1:.1f}%. Liquidity building. Bullish expansion likely.",
+        "energy_expansion_bearish": "BTC compressed in {0:.2f}% range with OI +{1:.1f}%. Liquidity building. Bearish expansion likely.",
+        "energy_expansion_unclear": "BTC compressed in {0:.2f}% range with energy building. Direction unclear - wait for confirmation.",
+        "energy_high_building": "BTC highly compressed ({0:.2f}% range) with rising OI and liquidity buildup. Significant move coming.",
+        "energy_high_oi_rising": "BTC compressed in {0:.2f}% range while OI growing +{1:.1f}%. Institutional positioning in progress.",
+        "energy_high_compressed": "BTC trading in tight range ({0:.2f}%). Energy building for next move.",
+        "energy_medium_building": "Moderate compression with positioning building. Monitor for breakout.",
+        "energy_medium_consolidating": "Market consolidating. Neutral energy.",
+        "energy_low_ranging": "Market in wide range. Low probability of imminent breakout.",
+        "energy_low_normal": "Normal market conditions. No significant compression.",
+        "energy_boosts_confidence": "High market energy boosts confidence.",
+        "high_energy_expansion": "High market energy ({0:.0f}) - expansion imminent.",
+        "high_energy_wait": "High energy ({0:.0f}) but direction not confirmed - wait for setup.",
+        "energy_reduces_confidence": "Low market energy reduces confidence.",
+        "low_energy_caution": "Low market energy - be cautious on breakouts.",
+        "expansion_likely_direction": "Expansion likely toward {0}.",
+        "expansion_likely_no_direction": "Expansion likely but direction unclear - wait for confirmation.",
     },
     "de": {
         # Market Bias
@@ -1011,6 +1094,37 @@ BACKEND_TRANSLATIONS = {
         "vol_ob_bearish": "Hohes Volumen mit aggressiver Verkaufsseite - starkes Angebot.",
         "liq_context_bullish": "Short Squeeze läuft - Shorts werden zwangsliquidiert.",
         "liq_context_bearish": "Long-Liquidationskaskade - bärischer Druck.",
+        
+        # Market Energy / Compression Detector
+        "extreme_compression": "Extreme Kompression: {0:.2f}% Range - Energie baut sich auf.",
+        "high_compression": "Hohe Kompression: {0:.2f}% Range - signifikante Bewegung wahrscheinlich.",
+        "moderate_compression": "Moderate Kompression: {0:.2f}% Range.",
+        "tight_recent_range": "Sehr enge kürzliche Range: {0:.2f}% - Ausbruch möglicherweise unmittelbar.",
+        "extreme_vol_compression": "Extrem komprimierte Volatilität - Expansion unmittelbar bevorstehend.",
+        "high_vol_compression": "Komprimierte Volatilität - Energie baut sich auf.",
+        "oi_rising_compression": "OI steigt +{0:.1f}% - Positionierung baut sich auf.",
+        "oi_building_during_compression": "OI wächst während Kompression - starkes Ausbruch-Setup.",
+        "strong_liquidity_both_sides": "Starke Liquidität auf beiden Seiten (${0:.1f}M oben, ${1:.1f}M unten) - Squeeze-Setup.",
+        "moderate_liquidity_buildup": "Moderater Liquiditätsaufbau auf beiden Seiten.",
+        "strong_orderbook_buildup": "Starker Orderbuch-Aufbau: {0} Bid-Wände, {1} Ask-Wände.",
+        "expansion_likely": "EXPANSION WAHRSCHEINLICH - Kompression + Positionierung = Bewegung steht bevor.",
+        "energy_expansion_bullish": "BTC komprimiert in {0:.2f}% Range mit OI +{1:.1f}%. Liquidität baut sich auf. Bullische Expansion wahrscheinlich.",
+        "energy_expansion_bearish": "BTC komprimiert in {0:.2f}% Range mit OI +{1:.1f}%. Liquidität baut sich auf. Bärische Expansion wahrscheinlich.",
+        "energy_expansion_unclear": "BTC komprimiert in {0:.2f}% Range mit Energieaufbau. Richtung unklar - auf Bestätigung warten.",
+        "energy_high_building": "BTC stark komprimiert ({0:.2f}% Range) mit steigendem OI und Liquiditätsaufbau. Signifikante Bewegung kommt.",
+        "energy_high_oi_rising": "BTC komprimiert in {0:.2f}% Range während OI +{1:.1f}% wächst. Institutionelle Positionierung läuft.",
+        "energy_high_compressed": "BTC handelt in enger Range ({0:.2f}%). Energie baut sich für nächste Bewegung auf.",
+        "energy_medium_building": "Moderate Kompression mit Positionierungsaufbau. Auf Ausbruch achten.",
+        "energy_medium_consolidating": "Markt konsolidiert. Neutrale Energie.",
+        "energy_low_ranging": "Markt in breiter Range. Geringe Wahrscheinlichkeit für unmittelbaren Ausbruch.",
+        "energy_low_normal": "Normale Marktbedingungen. Keine signifikante Kompression.",
+        "energy_boosts_confidence": "Hohe Marktenergie steigert das Vertrauen.",
+        "high_energy_expansion": "Hohe Marktenergie ({0:.0f}) - Expansion steht bevor.",
+        "high_energy_wait": "Hohe Energie ({0:.0f}) aber Richtung nicht bestätigt - auf Setup warten.",
+        "energy_reduces_confidence": "Niedrige Marktenergie reduziert das Vertrauen.",
+        "low_energy_caution": "Niedrige Marktenergie - Vorsicht bei Ausbrüchen.",
+        "expansion_likely_direction": "Expansion wahrscheinlich Richtung {0}.",
+        "expansion_likely_no_direction": "Expansion wahrscheinlich aber Richtung unklar - auf Bestätigung warten.",
     },
     "pl": {
         # Market Bias
@@ -1221,6 +1335,37 @@ BACKEND_TRANSLATIONS = {
         "vol_ob_bearish": "Wysoki wolumen z agresywną stroną sprzedaży - silna podaż.",
         "liq_context_bullish": "Short squeeze w toku - shorty przymusowo likwidowane.",
         "liq_context_bearish": "Kaskada likwidacji long - niedźwiedzia presja.",
+        
+        # Market Energy / Compression Detector
+        "extreme_compression": "Ekstremalna kompresja: {0:.2f}% zakres - energia się kumuluje.",
+        "high_compression": "Wysoka kompresja: {0:.2f}% zakres - znaczący ruch prawdopodobny.",
+        "moderate_compression": "Umiarkowana kompresja: {0:.2f}% zakres.",
+        "tight_recent_range": "Bardzo wąski ostatni zakres: {0:.2f}% - wybicie może być blisko.",
+        "extreme_vol_compression": "Ekstremalnie skompresowana zmienność - ekspansja nieuchronna.",
+        "high_vol_compression": "Skompresowana zmienność - energia się kumuluje.",
+        "oi_rising_compression": "OI rośnie +{0:.1f}% - pozycjonowanie w budowie.",
+        "oi_building_during_compression": "OI rośnie podczas kompresji - silny setup na wybicie.",
+        "strong_liquidity_both_sides": "Silna płynność po obu stronach (${0:.1f}M powyżej, ${1:.1f}M poniżej) - setup squeeze.",
+        "moderate_liquidity_buildup": "Umiarkowany wzrost płynności po obu stronach.",
+        "strong_orderbook_buildup": "Silny wzrost orderbooka: {0} ścian bid, {1} ścian ask.",
+        "expansion_likely": "EKSPANSJA PRAWDOPODOBNA - kompresja + pozycjonowanie = ruch nieuchronny.",
+        "energy_expansion_bullish": "BTC skompresowany w {0:.2f}% zakresie z OI +{1:.1f}%. Płynność rośnie. Bycza ekspansja prawdopodobna.",
+        "energy_expansion_bearish": "BTC skompresowany w {0:.2f}% zakresie z OI +{1:.1f}%. Płynność rośnie. Niedźwiedzia ekspansja prawdopodobna.",
+        "energy_expansion_unclear": "BTC skompresowany w {0:.2f}% zakresie z rosnącą energią. Kierunek niejasny - czekaj na potwierdzenie.",
+        "energy_high_building": "BTC silnie skompresowany ({0:.2f}% zakres) z rosnącym OI i płynnością. Znaczący ruch nadchodzi.",
+        "energy_high_oi_rising": "BTC skompresowany w {0:.2f}% zakresie podczas gdy OI rośnie +{1:.1f}%. Instytucjonalne pozycjonowanie w toku.",
+        "energy_high_compressed": "BTC handluje w wąskim zakresie ({0:.2f}%). Energia kumuluje się na następny ruch.",
+        "energy_medium_building": "Umiarkowana kompresja z budowaniem pozycji. Monitoruj na wybicie.",
+        "energy_medium_consolidating": "Rynek konsoliduje. Neutralna energia.",
+        "energy_low_ranging": "Rynek w szerokim zakresie. Niska szansa na bliskie wybicie.",
+        "energy_low_normal": "Normalne warunki rynkowe. Brak znaczącej kompresji.",
+        "energy_boosts_confidence": "Wysoka energia rynku zwiększa pewność.",
+        "high_energy_expansion": "Wysoka energia rynku ({0:.0f}) - ekspansja nieuchronna.",
+        "high_energy_wait": "Wysoka energia ({0:.0f}) ale kierunek niepotwierdzony - czekaj na setup.",
+        "energy_reduces_confidence": "Niska energia rynku zmniejsza pewność.",
+        "low_energy_caution": "Niska energia rynku - ostrożność przy wybiciach.",
+        "expansion_likely_direction": "Ekspansja prawdopodobna w kierunku {0}.",
+        "expansion_likely_no_direction": "Ekspansja prawdopodobna ale kierunek niejasny - czekaj na potwierdzenie.",
     }
 }
 
@@ -3079,6 +3224,358 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
         data_source="Fallback"
     )
 
+# ============== MARKET ENERGY / COMPRESSION DETECTOR ==============
+
+def analyze_market_energy(
+    candles: List[dict],
+    current_price: float,
+    aggregated_orderbook: dict,
+    open_interest_data: dict = None,
+    liquidity_clusters: List = None,
+    lang: str = "it"
+) -> MarketEnergy:
+    """
+    Market Energy / Compression Detector v1.0
+    
+    Detects when BTC is building energy before a significant move by analyzing:
+    1. Price range compression
+    2. Volatility compression
+    3. Open Interest behavior during compression
+    4. Liquidity build-up on both sides
+    5. Order book pressure build-up
+    
+    Returns energy score, compression level, and breakout probability.
+    """
+    
+    signals = []
+    energy_score = 0
+    
+    # ======== 1. PRICE RANGE COMPRESSION ========
+    range_width_percent = 0
+    compression_score = 0
+    
+    if candles and len(candles) >= 20:
+        # Calculate recent trading range (last 20 candles = ~80 hours on 4H)
+        recent_highs = [c["high"] for c in candles[-20:]]
+        recent_lows = [c["low"] for c in candles[-20:]]
+        
+        period_high = max(recent_highs)
+        period_low = min(recent_lows)
+        range_width = period_high - period_low
+        range_width_percent = (range_width / current_price) * 100
+        
+        # Compare to longer-term range (last 50 candles)
+        if len(candles) >= 50:
+            longer_highs = [c["high"] for c in candles[-50:]]
+            longer_lows = [c["low"] for c in candles[-50:]]
+            longer_range = max(longer_highs) - min(longer_lows)
+            longer_range_pct = (longer_range / current_price) * 100
+            
+            # Compression ratio: if recent range is much smaller than longer range
+            if longer_range_pct > 0:
+                compression_ratio = range_width_percent / longer_range_pct
+                
+                if compression_ratio < 0.3:
+                    compression_score = 100
+                    signals.append(get_translation("extreme_compression", lang, range_width_percent))
+                elif compression_ratio < 0.5:
+                    compression_score = 75
+                    signals.append(get_translation("high_compression", lang, range_width_percent))
+                elif compression_ratio < 0.7:
+                    compression_score = 50
+                    signals.append(get_translation("moderate_compression", lang, range_width_percent))
+                else:
+                    compression_score = 25
+        
+        # Also check very recent compression (last 5 candles)
+        if len(candles) >= 5:
+            very_recent_range = max(c["high"] for c in candles[-5:]) - min(c["low"] for c in candles[-5:])
+            very_recent_pct = (very_recent_range / current_price) * 100
+            
+            if very_recent_pct < 0.5:
+                compression_score += 20
+                signals.append(get_translation("tight_recent_range", lang, very_recent_pct))
+    
+    energy_score += compression_score * 0.25  # 25% weight
+    
+    # ======== 2. VOLATILITY COMPRESSION ========
+    volatility_compression = 0
+    
+    if candles and len(candles) >= 20:
+        # Calculate ATR-style volatility (True Range)
+        recent_tr = []
+        for i in range(-14, 0):
+            if i >= -len(candles):
+                c = candles[i]
+                prev_close = candles[i-1]["close"] if i > -len(candles) else c["open"]
+                tr = max(
+                    c["high"] - c["low"],
+                    abs(c["high"] - prev_close),
+                    abs(c["low"] - prev_close)
+                )
+                recent_tr.append(tr / current_price * 100)  # As percentage
+        
+        if recent_tr:
+            current_atr = sum(recent_tr) / len(recent_tr)
+            
+            # Compare to longer-term volatility
+            if len(candles) >= 50:
+                longer_tr = []
+                for i in range(-50, -14):
+                    if i >= -len(candles):
+                        c = candles[i]
+                        prev_close = candles[i-1]["close"] if i > -len(candles) else c["open"]
+                        tr = max(
+                            c["high"] - c["low"],
+                            abs(c["high"] - prev_close),
+                            abs(c["low"] - prev_close)
+                        )
+                        longer_tr.append(tr / current_price * 100)
+                
+                if longer_tr:
+                    avg_longer_atr = sum(longer_tr) / len(longer_tr)
+                    
+                    if avg_longer_atr > 0:
+                        vol_ratio = current_atr / avg_longer_atr
+                        
+                        if vol_ratio < 0.4:
+                            volatility_compression = 100
+                            signals.append(get_translation("extreme_vol_compression", lang))
+                        elif vol_ratio < 0.6:
+                            volatility_compression = 75
+                            signals.append(get_translation("high_vol_compression", lang))
+                        elif vol_ratio < 0.8:
+                            volatility_compression = 50
+                        else:
+                            volatility_compression = 25
+    
+    energy_score += volatility_compression * 0.20  # 20% weight
+    
+    # ======== 3. OPEN INTEREST BEHAVIOR ========
+    oi_trend = "STABLE"
+    oi_change_percent = 0
+    oi_score = 0
+    
+    if open_interest_data:
+        oi_change_1h = open_interest_data.get("change_1h", 0)
+        oi_change_24h = open_interest_data.get("change_24h", 0)
+        oi_change_percent = oi_change_24h
+        
+        # Rising OI during compression = positioning building = energy
+        if oi_change_24h > 2:
+            oi_trend = "RISING"
+            oi_score = 100
+            signals.append(get_translation("oi_rising_compression", lang, oi_change_24h))
+        elif oi_change_24h > 0.5:
+            oi_trend = "RISING"
+            oi_score = 60
+        elif oi_change_24h < -2:
+            oi_trend = "FALLING"
+            oi_score = 20
+        elif oi_change_24h < -0.5:
+            oi_trend = "FALLING"
+            oi_score = 30
+        else:
+            oi_trend = "STABLE"
+            oi_score = 40
+        
+        # Extra bonus if OI is rising while price is compressed
+        if oi_trend == "RISING" and compression_score >= 50:
+            oi_score += 20
+            signals.append(get_translation("oi_building_during_compression", lang))
+    
+    energy_score += oi_score * 0.25  # 25% weight
+    
+    # ======== 4. LIQUIDITY BUILD-UP ========
+    liquidity_buildup = "NONE"
+    liquidity_above = 0
+    liquidity_below = 0
+    liquidity_score = 0
+    
+    if liquidity_clusters:
+        above_clusters = [c for c in liquidity_clusters if hasattr(c, 'side') and c.side == "above"]
+        below_clusters = [c for c in liquidity_clusters if hasattr(c, 'side') and c.side == "below"]
+        
+        liquidity_above = sum(c.estimated_value for c in above_clusters if hasattr(c, 'estimated_value'))
+        liquidity_below = sum(c.estimated_value for c in below_clusters if hasattr(c, 'estimated_value'))
+        
+        total_liquidity = liquidity_above + liquidity_below
+        
+        # Check for liquidity on both sides (squeeze setup)
+        if liquidity_above > 0 and liquidity_below > 0:
+            # Balance check: if liquidity is building on both sides
+            if liquidity_above > 1000000 and liquidity_below > 1000000:
+                balance_ratio = min(liquidity_above, liquidity_below) / max(liquidity_above, liquidity_below)
+                
+                if balance_ratio > 0.6:  # Relatively balanced
+                    liquidity_buildup = "STRONG"
+                    liquidity_score = 100
+                    signals.append(get_translation("strong_liquidity_both_sides", lang, liquidity_above/1000000, liquidity_below/1000000))
+                elif balance_ratio > 0.3:
+                    liquidity_buildup = "MODERATE"
+                    liquidity_score = 60
+                    signals.append(get_translation("moderate_liquidity_buildup", lang))
+                else:
+                    liquidity_buildup = "WEAK"
+                    liquidity_score = 30
+            elif total_liquidity > 500000:
+                liquidity_buildup = "WEAK"
+                liquidity_score = 30
+    
+    energy_score += liquidity_score * 0.15  # 15% weight
+    
+    # ======== 5. ORDER BOOK PRESSURE BUILD-UP ========
+    orderbook_pressure = "NONE"
+    orderbook_score = 0
+    
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        total_bid_depth = aggregated_orderbook.get("total_bid_depth", 0)
+        total_ask_depth = aggregated_orderbook.get("total_ask_depth", 0)
+        
+        total_depth = total_bid_depth + total_ask_depth
+        
+        if total_depth > 0:
+            # Check for large orders stacking on both sides
+            if bids and asks:
+                bid_volumes = [float(b[1]) for b in bids[:30]]
+                ask_volumes = [float(a[1]) for a in asks[:30]]
+                
+                avg_bid = sum(bid_volumes) / len(bid_volumes) if bid_volumes else 0
+                avg_ask = sum(ask_volumes) / len(ask_volumes) if ask_volumes else 0
+                
+                # Count large orders (walls)
+                large_bids = sum(1 for v in bid_volumes if v > avg_bid * 3)
+                large_asks = sum(1 for v in ask_volumes if v > avg_ask * 3)
+                
+                if large_bids >= 3 and large_asks >= 3:
+                    orderbook_pressure = "STRONG"
+                    orderbook_score = 100
+                    signals.append(get_translation("strong_orderbook_buildup", lang, large_bids, large_asks))
+                elif large_bids >= 2 or large_asks >= 2:
+                    orderbook_pressure = "BUILDING"
+                    orderbook_score = 50
+                else:
+                    orderbook_score = 20
+    
+    energy_score += orderbook_score * 0.15  # 15% weight
+    
+    # ======== 6. DETERMINE COMPRESSION LEVEL ========
+    avg_compression = (compression_score + volatility_compression) / 2
+    
+    if avg_compression >= 75:
+        compression_level = "HIGH"
+    elif avg_compression >= 50:
+        compression_level = "MEDIUM"
+    else:
+        compression_level = "LOW"
+    
+    # ======== 7. DETERMINE BREAKOUT PROBABILITY ========
+    if energy_score >= 70:
+        breakout_probability = "HIGH"
+    elif energy_score >= 45:
+        breakout_probability = "MEDIUM"
+    else:
+        breakout_probability = "LOW"
+    
+    # ======== 8. DETERMINE EXPECTED DIRECTION ========
+    expected_direction = None
+    
+    if aggregated_orderbook:
+        total_bid_depth = aggregated_orderbook.get("total_bid_depth", 0)
+        total_ask_depth = aggregated_orderbook.get("total_ask_depth", 0)
+        
+        if total_bid_depth + total_ask_depth > 0:
+            imbalance = (total_bid_depth - total_ask_depth) / (total_bid_depth + total_ask_depth) * 100
+            
+            if imbalance > 20:
+                expected_direction = "UP"
+            elif imbalance < -20:
+                expected_direction = "DOWN"
+            else:
+                expected_direction = "UNCLEAR"
+    
+    # Check liquidity direction as secondary indicator
+    if expected_direction == "UNCLEAR" and liquidity_above > 0 and liquidity_below > 0:
+        if liquidity_above > liquidity_below * 1.5:
+            expected_direction = "UP"  # More liquidity above = price seeks it
+        elif liquidity_below > liquidity_above * 1.5:
+            expected_direction = "DOWN"
+    
+    # ======== 9. EXPANSION WARNING ========
+    expansion_warning = False
+    
+    if compression_level == "HIGH" and breakout_probability in ["HIGH", "MEDIUM"]:
+        if oi_trend == "RISING" or liquidity_buildup in ["STRONG", "MODERATE"]:
+            expansion_warning = True
+            signals.append(get_translation("expansion_likely", lang))
+    
+    # ======== 10. BUILD EXPLANATION ========
+    explanation = _build_energy_explanation(
+        energy_score, compression_level, range_width_percent,
+        oi_trend, oi_change_percent, liquidity_buildup,
+        orderbook_pressure, breakout_probability, expected_direction,
+        expansion_warning, lang
+    )
+    
+    return MarketEnergy(
+        energy_score=round(energy_score, 1),
+        compression_level=compression_level,
+        range_width_percent=round(range_width_percent, 2),
+        volatility_compression=round(volatility_compression, 1),
+        oi_trend=oi_trend,
+        oi_change_percent=round(oi_change_percent, 2),
+        liquidity_buildup=liquidity_buildup,
+        liquidity_above=round(liquidity_above, 0),
+        liquidity_below=round(liquidity_below, 0),
+        orderbook_pressure_buildup=orderbook_pressure,
+        breakout_probability=breakout_probability,
+        expected_direction=expected_direction,
+        explanation=explanation,
+        signals=signals[:5],
+        expansion_warning=expansion_warning,
+        data_source="Multi-Exchange + CoinGlass"
+    )
+
+
+def _build_energy_explanation(
+    energy_score: float, compression_level: str, range_width: float,
+    oi_trend: str, oi_change: float, liq_buildup: str,
+    ob_pressure: str, breakout_prob: str, direction: str,
+    expansion_warning: bool, lang: str
+) -> str:
+    """Build comprehensive explanation for market energy."""
+    
+    if expansion_warning:
+        if direction == "UP":
+            return get_translation("energy_expansion_bullish", lang, range_width, oi_change)
+        elif direction == "DOWN":
+            return get_translation("energy_expansion_bearish", lang, range_width, oi_change)
+        else:
+            return get_translation("energy_expansion_unclear", lang, range_width)
+    
+    if compression_level == "HIGH":
+        if oi_trend == "RISING" and liq_buildup in ["STRONG", "MODERATE"]:
+            return get_translation("energy_high_building", lang, range_width)
+        elif oi_trend == "RISING":
+            return get_translation("energy_high_oi_rising", lang, range_width, oi_change)
+        else:
+            return get_translation("energy_high_compressed", lang, range_width)
+    
+    elif compression_level == "MEDIUM":
+        if oi_trend == "RISING":
+            return get_translation("energy_medium_building", lang)
+        else:
+            return get_translation("energy_medium_consolidating", lang)
+    
+    else:  # LOW
+        if breakout_prob == "LOW":
+            return get_translation("energy_low_ranging", lang)
+        else:
+            return get_translation("energy_low_normal", lang)
+
+
 # ============== WHALE ALERT ENGINE ==============
 
 def analyze_whale_activity(
@@ -3738,18 +4235,20 @@ def generate_trade_signal(
     exchange_comparison: Dict[str, Any],
     whale_activity: WhaleActivity = None,
     liquidity_ladder: LiquidityLadder = None,
+    market_energy: MarketEnergy = None,
     lang: str = "it"
 ) -> TradeSignal:
     """
     Generate a final actionable trading signal by synthesizing all intelligence.
     
-    ENHANCED BTC TRADING LOGIC (v1.7 - Whale & Liquidity Ladder Integration):
+    ENHANCED BTC TRADING LOGIC (v1.9.5 - Market Energy Integration):
     1. Minimum move filter: No signal if estimated move < 0.50%
     2. Smart stop placement: Beyond liquidity sweep zones
     3. Liquidity sweep detection: Identify sweep-and-reversal setups
     4. Setup type classification: continuation vs sweep_reversal
     5. Whale Activity Engine: Confirms direction with whale pressure
     6. Liquidity Ladder: Path analysis for sweep expectations
+    7. Market Energy: Confidence adjustment based on compression state
     
     Scoring System:
     - Market Bias: +/-3 points
@@ -4189,6 +4688,33 @@ def generate_trade_signal(
     # Adjust confidence for sweep setups (higher confidence if sweep + reversal confirmed)
     if sweep_detected and setup_type == "sweep_reversal":
         confidence = min(95, confidence + 5)  # Bonus for recognizing sweep pattern
+    
+    # ================== MARKET ENERGY INTEGRATION ==================
+    energy_context = None
+    
+    if market_energy:
+        # Adjust confidence based on market energy
+        if market_energy.compression_level == "HIGH" and market_energy.breakout_probability == "HIGH":
+            if direction != "NO TRADE":
+                confidence = min(95, confidence + 10)  # High energy boosts confidence
+                energy_context = get_translation("energy_boosts_confidence", lang)
+                warnings.append(f"⚡ {get_translation('high_energy_expansion', lang, market_energy.energy_score)}")
+            else:
+                # High energy but no trade = wait for direction confirmation
+                warnings.append(f"⚡ {get_translation('high_energy_wait', lang, market_energy.energy_score)}")
+                
+        elif market_energy.compression_level == "LOW" and market_energy.breakout_probability == "LOW":
+            if direction != "NO TRADE":
+                confidence = max(40, confidence - 10)  # Low energy reduces confidence
+                energy_context = get_translation("energy_reduces_confidence", lang)
+                warnings.append(f"💤 {get_translation('low_energy_caution', lang)}")
+        
+        # If compression is high with liquidity on both sides - expansion warning
+        if market_energy.expansion_warning:
+            if direction != "NO TRADE":
+                reasoning_parts.append(get_translation("expansion_likely_direction", lang, market_energy.expected_direction or "UNCLEAR"))
+            else:
+                warnings.append(f"⚡ {get_translation('expansion_likely_no_direction', lang)}")
     
     if direction == "NO TRADE":
         confidence = max(30, 60 - abs(score) * 5)
@@ -4937,6 +5463,16 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         lang=lang
     )
     
+    # NEW v1.9.5: Analyze Market Energy / Compression
+    market_energy = analyze_market_energy(
+        candles=candles,
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
+        liquidity_clusters=clusters,
+        lang=lang
+    )
+    
     # Generate the final trade signal with all intelligence
     signal = generate_trade_signal(
         current_price=current_price,
@@ -4950,6 +5486,7 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         exchange_comparison=exchange_comparison,
         whale_activity=whale_activity,
         liquidity_ladder=liquidity_ladder,
+        market_energy=market_energy,
         lang=lang
     )
     
@@ -4971,7 +5508,26 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         liquidity_direction=liquidity_direction
     )
     
-    return confirmed_signal
+    # Build response with all intelligence modules
+    response = confirmed_signal.model_dump()
+    
+    # Add whale activity summary
+    response["whale_activity"] = whale_activity.model_dump() if whale_activity else None
+    
+    # Add liquidity ladder summary
+    if liquidity_ladder:
+        response["liquidity_ladder_summary"] = {
+            "more_attractive_side": liquidity_ladder.more_attractive_side,
+            "sweep_expectation": liquidity_ladder.sweep_expectation,
+            "path_analysis": liquidity_ladder.path_analysis,
+            "nearest_above": liquidity_ladder.nearest_above.model_dump() if liquidity_ladder.nearest_above else None,
+            "nearest_below": liquidity_ladder.nearest_below.model_dump() if liquidity_ladder.nearest_below else None
+        }
+    
+    # NEW v1.9.5: Add Market Energy data
+    response["market_energy"] = market_energy.model_dump() if market_energy else None
+    
+    return response
 
 
 def apply_signal_confirmation(
@@ -5338,6 +5894,58 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
     except Exception as e:
         logger.error(f"Error in auto_record_signal_change: {e}")
         return {"recorded": False, "error": str(e)}
+
+@api_router.get("/market-energy")
+async def get_market_energy(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+    """
+    Get Market Energy / Compression Detector data.
+    
+    Analyzes market compression state to predict upcoming expansions:
+    - Price range compression
+    - Volatility compression
+    - Open Interest behavior
+    - Liquidity buildup on both sides
+    - Order book pressure buildup
+    
+    Returns energy score, compression level, and breakout probability.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    # Fetch all required data
+    ticker_task = fetch_kraken_ticker()
+    candles_task = fetch_kraken_ohlc(240)  # 4H
+    aggregated_ob_task = get_aggregated_orderbook()
+    
+    ticker, candles, aggregated_orderbook = await asyncio.gather(
+        ticker_task, candles_task, aggregated_ob_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    # Get OI data
+    oi_data = await fetch_coinglass_open_interest()
+    open_interest_data = None
+    if oi_data:
+        open_interest_data = {
+            "change_1h": oi_data.get("change_1h", 0),
+            "change_24h": oi_data.get("change_24h", 0)
+        }
+    
+    # Generate liquidity clusters
+    clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
+    
+    # Analyze market energy
+    market_energy = analyze_market_energy(
+        candles=candles,
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        open_interest_data=open_interest_data,
+        liquidity_clusters=clusters,
+        lang=lang
+    )
+    
+    return market_energy
 
 @api_router.post("/signal-history/record")
 async def record_signal():
