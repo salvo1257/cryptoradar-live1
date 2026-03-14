@@ -261,6 +261,14 @@ class TradeSignal(BaseModel):
     awaiting_sweep_confirmation: bool = False  # Waiting for sweep + rejection
     volatility_warning: bool = False  # Market in high volatility mode
     time_in_setup: Optional[str] = None  # How long in SETUP_IN_CONFIRMATION state
+    
+    # NEW v2.3: Dynamic Signal Timing
+    signal_urgency: str = "LOW"  # "LOW", "MEDIUM", "HIGH"
+    valid_for_minutes: int = 90  # Dynamically calculated validity window
+    setup_status: str = "NO_TRADE"  # "SETUP_IN_CONFIRMATION", "OPERATIONAL", "EXPIRED", "INVALIDATED"
+    urgency_reason: str = ""  # Explanation of urgency level
+    entry_distance_percent: float = 0.0  # Current price distance from entry zone
+    time_sensitivity: str = "NORMAL"  # "URGENT", "NORMAL", "RELAXED"
 
 
 class SignalHistoryEntry(BaseModel):
@@ -757,6 +765,25 @@ BACKEND_TRANSLATIONS = {
         "conflict_high_energy_no_direction": "Alta energia ma direzione non chiara - modalità conservativa attivata.",
         "conflict_conservative_mode": "Conflitto rilevato (energia alta + magnete bilanciato + balene neutrali) - confidenza ridotta.",
         "conflict_wait_for_clarity": "Alta energia senza direzione chiara - attendere allineamento indicatori.",
+        
+        # Signal Urgency
+        "no_trade_no_urgency": "Nessun segnale attivo - nessuna urgenza.",
+        "urgency_high_confidence": "Alta confidenza.",
+        "urgency_good_confidence": "Buona confidenza.",
+        "urgency_price_at_entry": "Prezzo nella zona di ingresso.",
+        "urgency_price_near_entry": "Prezzo vicino alla zona di ingresso.",
+        "urgency_entry_far": "Zona di ingresso ancora lontana.",
+        "urgency_high_energy": "Alta energia di mercato.",
+        "urgency_expansion_imminent": "Espansione imminente.",
+        "urgency_strong_magnet_aligned": "Forte magnete allineato con la direzione.",
+        "urgency_sweep_setup": "Setup sweep-reversal pronto.",
+        "urgency_whale_confirms": "Attività balene conferma direzione.",
+        "urgency_standard_setup": "Setup standard, tempistiche normali.",
+        "urgency_factors_aligned": "Multipli fattori allineati.",
+        "urgency_high_act_fast": "Urgenza ALTA - Agire rapidamente.",
+        "urgency_medium_good_window": "Urgenza MEDIA - Buona finestra operativa.",
+        "urgency_low_time_available": "Urgenza BASSA - Tempo disponibile.",
+        "valid_for": "Valido per",
     },
     "en": {
         # Market Bias
@@ -1024,6 +1051,25 @@ BACKEND_TRANSLATIONS = {
         "conflict_high_energy_no_direction": "High energy but direction unclear - conservative mode activated.",
         "conflict_conservative_mode": "Conflict detected (high energy + balanced magnet + neutral whales) - confidence reduced.",
         "conflict_wait_for_clarity": "High energy without clear direction - wait for indicator alignment.",
+        
+        # Signal Urgency
+        "no_trade_no_urgency": "No active signal - no urgency.",
+        "urgency_high_confidence": "High confidence.",
+        "urgency_good_confidence": "Good confidence.",
+        "urgency_price_at_entry": "Price at entry zone.",
+        "urgency_price_near_entry": "Price near entry zone.",
+        "urgency_entry_far": "Entry zone still far.",
+        "urgency_high_energy": "High market energy.",
+        "urgency_expansion_imminent": "Expansion imminent.",
+        "urgency_strong_magnet_aligned": "Strong magnet aligned with direction.",
+        "urgency_sweep_setup": "Sweep-reversal setup ready.",
+        "urgency_whale_confirms": "Whale activity confirms direction.",
+        "urgency_standard_setup": "Standard setup, normal timing.",
+        "urgency_factors_aligned": "Multiple factors aligned.",
+        "urgency_high_act_fast": "HIGH urgency - Act quickly.",
+        "urgency_medium_good_window": "MEDIUM urgency - Good operating window.",
+        "urgency_low_time_available": "LOW urgency - Time available.",
+        "valid_for": "Valid for",
     },
     "de": {
         # Market Bias
@@ -1291,6 +1337,25 @@ BACKEND_TRANSLATIONS = {
         "conflict_high_energy_no_direction": "Hohe Energie aber Richtung unklar - konservativer Modus aktiviert.",
         "conflict_conservative_mode": "Konflikt erkannt (hohe Energie + ausgeglichener Magnet + neutrale Wale) - Konfidenz reduziert.",
         "conflict_wait_for_clarity": "Hohe Energie ohne klare Richtung - auf Indikator-Ausrichtung warten.",
+        
+        # Signal Urgency
+        "no_trade_no_urgency": "Kein aktives Signal - keine Dringlichkeit.",
+        "urgency_high_confidence": "Hohe Konfidenz.",
+        "urgency_good_confidence": "Gute Konfidenz.",
+        "urgency_price_at_entry": "Preis in der Einstiegszone.",
+        "urgency_price_near_entry": "Preis nahe der Einstiegszone.",
+        "urgency_entry_far": "Einstiegszone noch weit entfernt.",
+        "urgency_high_energy": "Hohe Marktenergie.",
+        "urgency_expansion_imminent": "Expansion steht bevor.",
+        "urgency_strong_magnet_aligned": "Starker Magnet mit Richtung ausgerichtet.",
+        "urgency_sweep_setup": "Sweep-Reversal-Setup bereit.",
+        "urgency_whale_confirms": "Wal-Aktivität bestätigt Richtung.",
+        "urgency_standard_setup": "Standard-Setup, normales Timing.",
+        "urgency_factors_aligned": "Mehrere Faktoren ausgerichtet.",
+        "urgency_high_act_fast": "HOHE Dringlichkeit - Schnell handeln.",
+        "urgency_medium_good_window": "MITTLERE Dringlichkeit - Gutes Operationsfenster.",
+        "urgency_low_time_available": "NIEDRIGE Dringlichkeit - Zeit verfügbar.",
+        "valid_for": "Gültig für",
     },
     "pl": {
         # Market Bias
@@ -1558,6 +1623,25 @@ BACKEND_TRANSLATIONS = {
         "conflict_high_energy_no_direction": "Wysoka energia ale kierunek niejasny - tryb konserwatywny aktywowany.",
         "conflict_conservative_mode": "Wykryto konflikt (wysoka energia + zrównoważony magnes + neutralne wieloryby) - pewność zmniejszona.",
         "conflict_wait_for_clarity": "Wysoka energia bez wyraźnego kierunku - czekaj na wyrównanie wskaźników.",
+        
+        # Signal Urgency
+        "no_trade_no_urgency": "Brak aktywnego sygnału - brak pilności.",
+        "urgency_high_confidence": "Wysoka pewność.",
+        "urgency_good_confidence": "Dobra pewność.",
+        "urgency_price_at_entry": "Cena w strefie wejścia.",
+        "urgency_price_near_entry": "Cena blisko strefy wejścia.",
+        "urgency_entry_far": "Strefa wejścia jeszcze daleko.",
+        "urgency_high_energy": "Wysoka energia rynku.",
+        "urgency_expansion_imminent": "Ekspansja nieuchronna.",
+        "urgency_strong_magnet_aligned": "Silny magnes wyrównany z kierunkiem.",
+        "urgency_sweep_setup": "Setup sweep-reversal gotowy.",
+        "urgency_whale_confirms": "Aktywność wielorybów potwierdza kierunek.",
+        "urgency_standard_setup": "Standardowy setup, normalny timing.",
+        "urgency_factors_aligned": "Wiele czynników wyrównanych.",
+        "urgency_high_act_fast": "WYSOKA pilność - Działaj szybko.",
+        "urgency_medium_good_window": "ŚREDNIA pilność - Dobre okno operacyjne.",
+        "urgency_low_time_available": "NISKA pilność - Czas dostępny.",
+        "valid_for": "Ważne przez",
     }
 }
 
@@ -4806,6 +4890,224 @@ def build_liquidity_ladder(
 
 # ============== TRADE SIGNAL GENERATOR ==============
 
+# ============== DYNAMIC SIGNAL TIMING ==============
+
+def calculate_signal_timing(
+    direction: str,
+    confidence: float,
+    current_price: float,
+    entry_zone_low: float,
+    entry_zone_high: float,
+    setup_type: str,
+    market_energy: Optional[Any] = None,
+    liquidity_magnet: Optional[Any] = None,
+    whale_activity: Optional[Any] = None,
+    signal_state: str = "NO_TRADE",
+    lang: str = "it"
+) -> Dict[str, Any]:
+    """
+    Calculate dynamic signal urgency and validity window.
+    
+    Base Rule: 4H timeframe = 90 minutes default validity
+    
+    Factors that REDUCE validity (more urgent):
+    - High confidence (>75%)
+    - High Market Energy
+    - Strong directional Liquidity Magnet
+    - Price close to entry zone (<0.5%)
+    - sweep_reversal setup type
+    - Whale activity confirms direction
+    - High volatility
+    
+    Factors that INCREASE validity (less urgent):
+    - Moderate confidence (50-70%)
+    - Low/Medium Market Energy
+    - Price far from entry zone (>1%)
+    - continuation setup type
+    - Balanced magnet
+    - Low market volatility
+    
+    Returns:
+    - signal_urgency: LOW / MEDIUM / HIGH
+    - valid_for_minutes: 30-150 minutes
+    - setup_status: SETUP_IN_CONFIRMATION / OPERATIONAL / EXPIRED / INVALIDATED
+    - urgency_reason: Explanation text
+    - entry_distance_percent: Distance from entry
+    - time_sensitivity: URGENT / NORMAL / RELAXED
+    """
+    
+    # Base validity for 4H timeframe
+    BASE_VALIDITY_MINUTES = 90
+    
+    # Calculate entry zone center and distance
+    entry_center = (entry_zone_low + entry_zone_high) / 2
+    entry_distance_percent = abs((current_price - entry_center) / current_price) * 100
+    
+    # Initialize scoring
+    urgency_score = 0  # Higher = more urgent
+    validity_adjustment = 0  # Negative = shorter validity
+    reasons = []
+    
+    # ======== NO TRADE signals ========
+    if direction == "NO TRADE":
+        return {
+            "signal_urgency": "LOW",
+            "valid_for_minutes": 0,
+            "setup_status": "NO_TRADE",
+            "urgency_reason": get_translation("no_trade_no_urgency", lang),
+            "entry_distance_percent": 0,
+            "time_sensitivity": "NORMAL"
+        }
+    
+    # ======== CONFIDENCE FACTOR ========
+    if confidence >= 80:
+        urgency_score += 3
+        validity_adjustment -= 30  # 30 min shorter
+        reasons.append(get_translation("urgency_high_confidence", lang))
+    elif confidence >= 70:
+        urgency_score += 2
+        validity_adjustment -= 15
+        reasons.append(get_translation("urgency_good_confidence", lang))
+    elif confidence >= 55:
+        urgency_score += 1
+        # No validity change
+    else:
+        validity_adjustment += 15  # Less urgent, more time
+    
+    # ======== ENTRY DISTANCE FACTOR ========
+    if entry_distance_percent <= 0.3:
+        urgency_score += 3
+        validity_adjustment -= 30  # Very close - act fast
+        reasons.append(get_translation("urgency_price_at_entry", lang))
+    elif entry_distance_percent <= 0.7:
+        urgency_score += 2
+        validity_adjustment -= 15
+        reasons.append(get_translation("urgency_price_near_entry", lang))
+    elif entry_distance_percent <= 1.5:
+        urgency_score += 1
+        # Normal distance
+    else:
+        validity_adjustment += 20  # Far from entry, more time to position
+        reasons.append(get_translation("urgency_entry_far", lang))
+    
+    # ======== MARKET ENERGY FACTOR ========
+    if market_energy:
+        energy_score = getattr(market_energy, 'energy_score', 0)
+        compression = getattr(market_energy, 'compression_level', 'LOW')
+        expansion_ready = getattr(market_energy, 'expansion_readiness', 'LOW')
+        
+        if energy_score >= 70 or compression == "HIGH":
+            urgency_score += 2
+            validity_adjustment -= 20
+            reasons.append(get_translation("urgency_high_energy", lang))
+        elif energy_score >= 50 or compression == "MEDIUM":
+            urgency_score += 1
+            validity_adjustment -= 10
+        else:
+            validity_adjustment += 10  # Low energy = more time
+        
+        # Expansion readiness boosts urgency
+        if expansion_ready == "HIGH":
+            urgency_score += 1
+            validity_adjustment -= 10
+            reasons.append(get_translation("urgency_expansion_imminent", lang))
+    
+    # ======== LIQUIDITY MAGNET FACTOR ========
+    if liquidity_magnet:
+        magnet_score = getattr(liquidity_magnet, 'magnet_score', 0)
+        magnet_direction = getattr(liquidity_magnet, 'target_direction', 'BALANCED')
+        magnet_strength = getattr(liquidity_magnet, 'magnet_strength', 'WEAK')
+        
+        # Check if magnet aligns with signal direction
+        magnet_aligns = (
+            (direction == "LONG" and magnet_direction == "UP") or
+            (direction == "SHORT" and magnet_direction == "DOWN")
+        )
+        
+        if magnet_aligns and magnet_strength in ["STRONG", "VERY_STRONG"]:
+            urgency_score += 2
+            validity_adjustment -= 15
+            reasons.append(get_translation("urgency_strong_magnet_aligned", lang))
+        elif magnet_aligns and magnet_strength == "MODERATE":
+            urgency_score += 1
+            validity_adjustment -= 5
+        elif magnet_direction == "BALANCED":
+            validity_adjustment += 10  # Less directional pull
+    
+    # ======== SETUP TYPE FACTOR ========
+    if setup_type == "sweep_reversal":
+        urgency_score += 2
+        validity_adjustment -= 20  # Sweep setups need quick action
+        reasons.append(get_translation("urgency_sweep_setup", lang))
+    elif setup_type == "continuation":
+        validity_adjustment += 15  # Continuation has more time
+    # standard = no adjustment
+    
+    # ======== WHALE ACTIVITY FACTOR ========
+    if whale_activity:
+        whale_direction = getattr(whale_activity, 'direction', 'NEUTRAL')
+        whale_strength = getattr(whale_activity, 'strength', 0)
+        
+        # Check if whale confirms signal
+        whale_confirms = (
+            (direction == "LONG" and whale_direction == "BULLISH") or
+            (direction == "SHORT" and whale_direction == "BEARISH")
+        )
+        
+        if whale_confirms and whale_strength >= 50:
+            urgency_score += 2
+            validity_adjustment -= 15
+            reasons.append(get_translation("urgency_whale_confirms", lang))
+        elif whale_confirms:
+            urgency_score += 1
+        elif whale_direction == "NEUTRAL":
+            validity_adjustment += 5  # No whale pressure
+    
+    # ======== CALCULATE FINAL VALUES ========
+    
+    # Calculate final validity (bounded between 30 and 150 minutes)
+    final_validity = max(30, min(150, BASE_VALIDITY_MINUTES + validity_adjustment))
+    
+    # Determine urgency level based on score
+    if urgency_score >= 8:
+        signal_urgency = "HIGH"
+        time_sensitivity = "URGENT"
+    elif urgency_score >= 4:
+        signal_urgency = "MEDIUM"
+        time_sensitivity = "NORMAL"
+    else:
+        signal_urgency = "LOW"
+        time_sensitivity = "RELAXED"
+    
+    # Determine setup_status
+    if signal_state == "OPERATIONAL":
+        setup_status = "OPERATIONAL"
+    elif signal_state == "SETUP_IN_CONFIRMATION":
+        setup_status = "SETUP_IN_CONFIRMATION"
+    elif direction in ["LONG", "SHORT"]:
+        setup_status = "OPERATIONAL"  # Default for valid signals
+    else:
+        setup_status = "NO_TRADE"
+    
+    # Build urgency reason text
+    if not reasons:
+        if signal_urgency == "LOW":
+            reasons.append(get_translation("urgency_standard_setup", lang))
+        else:
+            reasons.append(get_translation("urgency_factors_aligned", lang))
+    
+    urgency_reason = " ".join(reasons[:3])  # Max 3 reasons
+    
+    return {
+        "signal_urgency": signal_urgency,
+        "valid_for_minutes": final_validity,
+        "setup_status": setup_status,
+        "urgency_reason": urgency_reason,
+        "entry_distance_percent": round(entry_distance_percent, 2),
+        "time_sensitivity": time_sensitivity
+    }
+
+
 def generate_trade_signal(
     current_price: float,
     market_bias: MarketBias,
@@ -4858,6 +5160,7 @@ def generate_trade_signal(
     factors = {}
     reasoning_parts = []
     warnings = []
+    signal_state = "NO_TRADE"  # Initialize signal state
     
     # Organize S/R levels
     supports = sorted([l for l in sr_levels if l.level_type == "support"], key=lambda x: abs(x.distance_percent))
@@ -5483,6 +5786,29 @@ def generate_trade_signal(
             "levels_below_count": len(liquidity_ladder.ladder_below)
         }
     
+    # ================== DYNAMIC SIGNAL TIMING ==================
+    # Calculate urgency, validity window, and setup status
+    timing = calculate_signal_timing(
+        direction=direction,
+        confidence=confidence,
+        current_price=current_price,
+        entry_zone_low=entry_zone_low,
+        entry_zone_high=entry_zone_high,
+        setup_type=setup_type,
+        market_energy=market_energy,
+        liquidity_magnet=liquidity_ladder,  # Using liquidity_ladder as magnet proxy
+        whale_activity=whale_activity,
+        signal_state=signal_state,
+        lang=lang
+    )
+    
+    # Add timing info to reasoning for active signals
+    if direction != "NO TRADE":
+        urgency_emoji = "🔥" if timing["signal_urgency"] == "HIGH" else "⏱️" if timing["signal_urgency"] == "MEDIUM" else "⌛"
+        reasoning += f"\n{urgency_emoji} {get_translation('urgency_' + timing['signal_urgency'].lower() + ('_act_fast' if timing['signal_urgency'] == 'HIGH' else '_good_window' if timing['signal_urgency'] == 'MEDIUM' else '_time_available'), lang)}\n"
+        reasoning += f"• {get_translation('valid_for', lang)}: {timing['valid_for_minutes']} min\n"
+        reasoning += f"• {timing['urgency_reason']}\n"
+    
     return TradeSignal(
         direction=direction,
         confidence=round(confidence, 1),
@@ -5507,7 +5833,14 @@ def generate_trade_signal(
         whale_activity=whale_activity_summary,
         liquidity_ladder_summary=liquidity_ladder_summary,
         sweep_first_expected=sweep_first_expected,
-        whale_confirms_direction=whale_confirms_direction
+        whale_confirms_direction=whale_confirms_direction,
+        # NEW v2.3: Dynamic Signal Timing
+        signal_urgency=timing["signal_urgency"],
+        valid_for_minutes=timing["valid_for_minutes"],
+        setup_status=timing["setup_status"],
+        urgency_reason=timing["urgency_reason"],
+        entry_distance_percent=timing["entry_distance_percent"],
+        time_sensitivity=timing["time_sensitivity"]
     )
 
 # ============== API ROUTES ==============

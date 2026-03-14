@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, MinusCircle, Target, Shield, 
   AlertTriangle, Activity, RefreshCw, ChevronDown, ChevronUp,
-  Zap, Droplets, RotateCcw, Clock
+  Zap, Droplets, RotateCcw, Clock, Timer, Flame
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
 import { useApp } from '../../contexts/AppContext';
+import { Badge } from '../ui/badge';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -69,6 +70,39 @@ export function TradeSignalCard({ compact = false }) {
     if (direction.includes('LONG')) return 'LONG';
     if (direction.includes('SHORT')) return 'SHORT';
     return 'NO TRADE';
+  };
+
+  // Get urgency configuration
+  const getUrgencyConfig = (urgency) => {
+    switch (urgency) {
+      case 'HIGH':
+        return {
+          icon: Flame,
+          color: 'text-orange-400',
+          bgClass: 'bg-orange-500/20',
+          borderClass: 'border-orange-500/50',
+          label: language === 'it' ? 'ALTA' : 'HIGH',
+          pulse: true
+        };
+      case 'MEDIUM':
+        return {
+          icon: Timer,
+          color: 'text-yellow-400',
+          bgClass: 'bg-yellow-500/20',
+          borderClass: 'border-yellow-500/50',
+          label: language === 'it' ? 'MEDIA' : 'MEDIUM',
+          pulse: false
+        };
+      default:
+        return {
+          icon: Clock,
+          color: 'text-zinc-400',
+          bgClass: 'bg-zinc-800',
+          borderClass: 'border-zinc-600',
+          label: language === 'it' ? 'BASSA' : 'LOW',
+          pulse: false
+        };
+    }
   };
 
   const getDirectionConfig = (direction) => {
@@ -281,6 +315,69 @@ export function TradeSignalCard({ compact = false }) {
             ) : (
               <span className="text-xs text-bearish">✗ Below 0.50% minimum</span>
             )}
+          </div>
+        )}
+
+        {/* Signal Timing & Urgency - NEW v2.3 */}
+        {signal.direction !== 'NO TRADE' && signal.signal_urgency && (
+          <div className={cn(
+            "mb-4 p-3 rounded-sm border",
+            getUrgencyConfig(signal.signal_urgency).bgClass,
+            getUrgencyConfig(signal.signal_urgency).borderClass
+          )}>
+            {(() => {
+              const urgencyConfig = getUrgencyConfig(signal.signal_urgency);
+              const UrgencyIcon = urgencyConfig.icon;
+              return (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <UrgencyIcon className={cn(
+                        "w-4 h-4",
+                        urgencyConfig.color,
+                        urgencyConfig.pulse && "animate-pulse"
+                      )} />
+                      <span className="text-xs text-zinc-400 uppercase">
+                        {language === 'it' ? 'Urgenza Segnale' : 'Signal Urgency'}
+                      </span>
+                    </div>
+                    <Badge className={cn(
+                      "font-mono text-xs",
+                      urgencyConfig.bgClass,
+                      urgencyConfig.color
+                    )}>
+                      {urgencyConfig.label}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[10px] text-zinc-500">
+                        {language === 'it' ? 'Valido per' : 'Valid for'}
+                      </div>
+                      <div className={cn("font-mono text-lg font-bold", urgencyConfig.color)}>
+                        {signal.valid_for_minutes} min
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-zinc-500">
+                        {language === 'it' ? 'Distanza Entry' : 'Entry Distance'}
+                      </div>
+                      <div className={cn(
+                        "font-mono text-lg font-bold",
+                        signal.entry_distance_percent <= 0.5 ? "text-yellow-400" : "text-zinc-400"
+                      )}>
+                        {signal.entry_distance_percent?.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                  {signal.urgency_reason && (
+                    <div className="mt-2 pt-2 border-t border-white/5">
+                      <p className="text-xs text-zinc-400">{signal.urgency_reason}</p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 

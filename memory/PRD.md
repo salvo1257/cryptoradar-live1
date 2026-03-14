@@ -1,14 +1,69 @@
-# CryptoRadar v2.2 - Product Requirements Document
+# CryptoRadar v2.3 - Product Requirements Document
 **Last Updated:** 2025-12-14
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Background Scheduler: Active (outcome check every 1 hour)
-- All core features operational
+- Dynamic Signal Timing: Active
 
 ---
 
-## v2.2 AUTOMATIC OUTCOME TRACKING SCHEDULER ✅ (NEW)
+## v2.3 DYNAMIC SIGNAL TIMING ✅ (NEW)
+
+**INTELLIGENT SIGNAL URGENCY & VALIDITY WINDOWS:**
+
+### New TradeSignal Fields:
+| Field | Type | Description |
+|-------|------|-------------|
+| `signal_urgency` | string | LOW / MEDIUM / HIGH |
+| `valid_for_minutes` | int | 30-150 minutes (dynamically calculated) |
+| `setup_status` | string | SETUP_IN_CONFIRMATION / OPERATIONAL / EXPIRED / INVALIDATED |
+| `urgency_reason` | string | Explanation of urgency factors |
+| `entry_distance_percent` | float | Distance from current price to entry zone |
+| `time_sensitivity` | string | URGENT / NORMAL / RELAXED |
+
+### Base Rule:
+- **4H timeframe** = 90 minutes default validity
+
+### Factors that REDUCE validity (more urgent):
+- High confidence (>75%): -30 min
+- Price at entry zone (<0.3%): -30 min
+- Price near entry zone (<0.7%): -15 min
+- High Market Energy (>70): -20 min
+- Strong aligned Liquidity Magnet: -15 min
+- sweep_reversal setup: -20 min
+- Whale confirms direction (>50%): -15 min
+- Expansion readiness HIGH: -10 min
+
+### Factors that INCREASE validity (less urgent):
+- Entry zone far (>1.5%): +20 min
+- Low Market Energy (<50): +10 min
+- Balanced Liquidity Magnet: +10 min
+- continuation setup: +15 min
+- Neutral whale activity: +5 min
+- Low confidence (<55%): +15 min
+
+### Urgency Determination:
+- **HIGH** (score ≥8): Act immediately, signal may trigger soon
+- **MEDIUM** (score 4-7): Valid setup, reasonable window
+- **LOW** (score <4): Early setup, time available
+
+### Frontend Display:
+New "URGENZA SEGNALE" section in TradeSignalCard:
+- Urgency badge (HIGH=orange/pulse, MEDIUM=yellow, LOW=gray)
+- Valid for X minutes
+- Entry distance %
+- Reason text
+
+### Telegram Compatibility:
+Fields designed for future Telegram notifications:
+- `signal_urgency`: Easy to convert to emoji (🔥HIGH, ⏱️MEDIUM, ⌛LOW)
+- `valid_for_minutes`: Can show countdown
+- `urgency_reason`: Human-readable context
+
+---
+
+## v2.2 AUTOMATIC OUTCOME TRACKING SCHEDULER ✅
 
 **AUTOMATIC BACKGROUND JOB FOR SIGNAL OUTCOME TRACKING:**
 
