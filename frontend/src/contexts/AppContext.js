@@ -53,7 +53,7 @@ export function AppProvider({ children }) {
       const [statusRes, candlesRes, biasRes] = await Promise.all([
         axios.get(`${API_URL}/market/status`),
         axios.get(`${API_URL}/chart/candles`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/market/bias`, { params: { interval: timeframe } })
+        axios.get(`${API_URL}/market/bias`, { params: { interval: timeframe, lang: language } })
       ]);
       
       setMarketStatus(statusRes.data);
@@ -64,19 +64,19 @@ export function AppProvider({ children }) {
       console.error('Error fetching market data:', error);
       setConnectionStatus('OFFLINE');
     }
-  }, [timeframe]);
+  }, [timeframe, language]);
 
   const fetchAnalysisData = useCallback(async () => {
     try {
       const [srRes, liqRes, whaleRes, patternRes, candlePatternRes, obRes, oiRes, frRes] = await Promise.all([
-        axios.get(`${API_URL}/support-resistance`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/liquidity`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/whale-alerts`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/patterns`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/candlesticks`, { params: { interval: timeframe } }),
-        axios.get(`${API_URL}/orderbook`),
-        axios.get(`${API_URL}/open-interest`),
-        axios.get(`${API_URL}/funding-rate`)
+        axios.get(`${API_URL}/support-resistance`, { params: { interval: timeframe, lang: language } }),
+        axios.get(`${API_URL}/liquidity`, { params: { interval: timeframe, lang: language } }),
+        axios.get(`${API_URL}/whale-alerts`, { params: { interval: timeframe, lang: language } }),
+        axios.get(`${API_URL}/patterns`, { params: { interval: timeframe, lang: language } }),
+        axios.get(`${API_URL}/candlesticks`, { params: { interval: timeframe, lang: language } }),
+        axios.get(`${API_URL}/orderbook`, { params: { lang: language } }),
+        axios.get(`${API_URL}/open-interest`, { params: { lang: language } }),
+        axios.get(`${API_URL}/funding-rate`, { params: { lang: language } })
       ]);
       
       setSupportResistance(srRes.data);
@@ -94,12 +94,12 @@ export function AppProvider({ children }) {
 
   const fetchNews = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/news`);
+      const res = await axios.get(`${API_URL}/news`, { params: { lang: language } });
       setNews(res.data.news || []);
     } catch (error) {
       console.error('Error fetching news:', error);
     }
-  }, []);
+  }, [language]);
 
   const fetchAlerts = useCallback(async () => {
     try {

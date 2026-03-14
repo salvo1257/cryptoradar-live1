@@ -1854,7 +1854,7 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
     """Calculate support and resistance levels from price data and order book"""
     return calculate_support_resistance_enhanced(candles, current_price, orderbook)
 
-def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> MarketBias:
+def calculate_market_bias(candles: List[dict], orderbook: dict = None, lang: str = "it") -> MarketBias:
     """Calculate market bias from multiple indicators including real order book"""
     if not candles or len(candles) < 20:
         return MarketBias(
@@ -1982,26 +1982,26 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None) -> Market
         recent_low = min(lows[-20:]) if len(lows) >= 20 else current_price * 0.98
         next_target = recent_low if recent_low < current_price else current_price * 0.98
     
-    # Generate analysis text (Italian)
+    # Generate analysis text using translations
     analysis_parts = []
     if bias == "BULLISH":
         if ob_imbalance > 10:
-            analysis_parts.append("Forte pressione di acquisto nell'order book.")
+            analysis_parts.append(get_translation("strong_buying_pressure", lang))
         if rsi > 50:
-            analysis_parts.append("Il momentum favorisce i rialzisti.")
+            analysis_parts.append(get_translation("momentum_favors_bulls", lang))
         if squeeze_prob > 40:
-            analysis_parts.append(f"Probabilità di short squeeze al {squeeze_prob:.0f}%.")
+            analysis_parts.append(get_translation("short_squeeze_prob", lang, squeeze_prob))
     elif bias == "BEARISH":
         if ob_imbalance < -10:
-            analysis_parts.append("Forte pressione di vendita rilevata.")
+            analysis_parts.append(get_translation("heavy_selling_pressure", lang))
         if rsi < 50:
-            analysis_parts.append("Il momentum favorisce i ribassisti.")
+            analysis_parts.append(get_translation("momentum_favors_bears", lang))
         if squeeze_prob > 40:
-            analysis_parts.append(f"Probabilità di long squeeze al {squeeze_prob:.0f}%.")
+            analysis_parts.append(get_translation("long_squeeze_prob", lang, squeeze_prob))
     else:
-        analysis_parts.append("Indecisione del mercato. Attendere segnali più chiari.")
+        analysis_parts.append(get_translation("market_indecision", lang))
     
-    analysis_text = " ".join(analysis_parts) if analysis_parts else "Analisi delle condizioni di mercato in corso..."
+    analysis_text = " ".join(analysis_parts) if analysis_parts else get_translation("analyzing_conditions", lang)
     
     # Generate per-exchange consensus if aggregated data available
     exchange_consensus = None
@@ -4104,20 +4104,26 @@ async def get_candles(
     return {"candles": [], "interval": interval, "data_source": "Unavailable"}
 
 @api_router.get("/market/bias")
-async def get_market_bias(interval: str = Query(default="4h")):
+async def get_market_bias(interval: str = Query(default="4h"), lang: str = Query(default="it")):
     """Get market bias analysis with aggregated multi-exchange order book data (default: 4H)"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
     candles = await fetch_kraken_ohlc(kraken_interval)
     aggregated_orderbook = await get_aggregated_orderbook()
     
-    bias = calculate_market_bias(candles, aggregated_orderbook)
+    bias = calculate_market_bias(candles, aggregated_orderbook, lang)
     return bias
 
 @api_router.get("/support-resistance")
-async def get_support_resistance(interval: str = Query(default="4h")):
+async def get_support_resistance(interval: str = Query(default="4h"), lang: str = Query(default="it")):
     """Get support and resistance levels from price data and aggregated multi-exchange order book (default: 4H)"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
@@ -4126,7 +4132,7 @@ async def get_support_resistance(interval: str = Query(default="4h")):
     aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook)
+    levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook, lang)
     
     # Get data source info
     active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
@@ -5098,27 +5104,36 @@ async def clear_signal_history():
 
 
 @api_router.get("/open-interest")
-async def get_open_interest():
+async def get_open_interest(lang: str = Query(default="it")):
     """Get Open Interest data from CoinGlass"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     ticker = await fetch_kraken_ticker()
     candles = await fetch_kraken_ohlc(240)  # 4H timeframe
     current_price = ticker["price"] if ticker else 0
     
-    oi = await generate_open_interest(current_price, candles)
+    oi = await generate_open_interest(current_price, candles, lang)
     return oi
 
 @api_router.get("/funding-rate")
-async def get_funding_rate():
+async def get_funding_rate(lang: str = Query(default="it")):
     """Get Funding Rate data from CoinGlass"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     orderbook = await fetch_kraken_orderbook(100)
     
-    funding = await generate_funding_rate(orderbook)
+    funding = await generate_funding_rate(orderbook, lang)
     return funding
 
 @api_router.get("/news")
-async def get_news():
+async def get_news(lang: str = Query(default="it")):
     """Get real BTC-related news from CryptoCompare"""
-    news = await fetch_cryptocompare_news()
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    news = await fetch_cryptocompare_news(lang)
     if news:
         return {"news": [NewsItem(**n) for n in news], "data_source": "CryptoCompare"}
     return {"news": [], "data_source": "Unavailable"}

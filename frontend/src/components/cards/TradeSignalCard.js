@@ -20,7 +20,7 @@ export function TradeSignalCard({ compact = false }) {
   const fetchSignal = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/trade-signal`);
+      const response = await fetch(`${API_URL}/api/trade-signal?lang=${language}`);
       const data = await response.json();
       setSignal(data);
       setLastUpdate(new Date());
@@ -35,7 +35,7 @@ export function TradeSignalCard({ compact = false }) {
     fetchSignal();
     const interval = setInterval(fetchSignal, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [language]);  // Re-fetch when language changes
 
   const formatPrice = (p) => {
     if (!p) return '-';
