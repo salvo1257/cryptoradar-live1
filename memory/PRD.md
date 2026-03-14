@@ -10,6 +10,37 @@
 
 ---
 
+## 🔒 LOGIC FREEZE (2025-12-14)
+
+**Trading logic is FROZEN until 150-200 signals are collected during weekday trading (Mon-Fri).**
+
+### Frozen Components:
+- ❄️ Signal generation logic
+- ❄️ Market bias scoring
+- ❄️ Whale activity detection
+- ❄️ Liquidity magnet calculations
+- ❄️ Target/stop calculations
+- ❄️ Confidence scoring
+
+### Why Frozen:
+- Current data (95 signals) collected mostly during weekend
+- Weekend = low volatility, more EXPIRED setups
+- Need weekday data to accurately assess system performance
+
+### Current Stats (to be re-evaluated at 150-200 signals):
+- Total signals: 95 (60 with targets)
+- LONG: 5 (80% win rate) ✅
+- SHORT: 55 (1.8% win rate) ⚠️
+- EXPIRED: 68% of outcomes
+
+### Resume Conditions:
+- [ ] Collect 150-200 signals
+- [ ] Primarily weekday data (Mon-Fri)
+- [ ] Re-run root cause analysis
+- [ ] Determine if SHORT bias is systemic or market-driven
+
+---
+
 ## v2.5 OHLC-BASED OUTCOME ENGINE ✅ (CRITICAL FIX)
 
 **ACCURATE TRADE OUTCOME DETECTION USING HISTORICAL CANDLE DATA:**
