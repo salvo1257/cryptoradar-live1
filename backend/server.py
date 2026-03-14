@@ -526,6 +526,25 @@ BACKEND_TRANSLATIONS = {
         "setup_invalidated": "Setup {0} invalidato prima della conferma",
         "signal_invalidated": "Segnale {0} invalidato - condizioni cambiate",
         "periodic_update": "Aggiornamento periodico segnale operativo",
+        
+        # Liquidity Clusters
+        "buy_orders_at_level": "${0:,.0f} in ordini di acquisto a questo livello.",
+        "sell_orders_at_level": "${0:,.0f} in ordini di vendita a questo livello.",
+        "major_demand_zone": "Zona di domanda principale - il prezzo probabilmente rimbalzerà qui.",
+        "moderate_support": "Supporto moderato - osservare reazione dei compratori.",
+        "minor_support": "Livello di supporto minore.",
+        "major_supply_zone": "Zona di offerta principale - forte resistenza prevista.",
+        "moderate_resistance": "Resistenza moderata - i venditori potrebbero difendere questo livello.",
+        "minor_resistance": "Livello di resistenza minore.",
+        "recent_high_rejected": "Massimo recente a ${0:,.0f}. Il prezzo è stato respinto qui - potenziale cluster di stop-loss.",
+        "recent_low_defended": "Minimo recente a ${0:,.0f}. I compratori hanno difeso questo livello - potenziale zona di liquidazione.",
+        "more_liquidity_above": "Più liquidità sopra il prezzo attuale (${0:,.0f} ordini di vendita vs ${1:,.0f} ordini di acquisto). Il prezzo tende a cercare liquidità - attendersi movimento verso l'alto per cacciare stop.",
+        "more_liquidity_below": "Più liquidità sotto il prezzo attuale (${0:,.0f} ordini di acquisto vs ${1:,.0f} ordini di vendita). Il prezzo tende a cercare liquidità - attendersi movimento verso il basso per cacciare stop.",
+        "balanced_liquidity_distribution": "Distribuzione liquidità bilanciata. Nessuna direzione chiara - il mercato potrebbe consolidare fino a sviluppo di sbilanciamento.",
+        
+        # Whale Alerts
+        "volume_spike_reason": "Picco di volume rilevato ({0:.1f}x media). Pressione istituzionale di {1} identificata.",
+        "multi_exchange_imbalance": "Sbilanciamento multi-exchange: {0:.1f}%. {1}/{2} exchange mostrano pressione di {3}.",
     },
     "en": {
         # Market Bias
@@ -678,6 +697,25 @@ BACKEND_TRANSLATIONS = {
         "setup_invalidated": "Setup {0} invalidated before confirmation",
         "signal_invalidated": "Signal {0} invalidated - conditions changed",
         "periodic_update": "Periodic operational signal update",
+        
+        # Liquidity Clusters
+        "buy_orders_at_level": "${0:,.0f} in buy orders at this level.",
+        "sell_orders_at_level": "${0:,.0f} in sell orders at this level.",
+        "major_demand_zone": "Major demand zone - price likely to bounce here.",
+        "moderate_support": "Moderate support - watch for buyer reaction.",
+        "minor_support": "Minor support level.",
+        "major_supply_zone": "Major supply zone - strong resistance expected.",
+        "moderate_resistance": "Moderate resistance - sellers may defend this level.",
+        "minor_resistance": "Minor resistance level.",
+        "recent_high_rejected": "Recent high at ${0:,.0f}. Price was rejected here - potential stop-loss cluster.",
+        "recent_low_defended": "Recent low at ${0:,.0f}. Buyers defended this level - potential liquidation zone.",
+        "more_liquidity_above": "More liquidity above current price (${0:,.0f} sell orders vs ${1:,.0f} buy orders). Price tends to seek liquidity - expect move upward to hunt stops.",
+        "more_liquidity_below": "More liquidity below current price (${0:,.0f} buy orders vs ${1:,.0f} sell orders). Price tends to seek liquidity - expect move downward to hunt stops.",
+        "balanced_liquidity_distribution": "Balanced liquidity distribution. No clear direction - market may consolidate until imbalance develops.",
+        
+        # Whale Alerts
+        "volume_spike_reason": "Volume spike detected ({0:.1f}x average). Institutional {1} pressure identified.",
+        "multi_exchange_imbalance": "Multi-exchange imbalance: {0:.1f}%. {1}/{2} exchanges show {3} pressure.",
     },
     "de": {
         # Market Bias
@@ -830,6 +868,25 @@ BACKEND_TRANSLATIONS = {
         "setup_invalidated": "Setup {0} vor Bestätigung invalidiert",
         "signal_invalidated": "Signal {0} invalidiert - Bedingungen geändert",
         "periodic_update": "Periodisches operatives Signal-Update",
+        
+        # Liquidity Clusters
+        "buy_orders_at_level": "${0:,.0f} an Kauforders auf diesem Niveau.",
+        "sell_orders_at_level": "${0:,.0f} an Verkaufsorders auf diesem Niveau.",
+        "major_demand_zone": "Große Nachfragezone - Preis wird hier wahrscheinlich abprallen.",
+        "moderate_support": "Moderate Unterstützung - Käuferreaktion beobachten.",
+        "minor_support": "Geringes Unterstützungsniveau.",
+        "major_supply_zone": "Große Angebotszone - starker Widerstand erwartet.",
+        "moderate_resistance": "Moderater Widerstand - Verkäufer könnten dieses Niveau verteidigen.",
+        "minor_resistance": "Geringes Widerstandsniveau.",
+        "recent_high_rejected": "Kürzliches Hoch bei ${0:,.0f}. Preis wurde hier abgelehnt - potenzieller Stop-Loss-Cluster.",
+        "recent_low_defended": "Kürzliches Tief bei ${0:,.0f}. Käufer haben dieses Niveau verteidigt - potenzielle Liquidationszone.",
+        "more_liquidity_above": "Mehr Liquidität über dem aktuellen Preis (${0:,.0f} Verkaufsorders vs ${1:,.0f} Kauforders). Preis sucht Liquidität - Aufwärtsbewegung für Stop-Jagd erwartet.",
+        "more_liquidity_below": "Mehr Liquidität unter dem aktuellen Preis (${0:,.0f} Kauforders vs ${1:,.0f} Verkaufsorders). Preis sucht Liquidität - Abwärtsbewegung für Stop-Jagd erwartet.",
+        "balanced_liquidity_distribution": "Ausgeglichene Liquiditätsverteilung. Keine klare Richtung - Markt könnte bis zum Ungleichgewicht konsolidieren.",
+        
+        # Whale Alerts
+        "volume_spike_reason": "Volumenspitze erkannt ({0:.1f}x Durchschnitt). Institutioneller {1}druck identifiziert.",
+        "multi_exchange_imbalance": "Multi-Börsen-Ungleichgewicht: {0:.1f}%. {1}/{2} Börsen zeigen {3}druck.",
     },
     "pl": {
         # Market Bias
@@ -982,6 +1039,25 @@ BACKEND_TRANSLATIONS = {
         "setup_invalidated": "Setup {0} unieważniony przed potwierdzeniem",
         "signal_invalidated": "Sygnał {0} unieważniony - warunki się zmieniły",
         "periodic_update": "Okresowa aktualizacja sygnału operacyjnego",
+        
+        # Liquidity Clusters
+        "buy_orders_at_level": "${0:,.0f} w zleceniach kupna na tym poziomie.",
+        "sell_orders_at_level": "${0:,.0f} w zleceniach sprzedaży na tym poziomie.",
+        "major_demand_zone": "Główna strefa popytu - cena prawdopodobnie się tu odbije.",
+        "moderate_support": "Umiarkowane wsparcie - obserwuj reakcję kupujących.",
+        "minor_support": "Mniejszy poziom wsparcia.",
+        "major_supply_zone": "Główna strefa podaży - oczekiwany silny opór.",
+        "moderate_resistance": "Umiarkowany opór - sprzedający mogą bronić tego poziomu.",
+        "minor_resistance": "Mniejszy poziom oporu.",
+        "recent_high_rejected": "Niedawne maksimum przy ${0:,.0f}. Cena została tu odrzucona - potencjalny klaster stop-loss.",
+        "recent_low_defended": "Niedawne minimum przy ${0:,.0f}. Kupujący obronili ten poziom - potencjalna strefa likwidacji.",
+        "more_liquidity_above": "Więcej płynności powyżej obecnej ceny (${0:,.0f} zleceń sprzedaży vs ${1:,.0f} zleceń kupna). Cena szuka płynności - oczekuj ruchu w górę na polowanie stopów.",
+        "more_liquidity_below": "Więcej płynności poniżej obecnej ceny (${0:,.0f} zleceń kupna vs ${1:,.0f} zleceń sprzedaży). Cena szuka płynności - oczekuj ruchu w dół na polowanie stopów.",
+        "balanced_liquidity_distribution": "Zrównoważony rozkład płynności. Brak wyraźnego kierunku - rynek może konsolidować do powstania nierównowagi.",
+        
+        # Whale Alerts
+        "volume_spike_reason": "Wykryto skok wolumenu ({0:.1f}x średnia). Zidentyfikowano instytucjonalną presję {1}.",
+        "multi_exchange_imbalance": "Nierównowaga multi-giełdowa: {0:.1f}%. {1}/{2} giełd pokazuje presję {3}.",
     }
 }
 
@@ -2332,7 +2408,7 @@ def analyze_orderbook(orderbook: dict, current_price: float) -> OrderBookAnalysi
         data_source="Kraken"
     )
 
-def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> tuple:
+def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None, lang: str = "it") -> tuple:
     """Generate liquidity cluster data from aggregated multi-exchange order book analysis"""
     clusters = []
     
@@ -2359,13 +2435,14 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
                     strength = "high" if vol > avg_bid_vol * 3 else "medium" if vol > avg_bid_vol * 2 else "low"
                     value_usd = price * vol
                     
-                    explanation = f"${value_usd:,.0f} in buy orders at this level. "
+                    # Build localized explanation
+                    explanation = get_translation("buy_orders_at_level", lang, value_usd)
                     if strength == "high":
-                        explanation += "Major demand zone - price likely to bounce here."
+                        explanation += " " + get_translation("major_demand_zone", lang)
                     elif strength == "medium":
-                        explanation += "Moderate support - watch for buyer reaction."
+                        explanation += " " + get_translation("moderate_support", lang)
                     else:
-                        explanation += "Minor support level."
+                        explanation += " " + get_translation("minor_support", lang)
                     
                     clusters.append(LiquidityCluster(
                         price=round(price, 2),
@@ -2387,13 +2464,14 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
                     strength = "high" if vol > avg_ask_vol * 3 else "medium" if vol > avg_ask_vol * 2 else "low"
                     value_usd = price * vol
                     
-                    explanation = f"${value_usd:,.0f} in sell orders at this level. "
+                    # Build localized explanation
+                    explanation = get_translation("sell_orders_at_level", lang, value_usd)
                     if strength == "high":
-                        explanation += "Major supply zone - strong resistance expected."
+                        explanation += " " + get_translation("major_supply_zone", lang)
                     elif strength == "medium":
-                        explanation += "Moderate resistance - sellers may defend this level."
+                        explanation += " " + get_translation("moderate_resistance", lang)
                     else:
-                        explanation += "Minor resistance level."
+                        explanation += " " + get_translation("minor_resistance", lang)
                     
                     clusters.append(LiquidityCluster(
                         price=round(price, 2),
@@ -2421,7 +2499,7 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
                         distance_percent=round(distance, 2),
                         side="above",
                         estimated_value=0,
-                        explanation=f"Recent high at ${h:,.0f}. Price was rejected here previously - potential stop-loss cluster."
+                        explanation=get_translation("recent_high_rejected", lang, h)
                     ))
         
         # Recent support levels
@@ -2435,7 +2513,7 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
                         distance_percent=round(distance, 2),
                         side="below",
                         estimated_value=0,
-                        explanation=f"Recent low at ${l:,.0f}. Buyers defended this level previously - potential liquidation zone."
+                        explanation=get_translation("recent_low_defended", lang, l)
                     ))
     
     # Calculate liquidity direction based on order book imbalance
@@ -2448,15 +2526,15 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
     if above_value > below_value * 1.3 or len(above_clusters) > len(below_clusters) * 1.5:
         direction = "UP"
         next_target = min(c.price for c in above_clusters) if above_clusters else current_price
-        dir_explanation = f"Più liquidità sopra il prezzo attuale (${above_value:,.0f} ordini di vendita vs ${below_value:,.0f} ordini di acquisto). Il prezzo tende a cercare liquidità - attendersi movimento verso l'alto per cacciare stop."
+        dir_explanation = get_translation("more_liquidity_above", lang, above_value, below_value)
     elif below_value > above_value * 1.3 or len(below_clusters) > len(above_clusters) * 1.5:
         direction = "DOWN"
         next_target = max(c.price for c in below_clusters) if below_clusters else current_price
-        dir_explanation = f"Più liquidità sotto il prezzo attuale (${below_value:,.0f} ordini di acquisto vs ${above_value:,.0f} ordini di vendita). Il prezzo tende a cercare liquidità - attendersi movimento verso il basso per cacciare stop."
+        dir_explanation = get_translation("more_liquidity_below", lang, below_value, above_value)
     else:
         direction = "BALANCED"
         next_target = current_price
-        dir_explanation = "Distribuzione liquidità bilanciata. Nessuna direzione chiara - il mercato potrebbe consolidare fino a sviluppo di sbilanciamento."
+        dir_explanation = get_translation("balanced_liquidity_distribution", lang)
     
     imbalance_ratio = (above_value / below_value) if below_value > 0 else 1.0
     
@@ -2480,11 +2558,11 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
     return unique_clusters[:12], liq_direction
 
 # Keep old function for backward compatibility
-def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None) -> tuple:
+def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None, lang: str = "it") -> tuple:
     """Generate liquidity cluster data from order book analysis"""
-    return generate_liquidity_clusters_enhanced(candles, current_price, orderbook)
+    return generate_liquidity_clusters_enhanced(candles, current_price, orderbook, lang)
 
-def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None) -> List[WhaleAlert]:
+def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None, lang: str = "it") -> List[WhaleAlert]:
     """Generate whale alert signals based on volume and multi-exchange order book analysis"""
     if not candles or len(candles) < 20:
         return []
@@ -2525,6 +2603,10 @@ def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, ag
                 reward = abs(target - entry)
                 risk_reward = reward / risk if risk > 0 else 0
                 
+                # Localized reason
+                pressure_type = "buying" if is_bullish else "selling"
+                reason = get_translation("volume_spike_reason", lang, volume_ratio, pressure_type)
+                
                 alerts.append(WhaleAlert(
                     signal=signal,
                     entry=round(entry, 2),
@@ -2533,7 +2615,7 @@ def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, ag
                     estimated_move=round(move_pct, 2),
                     timeframe="1H",
                     timestamp=datetime.fromtimestamp(c["time"], tz=timezone.utc),
-                    reason=f"Volume spike detected ({volume_ratio:.1f}x average). {'Institutional buying' if is_bullish else 'Institutional selling'} pressure identified.",
+                    reason=reason,
                     stop_loss=round(stop_loss, 2),
                     risk_reward=round(risk_reward, 2),
                     exchanges_detected=exchanges_detected
@@ -2574,6 +2656,10 @@ def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, ag
                 if (is_bullish and ex_imbalance > 10) or (not is_bullish and ex_imbalance < -10):
                     agreeing_exchanges += 1
             
+            # Localized reason
+            pressure_type = "buying" if is_bullish else "selling"
+            reason = get_translation("multi_exchange_imbalance", lang, imbalance, agreeing_exchanges, len(exchange_stats), pressure_type)
+            
             alerts.append(WhaleAlert(
                 signal=signal,
                 entry=round(current_price, 2),
@@ -2582,7 +2668,7 @@ def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, ag
                 estimated_move=round(move_pct, 2),
                 timeframe="Current",
                 timestamp=datetime.now(timezone.utc),
-                reason=f"Multi-exchange imbalance: {imbalance:.1f}%. {agreeing_exchanges}/{len(exchange_stats)} exchanges show {'buying' if is_bullish else 'selling'} pressure.",
+                reason=reason,
                 stop_loss=round(stop_loss, 2),
                 risk_reward=round(risk_reward, 2),
                 exchanges_detected=exchanges_detected
@@ -2591,9 +2677,9 @@ def generate_whale_alerts_enhanced(candles: List[dict], current_price: float, ag
     return alerts[-5:]
 
 # Keep old function for backward compatibility
-def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: dict = None) -> List[WhaleAlert]:
+def generate_whale_alerts(candles: List[dict], current_price: float, orderbook: dict = None, lang: str = "it") -> List[WhaleAlert]:
     """Generate whale alert signals based on volume and order book analysis"""
-    return generate_whale_alerts_enhanced(candles, current_price, orderbook)
+    return generate_whale_alerts_enhanced(candles, current_price, orderbook, lang)
 
 # ============== COINGLASS API HELPERS ==============
 
@@ -4161,8 +4247,11 @@ async def get_support_resistance(interval: str = Query(default="4h"), lang: str 
     }
 
 @api_router.get("/liquidity")
-async def get_liquidity(interval: str = Query(default="4h")):
+async def get_liquidity(interval: str = Query(default="4h"), lang: str = Query(default="it")):
     """Get liquidity clusters from aggregated multi-exchange order book analysis (default: 4H)"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
@@ -4171,7 +4260,7 @@ async def get_liquidity(interval: str = Query(default="4h")):
     aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    clusters, direction = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook)
+    clusters, direction = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
     
     # Get data source info
     active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
@@ -4185,8 +4274,11 @@ async def get_liquidity(interval: str = Query(default="4h")):
     }
 
 @api_router.get("/whale-alerts")
-async def get_whale_alerts(interval: str = Query(default="4h")):
+async def get_whale_alerts(interval: str = Query(default="4h"), lang: str = Query(default="it")):
     """Get whale alert signals from volume and aggregated multi-exchange order book analysis (default: 4H)"""
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     interval_map = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}
     kraken_interval = interval_map.get(interval, 240)  # Default to 4H
     
@@ -4195,7 +4287,7 @@ async def get_whale_alerts(interval: str = Query(default="4h")):
     aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    alerts = generate_whale_alerts_enhanced(candles, current_price, aggregated_orderbook)
+    alerts = generate_whale_alerts_enhanced(candles, current_price, aggregated_orderbook, lang)
     
     # Get data source info
     active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]

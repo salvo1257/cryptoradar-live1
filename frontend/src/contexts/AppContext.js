@@ -90,7 +90,7 @@ export function AppProvider({ children }) {
     } catch (error) {
       console.error('Error fetching analysis data:', error);
     }
-  }, [timeframe]);
+  }, [timeframe, language]);
 
   const fetchNews = useCallback(async () => {
     try {
@@ -208,6 +208,13 @@ export function AppProvider({ children }) {
     fetchMarketData();
     fetchAnalysisData();
   }, [timeframe, fetchMarketData, fetchAnalysisData]);
+
+  // Refresh data when language changes
+  useEffect(() => {
+    fetchMarketData();
+    fetchAnalysisData();
+    fetchNews();
+  }, [language, fetchMarketData, fetchAnalysisData, fetchNews]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([
