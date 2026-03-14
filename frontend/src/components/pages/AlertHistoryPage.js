@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer, BadgeCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -477,6 +477,31 @@ export function AlertHistoryPage() {
                               <OutcomeIcon className="w-3 h-3" />
                               {outcomeConfig.label}
                             </Badge>
+                          )}
+                          {/* OHLC Verified Badge */}
+                          {signal.outcome_notes && signal.outcome_notes.includes('RECALCULATED') && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge className="font-mono text-[9px] flex items-center gap-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                                    <BadgeCheck className="w-2.5 h-2.5" />
+                                    OHLC
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-crypto-card border-crypto-border text-xs max-w-[250px]">
+                                  <p className="font-semibold text-cyan-400">{language === 'it' ? 'Verificato OHLC' : 'OHLC Verified'}</p>
+                                  <p className="text-zinc-400 mt-1">
+                                    {language === 'it' 
+                                      ? 'Outcome calcolato analizzando i dati HIGH/LOW delle candele storiche, non solo il prezzo corrente.'
+                                      : 'Outcome calculated by analyzing historical candle HIGH/LOW data, not just current price.'}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          {/* Candles Analyzed indicator */}
+                          {signal.candles_analyzed > 0 && (
+                            <span className="text-[9px] text-zinc-600">({signal.candles_analyzed} candles)</span>
                           )}
                           <span className="text-xs text-zinc-500">{signal.setup_type}</span>
                         </div>

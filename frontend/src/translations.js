@@ -262,6 +262,11 @@ export const translations = {
     telegramHowTo: "How to get Bot Token and Chat ID",
     telegramInstructions: "1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the Bot Token\n4. For Chat ID, send a message to your bot, then visit:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
     
+    // OHLC Verification
+    ohlcVerified: "OHLC Verified",
+    ohlcVerifiedDesc: "Outcome calculated by analyzing historical candle HIGH/LOW data, not just current price.",
+    candlesAnalyzed: "candles analyzed",
+    
     // Learn mode explanations
     learnMarketBias: "Market Bias analyzes multiple indicators to determine overall market direction. Confidence shows how strong the signal is.",
     learnSupportResistance: "Support levels are prices where buying pressure historically prevents further decline. Resistance levels are where selling pressure prevents further rise.",
@@ -536,6 +541,11 @@ export const translations = {
     notifySignalOutcomes: "Esiti Trade (WIN/LOSS)",
     telegramHowTo: "Come ottenere Bot Token e Chat ID",
     telegramInstructions: "1. Apri Telegram e cerca @BotFather\n2. Invia /newbot e segui le istruzioni\n3. Copia il Bot Token\n4. Per il Chat ID, invia un messaggio al tuo bot, poi visita:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    
+    // OHLC Verification
+    ohlcVerified: "Verificato OHLC",
+    ohlcVerifiedDesc: "Outcome calcolato analizzando i dati HIGH/LOW delle candele storiche, non solo il prezzo corrente.",
+    candlesAnalyzed: "candele analizzate",
     
     // Learn mode explanations
     learnMarketBias: "Il Bias di Mercato analizza diversi indicatori per determinare la direzione generale del mercato. La fiducia mostra quanto è forte il segnale.",
