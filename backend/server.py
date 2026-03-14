@@ -2707,7 +2707,7 @@ async def fetch_coinglass_liquidation():
         logger.error(f"Error fetching CoinGlass liquidation: {e}")
     return None
 
-async def generate_open_interest(current_price: float, candles: List[dict] = None) -> OpenInterest:
+async def generate_open_interest(current_price: float, candles: List[dict] = None, lang: str = "it") -> OpenInterest:
     """Generate Open Interest data from CoinGlass API"""
     
     # Try to get real CoinGlass data
@@ -2719,16 +2719,16 @@ async def generate_open_interest(current_price: float, candles: List[dict] = Non
         change_4h = cg_data["change_4h"]
         change_24h = cg_data["change_24h"]
         
-        # Determine trend (Italian)
+        # Determine trend with translated signal
         if change_24h > 3:
             trend = "increasing"
-            signal = "OI in aumento con nuove posizioni. Nuovi capitali stanno entrando nel mercato. Se il prezzo sale = continuazione rialzista."
+            signal = get_translation("oi_increasing", lang)
         elif change_24h < -3:
             trend = "decreasing"
-            signal = "OI in diminuzione indica chiusura di posizioni. Possibile esaurimento del trend o presa di profitto."
+            signal = get_translation("oi_decreasing", lang)
         else:
             trend = "stable"
-            signal = "OI stabile indica consolidamento del mercato. Attendere una rottura con aumento dei volumi."
+            signal = get_translation("oi_stable", lang)
         
         # Estimate exchange distribution based on typical market share
         exchanges = [
@@ -2766,11 +2766,11 @@ async def generate_open_interest(current_price: float, candles: List[dict] = Non
             {"name": "OKX", "oi": round(base_oi * 0.12, 2), "share": 12},
             {"name": "Others", "oi": round(base_oi * 0.09, 2), "share": 9},
         ],
-        signal="API temporarily unavailable. Showing estimated data.",
+        signal=get_translation("api_unavailable", lang),
         data_source="Fallback"
     )
 
-async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict = None) -> FundingRate:
+async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict = None, lang: str = "it") -> FundingRate:
     """Generate Funding Rate data based on liquidation imbalance from CoinGlass"""
     
     # Get liquidation data to infer funding sentiment
@@ -2793,19 +2793,19 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
                 payer = "shorts"
                 sentiment = "bearish"
                 overcrowded = "shorts" if long_ratio > 0.65 else None
-                signal_text = f"Più long liquidati ({long_ratio*100:.1f}%). Pressione ribassista. Gli short pagano i long."
+                signal_text = get_translation("more_longs_liquidated", lang, long_ratio * 100)
             elif short_ratio > 0.55:
                 current_rate = 0.005 + (short_ratio - 0.5) * 0.02
                 payer = "longs"
                 sentiment = "bullish"
                 overcrowded = "longs" if short_ratio > 0.65 else None
-                signal_text = f"Più short liquidati ({short_ratio*100:.1f}%). Pressione rialzista. I long pagano gli short."
+                signal_text = get_translation("more_shorts_liquidated", lang, short_ratio * 100)
             else:
                 current_rate = 0.001
                 payer = "longs"
                 sentiment = "neutral"
                 overcrowded = None
-                signal_text = "Liquidazioni bilanciate. Ambiente di funding neutrale."
+                signal_text = get_translation("balanced_liquidations", lang)
             
             return FundingRate(
                 current_rate=round(current_rate, 4),
@@ -2826,7 +2826,7 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
         payer="longs" if base_rate > 0 else "shorts",
         sentiment="bullish" if base_rate > 0.005 else "bearish" if base_rate < -0.005 else "neutral",
         overcrowded=None,
-        signal_text="API temporaneamente non disponibile. Dati stimati.",
+        signal_text=get_translation("api_unavailable", lang),
         data_source="Fallback"
     )
 
@@ -2837,7 +2837,8 @@ def analyze_whale_activity(
     current_price: float,
     aggregated_orderbook: dict,
     liquidation_data: dict = None,
-    open_interest_data: dict = None
+    open_interest_data: dict = None,
+    lang: str = "it"
 ) -> WhaleActivity:
     """
     Whale Alert Engine - detects unusual large market activity.
@@ -2994,24 +2995,24 @@ def analyze_whale_activity(
     # BUILD EXPLANATION
     if direction == "BUY":
         if volume_spike and orderbook_aggression == "aggressive_buying":
-            explanation = "Forte pressione di acquisto rilevata: picco di volume combinato con order book pesantemente lato bid."
+            explanation = get_translation("large_buy_pressure", lang)
         elif liquidation_bias == "shorts_liquidated":
-            explanation = "Pressione di acquisto delle balene: short squeeze in corso con pesanti liquidazioni short."
+            explanation = get_translation("whale_buying_squeeze", lang)
         elif signals:
-            explanation = f"Pressione di acquisto rilevata: {signals[0]}"
+            explanation = get_translation("buy_pressure_detected", lang, signals[0])
         else:
-            explanation = "Attività moderata di acquisto balene rilevata sugli exchange."
+            explanation = get_translation("moderate_whale_buying", lang)
     elif direction == "SELL":
         if volume_spike and orderbook_aggression == "aggressive_selling":
-            explanation = "Forte pressione di vendita rilevata: picco di volume combinato con order book pesantemente lato ask."
+            explanation = get_translation("large_sell_pressure", lang)
         elif liquidation_bias == "longs_liquidated":
-            explanation = "Pressione di vendita delle balene: cascata di liquidazioni long in corso."
+            explanation = get_translation("whale_selling_cascade", lang)
         elif signals:
-            explanation = f"Pressione di vendita rilevata: {signals[0]}"
+            explanation = get_translation("sell_pressure_detected", lang, signals[0])
         else:
-            explanation = "Attività moderata di vendita balene rilevata sugli exchange."
+            explanation = get_translation("moderate_whale_selling", lang)
     else:
-        explanation = "Nessun bias direzionale chiaro delle balene. Attività bilanciata o insufficiente per generare segnale."
+        explanation = get_translation("no_whale_bias", lang)
     
     return WhaleActivity(
         direction=direction,
@@ -3034,7 +3035,8 @@ def build_liquidity_ladder(
     current_price: float,
     sr_levels: List[SupportResistanceLevel],
     liquidity_clusters: List[LiquidityCluster],
-    aggregated_orderbook: dict = None
+    aggregated_orderbook: dict = None,
+    lang: str = "it"
 ) -> LiquidityLadder:
     """
     Build a Liquidity Ladder showing the sequence of important liquidity levels
@@ -3224,19 +3226,19 @@ def build_liquidity_ladder(
         # If much more liquidity above and closer, expect upward sweep first
         if more_attractive_side == "above" and above_dist < below_dist * 1.5:
             sweep_expectation = "sweep_above_first"
-            path_analysis = f"Scala di liquidità superiore più forte (${above_total_value/1000000:.1f}M sopra vs ${below_total_value/1000000:.1f}M sotto). Prezzo probabile sweep verso ${nearest_above.price:,.0f} prima di potenziale inversione."
+            path_analysis = get_translation("upper_ladder_stronger", lang, above_total_value/1000000, below_total_value/1000000, nearest_above.price)
         elif more_attractive_side == "below" and below_dist < above_dist * 1.5:
             sweep_expectation = "sweep_below_first"
-            path_analysis = f"Scala di liquidità inferiore più forte (${below_total_value/1000000:.1f}M sotto vs ${above_total_value/1000000:.1f}M sopra). Prezzo probabile sweep verso ${nearest_below.price:,.0f} prima di potenziale inversione."
+            path_analysis = get_translation("lower_ladder_stronger", lang, below_total_value/1000000, above_total_value/1000000, nearest_below.price)
         elif more_attractive_side == "balanced":
             sweep_expectation = "balanced"
-            path_analysis = f"Distribuzione liquidità bilanciata. Nessuna direzione di sweep chiara - monitorare per catalizzatore di breakout."
+            path_analysis = get_translation("balanced_distribution", lang)
         else:
             sweep_expectation = "no_clear_sweep"
-            path_analysis = f"Livelli di liquidità presenti ma nessun setup di sweep chiaro. Monitorare accumulazione/distribuzione."
+            path_analysis = get_translation("no_clear_sweep", lang)
     else:
         sweep_expectation = "no_clear_sweep"
-        path_analysis = "Dati di liquidità insufficienti per l'analisi del percorso."
+        path_analysis = get_translation("insufficient_data", lang)
     
     return LiquidityLadder(
         current_price=round(current_price, 2),
@@ -3265,7 +3267,8 @@ def generate_trade_signal(
     whale_alerts: List[WhaleAlert],
     exchange_comparison: Dict[str, Any],
     whale_activity: WhaleActivity = None,
-    liquidity_ladder: LiquidityLadder = None
+    liquidity_ladder: LiquidityLadder = None,
+    lang: str = "it"
 ) -> TradeSignal:
     """
     Generate a final actionable trading signal by synthesizing all intelligence.
@@ -3352,7 +3355,7 @@ def generate_trade_signal(
         if market_bias.bias == "BULLISH" and market_bias.confidence >= 60:
             sweep_detected = True
             setup_type = "sweep_reversal"
-            sweep_analysis = f"Il prezzo si avvicina al supporto ${support_level.price:,.0f}. Probabile sweep della liquidità sotto ${long_sweep_zone:,.0f} prima di un'inversione bullish. Attendere il recupero di ${support_level.price:,.0f} per confermare l'ingresso long."
+            sweep_analysis = get_translation("approaching_support", lang, support_level.price, long_sweep_zone, support_level.price)
     
     elif approaching_resistance_sweep:
         # Price near resistance - potential short sweep then reversal down
@@ -3361,7 +3364,7 @@ def generate_trade_signal(
         if market_bias.bias == "BEARISH" and market_bias.confidence >= 60:
             sweep_detected = True
             setup_type = "sweep_reversal"
-            sweep_analysis = f"Il prezzo si avvicina alla resistenza ${resistance_level.price:,.0f}. Probabile sweep della liquidità sopra ${short_sweep_zone:,.0f} prima di un'inversione bearish. Attendere il rigetto di ${resistance_level.price:,.0f} per confermare l'ingresso short."
+            sweep_analysis = get_translation("approaching_resistance", lang, resistance_level.price, short_sweep_zone, resistance_level.price)
     
     # ================== FACTOR SCORING ==================
     
@@ -3381,9 +3384,9 @@ def generate_trade_signal(
     }
     
     if bias_score > 0:
-        reasoning_parts.append(f"Bias di Mercato è {market_bias.bias} con confidenza del {market_bias.confidence:.0f}%")
+        reasoning_parts.append(get_translation("market_bias_is", lang, market_bias.bias, market_bias.confidence))
     elif bias_score < 0:
-        reasoning_parts.append(f"Bias di Mercato è {market_bias.bias} con confidenza del {market_bias.confidence:.0f}%")
+        reasoning_parts.append(get_translation("market_bias_is", lang, market_bias.bias, market_bias.confidence))
     
     # 2. Liquidity Direction (+/-2)
     liq_score = 0
@@ -3402,7 +3405,7 @@ def generate_trade_signal(
     }
     
     if liq_score != 0:
-        reasoning_parts.append(f"La liquidità punta verso {liquidity_direction.direction} in direzione ${liquidity_direction.next_target:,.0f}")
+        reasoning_parts.append(get_translation("liquidity_points", lang, liquidity_direction.direction, liquidity_direction.next_target))
     
     # 3. Exchange Consensus (+/-2)
     exchange_score = 0
@@ -3428,9 +3431,9 @@ def generate_trade_signal(
     }
     
     if exchange_score > 0:
-        reasoning_parts.append(f"Consenso multi-exchange è bullish ({consensus_text})")
+        reasoning_parts.append(get_translation("exchange_consensus_bullish", lang, consensus_text))
     elif exchange_score < 0:
-        reasoning_parts.append(f"Consenso multi-exchange è bearish ({consensus_text})")
+        reasoning_parts.append(get_translation("exchange_consensus_bearish", lang, consensus_text))
     
     # 4. Funding Rate (+/-1)
     funding_score = 0
@@ -3443,10 +3446,10 @@ def generate_trade_signal(
         # Overcrowded = potential squeeze = reversal opportunity
         if funding_rate.overcrowded:
             if funding_rate.overcrowded == "longs":
-                warnings.append("⚠️ Long affollati - rischio squeeze long / opportunità short potenziale")
+                warnings.append("⚠️ " + get_translation("longs_overcrowded", lang))
                 funding_score -= 1
             elif funding_rate.overcrowded == "shorts":
-                warnings.append("⚠️ Short affollati - rischio squeeze short / opportunità long potenziale")
+                warnings.append("⚠️ " + get_translation("shorts_overcrowded", lang))
                 funding_score += 1
     
     score += funding_score
@@ -3458,7 +3461,7 @@ def generate_trade_signal(
     }
     
     if funding_score != 0:
-        reasoning_parts.append(f"Il sentiment del funding rate è {funding_rate.sentiment}")
+        reasoning_parts.append(get_translation("funding_sentiment", lang, funding_rate.sentiment))
     
     # 5. Open Interest Trend (+/-1)
     oi_score = 0
@@ -3466,15 +3469,15 @@ def generate_trade_signal(
         if open_interest.trend == "increasing":
             if score > 0:
                 oi_score = 1
-                reasoning_parts.append("Open Interest in aumento con trend bullish (nuovi long in ingresso)")
+                reasoning_parts.append(get_translation("oi_increasing_bullish", lang))
             elif score < 0:
                 oi_score = -1
-                reasoning_parts.append("Open Interest in aumento con trend bearish (nuovi short in ingresso)")
+                reasoning_parts.append(get_translation("oi_increasing_bearish", lang))
         elif open_interest.trend == "decreasing":
             if score > 0:
-                warnings.append("⚠️ OI in diminuzione - possibile presa di profitto / esaurimento")
+                warnings.append("⚠️ " + get_translation("oi_decreasing_profit", lang))
             elif score < 0:
-                warnings.append("⚠️ OI in diminuzione - gli short potrebbero stare coprendo")
+                warnings.append("⚠️ " + get_translation("oi_decreasing_covering", lang))
     
     score += oi_score
     factors["open_interest"] = {
@@ -3491,10 +3494,10 @@ def generate_trade_signal(
         for pattern in patterns[:2]:
             if pattern.direction == "BULLISH" and pattern.confidence >= 65:
                 pattern_score += 1
-                reasoning_parts.append(f"Pattern {pattern.pattern} rilevato (bullish, {pattern.confidence:.0f}% conf)")
+                reasoning_parts.append(get_translation("pattern_detected", lang, pattern.pattern, "bullish", pattern.confidence))
             elif pattern.direction == "BEARISH" and pattern.confidence >= 65:
                 pattern_score -= 1
-                reasoning_parts.append(f"Pattern {pattern.pattern} rilevato (bearish, {pattern.confidence:.0f}% conf)")
+                reasoning_parts.append(get_translation("pattern_detected", lang, pattern.pattern, "bearish", pattern.confidence))
     
     pattern_score = max(-2, min(2, pattern_score))
     score += pattern_score
@@ -3513,10 +3516,10 @@ def generate_trade_signal(
         
         if long_signals > short_signals:
             whale_score = 1
-            reasoning_parts.append(f"Attività balene favorisce i long ({long_signals} long vs {short_signals} short)")
+            reasoning_parts.append(get_translation("whale_favors_longs", lang, long_signals, short_signals))
         elif short_signals > long_signals:
             whale_score = -1
-            reasoning_parts.append(f"Attività balene favorisce gli short ({short_signals} short vs {long_signals} long)")
+            reasoning_parts.append(get_translation("whale_favors_shorts", lang, short_signals, long_signals))
     
     score += whale_score
     factors["whale_alerts"] = {
@@ -3532,21 +3535,23 @@ def generate_trade_signal(
     if whale_activity:
         if whale_activity.direction == "BUY" and whale_activity.strength >= 40:
             whale_engine_score = 2 if whale_activity.strength >= 70 else 1
-            reasoning_parts.append(f"Whale Engine rileva pressione di ACQUISTO ({whale_activity.strength:.0f}% forza): {whale_activity.explanation}")
+            reasoning_parts.append(get_translation("whale_engine_buy", lang, whale_activity.strength, whale_activity.explanation))
         elif whale_activity.direction == "SELL" and whale_activity.strength >= 40:
             whale_engine_score = -2 if whale_activity.strength >= 70 else -1
-            reasoning_parts.append(f"Whale Engine rileva pressione di VENDITA ({whale_activity.strength:.0f}% forza): {whale_activity.explanation}")
+            reasoning_parts.append(get_translation("whale_engine_sell", lang, whale_activity.strength, whale_activity.explanation))
         
         # Add specific whale signals as warnings/context
         if whale_activity.volume_spike:
-            warnings.append(f"🐋 Picco di volume rilevato: {whale_activity.volume_ratio:.1f}x la media")
+            warnings.append("🐋 " + get_translation("volume_spike", lang, whale_activity.volume_ratio))
         if whale_activity.liquidation_bias == "longs_liquidated":
-            warnings.append("🐋 Cascata di liquidazioni long in corso")
+            warnings.append("🐋 " + get_translation("long_liquidation_cascade", lang))
         elif whale_activity.liquidation_bias == "shorts_liquidated":
-            warnings.append("🐋 Short squeeze in corso")
+            warnings.append("🐋 " + get_translation("short_squeeze_progress", lang))
         if whale_activity.orderbook_aggression:
-            aggression_text = "acquisto aggressivo" if whale_activity.orderbook_aggression == "aggressive_buying" else "vendita aggressiva"
-            warnings.append(f"🐋 L'order book mostra {aggression_text}")
+            if whale_activity.orderbook_aggression == "aggressive_buying":
+                warnings.append("🐋 " + get_translation("orderbook_aggressive_buy", lang))
+            else:
+                warnings.append("🐋 " + get_translation("orderbook_aggressive_sell", lang))
     
     score += whale_engine_score
     factors["whale_engine"] = {
@@ -3566,20 +3571,32 @@ def generate_trade_signal(
         # If ladder shows more attractive liquidity in one direction, that's where price will seek
         if liquidity_ladder.more_attractive_side == "above":
             ladder_score = 1  # Bullish - price seeks upside liquidity
-            reasoning_parts.append(f"Liquidity Ladder: Più liquidità sopra - analisi percorso suggerisce sweep verso ${liquidity_ladder.major_above.price:,.0f}" if liquidity_ladder.major_above else "Liquidity Ladder: Percorso favorisce il rialzo")
+            if liquidity_ladder.major_above:
+                reasoning_parts.append(get_translation("ladder_more_above", lang, liquidity_ladder.major_above.price))
+            else:
+                reasoning_parts.append(get_translation("ladder_favors_upside", lang))
         elif liquidity_ladder.more_attractive_side == "below":
             ladder_score = -1  # Bearish - price seeks downside liquidity
-            reasoning_parts.append(f"Liquidity Ladder: Più liquidità sotto - analisi percorso suggerisce sweep verso ${liquidity_ladder.major_below.price:,.0f}" if liquidity_ladder.major_below else "Liquidity Ladder: Percorso favorisce il ribasso")
+            if liquidity_ladder.major_below:
+                reasoning_parts.append(get_translation("ladder_more_below", lang, liquidity_ladder.major_below.price))
+            else:
+                reasoning_parts.append(get_translation("ladder_favors_downside", lang))
         
         # Determine sweep expectation
         if liquidity_ladder.sweep_expectation == "sweep_below_first":
             sweep_first_expected = True
             if score > 0:  # Currently bullish
-                warnings.append(f"⚠️ Sweep atteso: Il prezzo potrebbe scendere a ${liquidity_ladder.nearest_below.price:,.0f} prima di salire" if liquidity_ladder.nearest_below else "⚠️ Possibile discesa prima del rialzo")
+                if liquidity_ladder.nearest_below:
+                    warnings.append("⚠️ " + get_translation("sweep_expected_down", lang, liquidity_ladder.nearest_below.price))
+                else:
+                    warnings.append("⚠️ " + get_translation("possible_dip", lang))
         elif liquidity_ladder.sweep_expectation == "sweep_above_first":
             sweep_first_expected = True
             if score < 0:  # Currently bearish
-                warnings.append(f"⚠️ Sweep atteso: Il prezzo potrebbe salire a ${liquidity_ladder.nearest_above.price:,.0f} prima di scendere" if liquidity_ladder.nearest_above else "⚠️ Possibile spike prima del ribasso")
+                if liquidity_ladder.nearest_above:
+                    warnings.append("⚠️ " + get_translation("sweep_expected_up", lang, liquidity_ladder.nearest_above.price))
+                else:
+                    warnings.append("⚠️ " + get_translation("possible_spike", lang))
     
     score += ladder_score
     factors["liquidity_ladder"] = {
@@ -3593,7 +3610,7 @@ def generate_trade_signal(
     
     # 10. Trap Risk Assessment
     if market_bias.trap_risk == "high":
-        warnings.append("⚠️ Alto rischio di trappola - possibile falso breakout / caccia alla liquidità")
+        warnings.append("⚠️ " + get_translation("high_trap_risk", lang))
     
     # ================== DETERMINE DIRECTION ==================
     
@@ -3617,10 +3634,10 @@ def generate_trade_signal(
         if len(supports) > 1:
             # Use second support as true invalidation
             stop_loss = safe_long_invalidation
-            invalidation_reason = f"Invalidazione reale sotto ${stop_loss:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${obvious_long_stop:,.0f} potrebbero essere spazzati prima."
+            invalidation_reason = get_translation("true_invalidation_below", lang, stop_loss, obvious_long_stop)
         else:
             stop_loss = long_sweep_zone * 0.995  # Below sweep zone
-            invalidation_reason = f"Stop posizionato a ${stop_loss:,.0f}, oltre la probabile zona di sweep di ${long_sweep_zone:,.0f}"
+            invalidation_reason = get_translation("stop_beyond_sweep_below", lang, stop_loss, long_sweep_zone)
         
         # Targets
         target_1 = resistances[0].price if resistances else current_price * 1.02
@@ -3639,10 +3656,10 @@ def generate_trade_signal(
         # SMART STOP LOSS for SHORT
         if len(resistances) > 1:
             stop_loss = safe_short_invalidation
-            invalidation_reason = f"Invalidazione reale sopra ${stop_loss:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${obvious_short_stop:,.0f} potrebbero essere spazzati prima."
+            invalidation_reason = get_translation("true_invalidation_above", lang, stop_loss, obvious_short_stop)
         else:
             stop_loss = short_sweep_zone * 1.005
-            invalidation_reason = f"Stop posizionato a ${stop_loss:,.0f}, oltre la probabile zona di sweep di ${short_sweep_zone:,.0f}"
+            invalidation_reason = get_translation("stop_beyond_sweep_above", lang, stop_loss, short_sweep_zone)
         
         target_1 = supports[0].price if supports else current_price * 0.98
         target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
@@ -3656,7 +3673,7 @@ def generate_trade_signal(
         entry_zone_low = current_price * 0.99
         entry_zone_high = current_price * 1.01
         stop_loss = 0
-        invalidation_reason = "Segnali misti - attendere configurazione più chiara"
+        invalidation_reason = get_translation("mixed_signals", lang)
         target_1 = 0
         target_2 = 0
         estimated_move = 0
@@ -3668,9 +3685,9 @@ def generate_trade_signal(
     no_trade_reason = None
     if direction != "NO TRADE":
         if abs(estimated_move) < MINIMUM_MOVE_PERCENT:
-            no_trade_reason = f"Movimento stimato ({abs(estimated_move):.2f}%) è sotto la soglia minima ({MINIMUM_MOVE_PERCENT}%)"
+            no_trade_reason = get_translation("move_below_threshold", lang, abs(estimated_move), MINIMUM_MOVE_PERCENT)
             direction = "NO TRADE"
-            warnings.append(f"⚠️ Movimento troppo piccolo: {abs(estimated_move):.2f}% < {MINIMUM_MOVE_PERCENT}% minimo")
+            warnings.append("⚠️ " + get_translation("move_too_small", lang, abs(estimated_move), MINIMUM_MOVE_PERCENT))
     
     # ================== CALCULATE RISK/REWARD ==================
     
@@ -3681,7 +3698,7 @@ def generate_trade_signal(
         
         # Check if R:R is acceptable (at least 1.5:1)
         if risk_reward_ratio < 1.5:
-            warnings.append(f"⚠️ Risk/Reward ({risk_reward_ratio:.1f}:1) sotto l'ideale 1.5:1")
+            warnings.append("⚠️ " + get_translation("rr_below_ideal", lang, risk_reward_ratio))
     else:
         risk_reward_ratio = 0
     
@@ -3710,63 +3727,63 @@ def generate_trade_signal(
     
     if direction == "NO TRADE":
         if no_trade_reason:
-            reasoning = f"⚠️ NO TRADE - MOVIMENTO INSUFFICIENTE\n\n{no_trade_reason}\n\n"
+            reasoning = f"⚠️ {get_translation('no_trade_insufficient', lang)}\n\n{no_trade_reason}\n\n"
         else:
-            reasoning = "⚠️ SEGNALI MISTI - NESSUNA CONFIGURAZIONE CHIARA\n\n"
+            reasoning = f"⚠️ {get_translation('mixed_signals_no_setup', lang)}\n\n"
         
-        reasoning += "I fattori di intelligence non sono allineati:\n"
+        reasoning += f"{get_translation('factors_not_aligned', lang)}\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
         
         if sweep_analysis:
-            reasoning += f"\n📊 Contesto Liquidità:\n{sweep_analysis}\n"
+            reasoning += f"\n📊 {sweep_analysis}\n"
         
-        reasoning += "\nAttendere un bias direzionale più chiaro prima di entrare in posizione."
+        reasoning += f"\n{get_translation('wait_clearer_bias', lang)}"
         
     else:
         dir_emoji = "🟢" if direction == "LONG" else "🔴"
         
         if setup_type == "sweep_reversal":
-            reasoning = f"{dir_emoji} {direction} - CONFIGURAZIONE SWEEP E INVERSIONE\n\n"
+            reasoning = f"{dir_emoji} {direction} - {get_translation('sweep_reversal_setup', lang)}\n\n"
         else:
-            reasoning = f"{dir_emoji} {direction} - CONFIGURAZIONE CONTINUAZIONE\n\n"
+            reasoning = f"{dir_emoji} {direction} - {get_translation('continuation_setup', lang)}\n\n"
         
         # Move size assessment
         if abs(estimated_move) >= 2.0:
-            reasoning += f"✅ Grande potenziale di movimento: {abs(estimated_move):.2f}%\n\n"
+            reasoning += f"✅ {get_translation('large_move_potential', lang, abs(estimated_move))}\n\n"
         elif abs(estimated_move) >= 1.0:
-            reasoning += f"✅ Discreto potenziale di movimento: {abs(estimated_move):.2f}%\n\n"
+            reasoning += f"✅ {get_translation('decent_move_potential', lang, abs(estimated_move))}\n\n"
         else:
-            reasoning += f"⚠️ Movimento ridotto: {abs(estimated_move):.2f}% (minimo è {MINIMUM_MOVE_PERCENT}%)\n\n"
+            reasoning += f"⚠️ {get_translation('small_move', lang, abs(estimated_move), MINIMUM_MOVE_PERCENT)}\n\n"
         
-        reasoning += "Fattori chiave a supporto del trade:\n"
+        reasoning += f"{get_translation('key_factors', lang)}\n"
         for part in reasoning_parts:
             reasoning += f"• {part}\n"
         
         # Liquidity sweep context
-        reasoning += f"\n📊 Liquidità & Posizionamento Stop:\n"
+        reasoning += f"\n📊 {get_translation('liquidity_stop_placement', lang)}\n"
         if direction == "LONG":
-            reasoning += f"• Zona di caccia stop ovvia: ${long_sweep_zone:,.0f} (sotto primo supporto)\n"
-            reasoning += f"• Invalidazione sicura: ${safe_long_invalidation:,.0f} (oltre lo sweep)\n"
-            reasoning += f"• Stop posizionato a ${stop_loss:,.0f} per evitare caccia agli stop\n"
+            reasoning += f"• {get_translation('obvious_stop_zone', lang, long_sweep_zone)}\n"
+            reasoning += f"• {get_translation('safe_invalidation', lang, safe_long_invalidation)}\n"
+            reasoning += f"• {get_translation('stop_placed_at', lang, stop_loss)}\n"
         else:
-            reasoning += f"• Zona di caccia stop ovvia: ${short_sweep_zone:,.0f} (sopra prima resistenza)\n"
-            reasoning += f"• Invalidazione sicura: ${safe_short_invalidation:,.0f} (oltre lo sweep)\n"
-            reasoning += f"• Stop posizionato a ${stop_loss:,.0f} per evitare caccia agli stop\n"
+            reasoning += f"• {get_translation('obvious_stop_zone_above', lang, short_sweep_zone)}\n"
+            reasoning += f"• {get_translation('safe_invalidation', lang, safe_short_invalidation)}\n"
+            reasoning += f"• {get_translation('stop_placed_at', lang, stop_loss)}\n"
         
         if sweep_analysis:
-            reasoning += f"\n🔄 Analisi Sweep:\n{sweep_analysis}\n"
+            reasoning += f"\n🔄 {get_translation('sweep_analysis', lang)}\n{sweep_analysis}\n"
         
         # Add liquidity ladder path analysis
         if liquidity_ladder and liquidity_ladder.path_analysis:
-            reasoning += f"\n🪜 Percorso Liquidità:\n{liquidity_ladder.path_analysis}\n"
+            reasoning += f"\n🪜 {get_translation('liquidity_path', lang)}\n{liquidity_ladder.path_analysis}\n"
         
         # Add whale activity summary
         if whale_activity and whale_activity.direction != "NEUTRAL":
-            reasoning += f"\n🐋 Attività Balene:\n{whale_activity.explanation}\n"
+            reasoning += f"\n🐋 {get_translation('whale_activity_section', lang)}\n{whale_activity.explanation}\n"
         
         if warnings:
-            reasoning += "\n⚠️ Avvisi di Rischio:\n"
+            reasoning += f"\n⚠️ {get_translation('risk_warnings', lang)}\n"
             for warning in warnings:
                 reasoning += f"{warning}\n"
         
@@ -4132,7 +4149,7 @@ async def get_support_resistance(interval: str = Query(default="4h"), lang: str 
     aggregated_orderbook = await get_aggregated_orderbook()
     current_price = ticker["price"] if ticker else 0
     
-    levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook, lang)
+    levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook)
     
     # Get data source info
     active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"]) if aggregated_orderbook else ["Kraken"]
@@ -4387,9 +4404,9 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
             elif imbalance < -10:
                 exchange_comparison["exchanges"][exchange]["bias"] = "BEARISH"
     
-    # Get funding and OI (async)
-    funding_task = generate_funding_rate(aggregated_orderbook)
-    oi_task = generate_open_interest(current_price, candles)
+    # Get funding and OI (async) - pass language for translations
+    funding_task = generate_funding_rate(aggregated_orderbook, None, lang)
+    oi_task = generate_open_interest(current_price, candles, lang)
     
     funding_rate, open_interest = await asyncio.gather(funding_task, oi_task)
     
@@ -4431,7 +4448,8 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         current_price=current_price,
         aggregated_orderbook=aggregated_orderbook,
         liquidation_data=liquidation_data,
-        open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None
+        open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
+        lang=lang
     )
     
     # NEW v1.7: Build Liquidity Ladder
@@ -4439,7 +4457,8 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         current_price=current_price,
         sr_levels=sr_levels,
         liquidity_clusters=clusters,
-        aggregated_orderbook=aggregated_orderbook
+        aggregated_orderbook=aggregated_orderbook,
+        lang=lang
     )
     
     # Generate the final trade signal with all intelligence
@@ -4454,7 +4473,8 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         whale_alerts=whale_alerts,
         exchange_comparison=exchange_comparison,
         whale_activity=whale_activity,
-        liquidity_ladder=liquidity_ladder
+        liquidity_ladder=liquidity_ladder,
+        lang=lang
     )
     
     # Apply confirmation system
@@ -5124,7 +5144,7 @@ async def get_funding_rate(lang: str = Query(default="it")):
     
     orderbook = await fetch_kraken_orderbook(100)
     
-    funding = await generate_funding_rate(orderbook, lang)
+    funding = await generate_funding_rate(orderbook, None, lang)
     return funding
 
 @api_router.get("/news")
