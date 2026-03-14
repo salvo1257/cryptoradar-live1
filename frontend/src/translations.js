@@ -171,6 +171,26 @@ export const translations = {
     weak: "WEAK",
     building: "BUILDING",
     learnMarketEnergy: "Market Energy detects when BTC is building energy before a significant move by analyzing price compression, volatility, OI behavior, and liquidity buildup.",
+    
+    // Liquidity Magnet
+    liquidityMagnet: "Liquidity Magnet",
+    targetDirection: "Target Direction",
+    magnetStrength: "Magnet Strength",
+    nearestMagnet: "Nearest Magnet",
+    secondaryMagnet: "Secondary Magnet",
+    distance: "Distance",
+    estimatedValue: "Est. Value",
+    attractionStrength: "Attraction Strength",
+    sweepExpectation: "Sweep Expectation",
+    veryStrong: "VERY STRONG",
+    sweepUpFirst: "Sweep UP first",
+    sweepDownFirst: "Sweep DOWN first",
+    noClearSweep: "No clear sweep",
+    up: "UP",
+    down: "DOWN",
+    balanced: "BALANCED",
+    learnLiquidityMagnet: "Liquidity Magnet measures how strongly BTC price is attracted toward nearby liquidity zones, helping identify where price is most likely to move next.",
+    
     longsPay: "Longs Pay",
     shortsPay: "Shorts Pay",
     
@@ -405,6 +425,26 @@ export const translations = {
     medium: "MEDIA",
     low: "BASSA",
     learnMarketEnergy: "Energia Mercato rileva quando BTC sta accumulando energia prima di un movimento significativo analizzando compressione prezzo, volatilità, comportamento OI e accumulo liquidità.",
+    
+    // Liquidity Magnet
+    liquidityMagnet: "Magnete Liquidità",
+    targetDirection: "Direzione Target",
+    magnetStrength: "Forza Magnete",
+    nearestMagnet: "Magnete Più Vicino",
+    secondaryMagnet: "Magnete Secondario",
+    distance: "Distanza",
+    estimatedValue: "Valore Stimato",
+    attractionStrength: "Forza Attrazione",
+    sweepExpectation: "Aspettativa Sweep",
+    veryStrong: "MOLTO FORTE",
+    sweepUpFirst: "Sweep SU prima",
+    sweepDownFirst: "Sweep GIÙ prima",
+    noClearSweep: "Nessun sweep chiaro",
+    up: "SU",
+    down: "GIÙ",
+    balanced: "BILANCIATO",
+    learnLiquidityMagnet: "Magnete Liquidità misura quanto il prezzo BTC è attratto verso le zone di liquidità vicine, aiutando a identificare dove il prezzo probabilmente si muoverà.",
+    
     decreasing: "In Diminuzione",
     stable: "Stabile",
     annualized: "Annualizzato",
@@ -614,7 +654,26 @@ export const translations = {
     rising: "STEIGEND",
     falling: "FALLEND",
     stable: "STABIL",
-    learnMarketEnergy: "Markt-Energie erkennt, wenn BTC vor einer signifikanten Bewegung Energie aufbaut, durch Analyse von Preiskompression, Volatilität, OI-Verhalten und Liquiditätsaufbau."
+    learnMarketEnergy: "Markt-Energie erkennt, wenn BTC vor einer signifikanten Bewegung Energie aufbaut, durch Analyse von Preiskompression, Volatilität, OI-Verhalten und Liquiditätsaufbau.",
+    
+    // Liquidity Magnet
+    liquidityMagnet: "Liquiditätsmagnet",
+    targetDirection: "Zielrichtung",
+    magnetStrength: "Magnetstärke",
+    nearestMagnet: "Nächster Magnet",
+    secondaryMagnet: "Sekundärer Magnet",
+    distance: "Abstand",
+    estimatedValue: "Geschätzter Wert",
+    attractionStrength: "Anziehungskraft",
+    sweepExpectation: "Sweep-Erwartung",
+    veryStrong: "SEHR STARK",
+    sweepUpFirst: "Sweep HOCH zuerst",
+    sweepDownFirst: "Sweep RUNTER zuerst",
+    noClearSweep: "Kein klarer Sweep",
+    up: "HOCH",
+    down: "RUNTER",
+    balanced: "AUSGEGLICHEN",
+    learnLiquidityMagnet: "Liquiditätsmagnet misst, wie stark der BTC-Preis zu nahen Liquiditätszonen hingezogen wird, um zu identifizieren, wohin sich der Preis wahrscheinlich bewegen wird."
   },
   pl: {
     // Navigation
@@ -737,7 +796,26 @@ export const translations = {
     rising: "ROSNĄCY",
     falling: "SPADAJĄCY",
     stable: "STABILNY",
-    learnMarketEnergy: "Energia Rynku wykrywa, gdy BTC akumuluje energię przed znaczącym ruchem, analizując kompresję ceny, zmienność, zachowanie OI i wzrost płynności."
+    learnMarketEnergy: "Energia Rynku wykrywa, gdy BTC akumuluje energię przed znaczącym ruchem, analizując kompresję ceny, zmienność, zachowanie OI i wzrost płynności.",
+    
+    // Liquidity Magnet
+    liquidityMagnet: "Magnes Płynności",
+    targetDirection: "Kierunek Docelowy",
+    magnetStrength: "Siła Magnesu",
+    nearestMagnet: "Najbliższy Magnes",
+    secondaryMagnet: "Magnes Wtórny",
+    distance: "Odległość",
+    estimatedValue: "Szacowana Wartość",
+    attractionStrength: "Siła Przyciągania",
+    sweepExpectation: "Oczekiwany Sweep",
+    veryStrong: "BARDZO SILNY",
+    sweepUpFirst: "Sweep W GÓRĘ najpierw",
+    sweepDownFirst: "Sweep W DÓŁ najpierw",
+    noClearSweep: "Brak wyraźnego sweep",
+    up: "W GÓRĘ",
+    down: "W DÓŁ",
+    balanced: "ZRÓWNOWAŻONY",
+    learnLiquidityMagnet: "Magnes Płynności mierzy jak silnie cena BTC jest przyciągana do pobliskich stref płynności, pomagając zidentyfikować gdzie cena prawdopodobnie się ruszy."
   }
 };
 

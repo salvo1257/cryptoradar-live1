@@ -165,6 +165,27 @@ class MarketEnergy(BaseModel):
     expansion_warning: bool = False  # True if expansion likely soon
     data_source: str = "Multi-Exchange + CoinGlass"
 
+# ============== LIQUIDITY MAGNET ==============
+
+class LiquidityMagnet(BaseModel):
+    """Liquidity Magnet Score - measures price attraction toward nearby liquidity zones"""
+    magnet_score: float  # 0-100 overall attraction strength
+    target_direction: str  # "UP", "DOWN", "BALANCED"
+    magnet_strength: str  # "WEAK", "MODERATE", "STRONG", "VERY_STRONG"
+    nearest_magnet_price: float  # Price level of strongest magnet
+    nearest_magnet_distance_percent: float  # Distance to magnet as %
+    nearest_magnet_value: float  # Estimated USD value at magnet
+    secondary_magnet_price: Optional[float] = None  # Opposite side magnet
+    secondary_magnet_distance_percent: Optional[float] = None
+    secondary_magnet_value: Optional[float] = None
+    liquidity_above_total: float  # Total liquidity above price
+    liquidity_below_total: float  # Total liquidity below price
+    sweep_expectation: str  # "SWEEP_UP_FIRST", "SWEEP_DOWN_FIRST", "NO_CLEAR_SWEEP"
+    attraction_ratio: float  # Ratio of up vs down attraction (>1 = up, <1 = down)
+    signals: List[str] = []  # Detected signals
+    explanation: str  # Summary explanation
+    data_source: str = "Multi-Exchange + CoinGlass"
+
 # ============== LIQUIDITY LADDER ==============
 
 class LiquidityLevel(BaseModel):
@@ -645,6 +666,27 @@ BACKEND_TRANSLATIONS = {
         "low_energy_caution": "Bassa energia di mercato - cautela su breakout.",
         "expansion_likely_direction": "Espansione probabile verso {0}.",
         "expansion_likely_no_direction": "Espansione probabile ma direzione non chiara - attendere conferma.",
+        
+        # Liquidity Magnet
+        "magnet_stronger_above": "Liquidità sopra il prezzo più attrattiva (ratio {0:.1f}x). Prezzo attratto verso l'alto.",
+        "magnet_stronger_below": "Liquidità sotto il prezzo più attrattiva (ratio {0:.1f}x). Prezzo attratto verso il basso.",
+        "magnet_balanced": "Liquidità bilanciata su entrambi i lati. Nessuna direzione dominante.",
+        "magnet_very_strong": "Magnete molto forte - alta probabilità di movimento verso la liquidità.",
+        "magnet_strong": "Magnete forte - significativa attrazione verso la liquidità target.",
+        "sweep_down_first": "Possibile sweep al ribasso prima verso ${0:,.0f}, poi inversione.",
+        "sweep_up_first": "Possibile sweep al rialzo prima verso ${0:,.0f}, poi inversione.",
+        "magnet_explanation_very_strong_up": "Forte attrazione verso ${0:,.0f} (+{1:.1f}%). Cluster di liquidazione short e wall di vendita multi-exchange. Alta probabilità di movimento rialzista.",
+        "magnet_explanation_very_strong_down": "Forte attrazione verso ${0:,.0f} (-{1:.1f}%). Cluster di liquidazione long e zone di stop loss concentrate. Alta probabilità di movimento ribassista.",
+        "magnet_explanation_very_strong_balanced": "Attrazione molto forte su entrambi i lati. Possibile sweep in entrambe le direzioni prima di un movimento direzionale.",
+        "magnet_explanation_strong_up": "Liquidità sopra il prezzo attrattiva verso ${0:,.0f}. Prezzo probabilmente si muoverà verso l'alto per primo.",
+        "magnet_explanation_strong_down": "Liquidità sotto il prezzo attrattiva verso ${0:,.0f}. Prezzo probabilmente si muoverà verso il basso per primo.",
+        "magnet_explanation_strong_balanced": "Significativa liquidità su entrambi i lati. Direzione dipende da catalizzatore esterno.",
+        "magnet_explanation_moderate_up": "Moderata attrazione verso liquidità sopra. Bias rialzista ma non dominante.",
+        "magnet_explanation_moderate_down": "Moderata attrazione verso liquidità sotto. Bias ribassista ma non dominante.",
+        "magnet_explanation_moderate_balanced": "Attrazione moderata bilanciata. Nessuna direzione chiara dal magnete.",
+        "magnet_explanation_weak": "Debole attrazione di liquidità. Zone di magnete poco significative.",
+        "magnet_bullish_contribution": "Magnete rialzista contribuisce al segnale.",
+        "magnet_bearish_contribution": "Magnete ribassista contribuisce al segnale.",
     },
     "en": {
         # Market Bias
@@ -886,6 +928,27 @@ BACKEND_TRANSLATIONS = {
         "low_energy_caution": "Low market energy - be cautious on breakouts.",
         "expansion_likely_direction": "Expansion likely toward {0}.",
         "expansion_likely_no_direction": "Expansion likely but direction unclear - wait for confirmation.",
+        
+        # Liquidity Magnet
+        "magnet_stronger_above": "Liquidity above price more attractive (ratio {0:.1f}x). Price attracted upward.",
+        "magnet_stronger_below": "Liquidity below price more attractive (ratio {0:.1f}x). Price attracted downward.",
+        "magnet_balanced": "Balanced liquidity on both sides. No dominant direction.",
+        "magnet_very_strong": "Very strong magnet - high probability of movement toward liquidity.",
+        "magnet_strong": "Strong magnet - significant attraction toward target liquidity.",
+        "sweep_down_first": "Possible sweep down first toward ${0:,.0f}, then reversal.",
+        "sweep_up_first": "Possible sweep up first toward ${0:,.0f}, then reversal.",
+        "magnet_explanation_very_strong_up": "Strong attraction toward ${0:,.0f} (+{1:.1f}%). Short liquidation clusters and multi-exchange sell walls. High probability of upward movement.",
+        "magnet_explanation_very_strong_down": "Strong attraction toward ${0:,.0f} (-{1:.1f}%). Long liquidation clusters and concentrated stop-loss zones. High probability of downward movement.",
+        "magnet_explanation_very_strong_balanced": "Very strong attraction on both sides. Possible sweep in either direction before directional move.",
+        "magnet_explanation_strong_up": "Liquidity above price attractive toward ${0:,.0f}. Price likely to move upward first.",
+        "magnet_explanation_strong_down": "Liquidity below price attractive toward ${0:,.0f}. Price likely to move downward first.",
+        "magnet_explanation_strong_balanced": "Significant liquidity on both sides. Direction depends on external catalyst.",
+        "magnet_explanation_moderate_up": "Moderate attraction toward liquidity above. Bullish bias but not dominant.",
+        "magnet_explanation_moderate_down": "Moderate attraction toward liquidity below. Bearish bias but not dominant.",
+        "magnet_explanation_moderate_balanced": "Moderate balanced attraction. No clear direction from magnet.",
+        "magnet_explanation_weak": "Weak liquidity attraction. Magnet zones not significant.",
+        "magnet_bullish_contribution": "Bullish magnet contributes to signal.",
+        "magnet_bearish_contribution": "Bearish magnet contributes to signal.",
     },
     "de": {
         # Market Bias
@@ -1127,6 +1190,27 @@ BACKEND_TRANSLATIONS = {
         "low_energy_caution": "Niedrige Marktenergie - Vorsicht bei Ausbrüchen.",
         "expansion_likely_direction": "Expansion wahrscheinlich Richtung {0}.",
         "expansion_likely_no_direction": "Expansion wahrscheinlich aber Richtung unklar - auf Bestätigung warten.",
+        
+        # Liquidity Magnet
+        "magnet_stronger_above": "Liquidität über dem Preis attraktiver (Verhältnis {0:.1f}x). Preis wird nach oben angezogen.",
+        "magnet_stronger_below": "Liquidität unter dem Preis attraktiver (Verhältnis {0:.1f}x). Preis wird nach unten angezogen.",
+        "magnet_balanced": "Ausgewogene Liquidität auf beiden Seiten. Keine dominante Richtung.",
+        "magnet_very_strong": "Sehr starker Magnet - hohe Wahrscheinlichkeit einer Bewegung zur Liquidität.",
+        "magnet_strong": "Starker Magnet - signifikante Anziehung zur Ziel-Liquidität.",
+        "sweep_down_first": "Möglicher Sweep nach unten zuerst Richtung ${0:,.0f}, dann Umkehr.",
+        "sweep_up_first": "Möglicher Sweep nach oben zuerst Richtung ${0:,.0f}, dann Umkehr.",
+        "magnet_explanation_very_strong_up": "Starke Anziehung zu ${0:,.0f} (+{1:.1f}%). Short-Liquidationscluster und Multi-Exchange-Verkaufswände. Hohe Wahrscheinlichkeit einer Aufwärtsbewegung.",
+        "magnet_explanation_very_strong_down": "Starke Anziehung zu ${0:,.0f} (-{1:.1f}%). Long-Liquidationscluster und konzentrierte Stop-Loss-Zonen. Hohe Wahrscheinlichkeit einer Abwärtsbewegung.",
+        "magnet_explanation_very_strong_balanced": "Sehr starke Anziehung auf beiden Seiten. Möglicher Sweep in beide Richtungen vor Richtungsbewegung.",
+        "magnet_explanation_strong_up": "Liquidität über dem Preis attraktiv Richtung ${0:,.0f}. Preis bewegt sich wahrscheinlich zuerst nach oben.",
+        "magnet_explanation_strong_down": "Liquidität unter dem Preis attraktiv Richtung ${0:,.0f}. Preis bewegt sich wahrscheinlich zuerst nach unten.",
+        "magnet_explanation_strong_balanced": "Signifikante Liquidität auf beiden Seiten. Richtung hängt von externem Katalysator ab.",
+        "magnet_explanation_moderate_up": "Moderate Anziehung zur Liquidität oben. Bullischer Bias aber nicht dominant.",
+        "magnet_explanation_moderate_down": "Moderate Anziehung zur Liquidität unten. Bärischer Bias aber nicht dominant.",
+        "magnet_explanation_moderate_balanced": "Moderate ausgewogene Anziehung. Keine klare Richtung vom Magneten.",
+        "magnet_explanation_weak": "Schwache Liquiditätsanziehung. Magnetzonen nicht signifikant.",
+        "magnet_bullish_contribution": "Bullischer Magnet trägt zum Signal bei.",
+        "magnet_bearish_contribution": "Bärischer Magnet trägt zum Signal bei.",
     },
     "pl": {
         # Market Bias
@@ -1368,6 +1452,27 @@ BACKEND_TRANSLATIONS = {
         "low_energy_caution": "Niska energia rynku - ostrożność przy wybiciach.",
         "expansion_likely_direction": "Ekspansja prawdopodobna w kierunku {0}.",
         "expansion_likely_no_direction": "Ekspansja prawdopodobna ale kierunek niejasny - czekaj na potwierdzenie.",
+        
+        # Liquidity Magnet
+        "magnet_stronger_above": "Płynność powyżej ceny bardziej atrakcyjna (stosunek {0:.1f}x). Cena przyciągana w górę.",
+        "magnet_stronger_below": "Płynność poniżej ceny bardziej atrakcyjna (stosunek {0:.1f}x). Cena przyciągana w dół.",
+        "magnet_balanced": "Zrównoważona płynność po obu stronach. Brak dominującego kierunku.",
+        "magnet_very_strong": "Bardzo silny magnes - wysokie prawdopodobieństwo ruchu w kierunku płynności.",
+        "magnet_strong": "Silny magnes - znaczące przyciąganie w kierunku docelowej płynności.",
+        "sweep_down_first": "Możliwy sweep w dół najpierw w kierunku ${0:,.0f}, potem odwrócenie.",
+        "sweep_up_first": "Możliwy sweep w górę najpierw w kierunku ${0:,.0f}, potem odwrócenie.",
+        "magnet_explanation_very_strong_up": "Silne przyciąganie do ${0:,.0f} (+{1:.1f}%). Klastry likwidacji shortów i ściany sprzedaży multi-exchange. Wysokie prawdopodobieństwo ruchu w górę.",
+        "magnet_explanation_very_strong_down": "Silne przyciąganie do ${0:,.0f} (-{1:.1f}%). Klastry likwidacji longów i skoncentrowane strefy stop-loss. Wysokie prawdopodobieństwo ruchu w dół.",
+        "magnet_explanation_very_strong_balanced": "Bardzo silne przyciąganie po obu stronach. Możliwy sweep w obu kierunkach przed ruchem kierunkowym.",
+        "magnet_explanation_strong_up": "Płynność powyżej ceny atrakcyjna w kierunku ${0:,.0f}. Cena prawdopodobnie ruszy najpierw w górę.",
+        "magnet_explanation_strong_down": "Płynność poniżej ceny atrakcyjna w kierunku ${0:,.0f}. Cena prawdopodobnie ruszy najpierw w dół.",
+        "magnet_explanation_strong_balanced": "Znacząca płynność po obu stronach. Kierunek zależy od zewnętrznego katalizatora.",
+        "magnet_explanation_moderate_up": "Umiarkowane przyciąganie w kierunku płynności powyżej. Byczy bias ale nie dominujący.",
+        "magnet_explanation_moderate_down": "Umiarkowane przyciąganie w kierunku płynności poniżej. Niedźwiedzi bias ale nie dominujący.",
+        "magnet_explanation_moderate_balanced": "Umiarkowane zrównoważone przyciąganie. Brak wyraźnego kierunku od magnesu.",
+        "magnet_explanation_weak": "Słabe przyciąganie płynności. Strefy magnesu nie są znaczące.",
+        "magnet_bullish_contribution": "Byczy magnes przyczynia się do sygnału.",
+        "magnet_bearish_contribution": "Niedźwiedzi magnes przyczynia się do sygnału.",
     }
 }
 
@@ -3602,6 +3707,351 @@ def _build_energy_explanation(
             return get_translation("energy_low_normal", lang)
 
 
+# ============== LIQUIDITY MAGNET ENGINE ==============
+
+def analyze_liquidity_magnet(
+    current_price: float,
+    aggregated_orderbook: dict,
+    liquidity_clusters: List = None,
+    liquidation_data: dict = None,
+    open_interest_data: dict = None,
+    lang: str = "it"
+) -> LiquidityMagnet:
+    """
+    Liquidity Magnet Score v1.0 - Measures price attraction toward nearby liquidity zones.
+    
+    Analyzes:
+    1. Liquidity size above and below price
+    2. Distance from current price to each liquidity zone
+    3. Liquidation cluster strength
+    4. Stop cluster density
+    5. Multi-exchange order book confirmation
+    6. CoinGlass liquidation/OI context
+    
+    Returns magnet score, target direction, and likely sweep expectation.
+    """
+    
+    signals = []
+    
+    # ======== 1. AGGREGATE LIQUIDITY DATA ========
+    liquidity_above_total = 0
+    liquidity_below_total = 0
+    above_zones = []
+    below_zones = []
+    
+    # From liquidity clusters
+    if liquidity_clusters:
+        for cluster in liquidity_clusters:
+            if hasattr(cluster, 'side'):
+                zone = {
+                    "price": cluster.price if hasattr(cluster, 'price') else 0,
+                    "value": cluster.estimated_value if hasattr(cluster, 'estimated_value') else 0,
+                    "strength": cluster.strength if hasattr(cluster, 'strength') else "minor",
+                    "distance": abs(cluster.distance_percent) if hasattr(cluster, 'distance_percent') else 0,
+                    "source": "liquidity_cluster"
+                }
+                
+                if cluster.side == "above":
+                    liquidity_above_total += zone["value"]
+                    above_zones.append(zone)
+                else:
+                    liquidity_below_total += zone["value"]
+                    below_zones.append(zone)
+    
+    # From order book analysis
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        
+        # Analyze ask-side walls (resistance/liquidity above)
+        if asks:
+            ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:50]]
+            avg_ask = sum(v for _, v in ask_volumes) / len(ask_volumes) if ask_volumes else 0
+            
+            for price, volume in ask_volumes:
+                if volume > avg_ask * 2.5:  # Significant wall
+                    distance = ((price - current_price) / current_price) * 100
+                    if distance > 0 and distance < 5:  # Within 5%
+                        zone = {
+                            "price": price,
+                            "value": volume * price,
+                            "strength": "major" if volume > avg_ask * 5 else "moderate",
+                            "distance": distance,
+                            "source": "orderbook_ask"
+                        }
+                        above_zones.append(zone)
+                        liquidity_above_total += zone["value"]
+        
+        # Analyze bid-side walls (support/liquidity below)
+        if bids:
+            bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
+            avg_bid = sum(v for _, v in bid_volumes) / len(bid_volumes) if bid_volumes else 0
+            
+            for price, volume in bid_volumes:
+                if volume > avg_bid * 2.5:  # Significant wall
+                    distance = ((current_price - price) / current_price) * 100
+                    if distance > 0 and distance < 5:  # Within 5%
+                        zone = {
+                            "price": price,
+                            "value": volume * price,
+                            "strength": "major" if volume > avg_bid * 5 else "moderate",
+                            "distance": distance,
+                            "source": "orderbook_bid"
+                        }
+                        below_zones.append(zone)
+                        liquidity_below_total += zone["value"]
+    
+    # From liquidation data (CoinGlass)
+    if liquidation_data:
+        liq_levels = liquidation_data.get("liquidation_levels", [])
+        for level in liq_levels:
+            if isinstance(level, dict):
+                liq_price = level.get("price", 0)
+                liq_value = level.get("value", 0)
+                
+                if liq_price > current_price:
+                    distance = ((liq_price - current_price) / current_price) * 100
+                    if distance < 5:
+                        zone = {
+                            "price": liq_price,
+                            "value": liq_value,
+                            "strength": "major" if liq_value > 10000000 else "moderate",
+                            "distance": distance,
+                            "source": "liquidation"
+                        }
+                        above_zones.append(zone)
+                        liquidity_above_total += liq_value
+                elif liq_price < current_price:
+                    distance = ((current_price - liq_price) / current_price) * 100
+                    if distance < 5:
+                        zone = {
+                            "price": liq_price,
+                            "value": liq_value,
+                            "strength": "major" if liq_value > 10000000 else "moderate",
+                            "distance": distance,
+                            "source": "liquidation"
+                        }
+                        below_zones.append(zone)
+                        liquidity_below_total += liq_value
+    
+    # ======== 2. CALCULATE MAGNET ATTRACTION ========
+    # Attraction is inversely proportional to distance and directly proportional to value
+    
+    def calculate_zone_attraction(zone):
+        """Calculate attraction score for a zone (higher = more attractive)"""
+        if zone["distance"] <= 0:
+            return 0
+        
+        # Base attraction from value (normalized to millions)
+        value_score = min(zone["value"] / 1000000, 100)  # Cap at 100M = 100
+        
+        # Distance factor (closer = more attractive)
+        # Distance 0.5% = 2x multiplier, 1% = 1x, 2% = 0.5x, 5% = 0.2x
+        distance_multiplier = 1 / max(zone["distance"], 0.5)
+        
+        # Strength bonus
+        strength_bonus = {"major": 1.5, "moderate": 1.0, "minor": 0.5}.get(zone["strength"], 1.0)
+        
+        return value_score * distance_multiplier * strength_bonus
+    
+    # Calculate total attraction for each side
+    up_attraction = sum(calculate_zone_attraction(z) for z in above_zones)
+    down_attraction = sum(calculate_zone_attraction(z) for z in below_zones)
+    
+    total_attraction = up_attraction + down_attraction
+    
+    # ======== 3. DETERMINE TARGET DIRECTION ========
+    if total_attraction > 0:
+        attraction_ratio = up_attraction / down_attraction if down_attraction > 0 else 10.0
+    else:
+        attraction_ratio = 1.0
+    
+    if attraction_ratio > 1.3:
+        target_direction = "UP"
+        signals.append(get_translation("magnet_stronger_above", lang, attraction_ratio))
+    elif attraction_ratio < 0.77 and attraction_ratio > 0:  # 1/1.3
+        target_direction = "DOWN"
+        inverse_ratio = 1/attraction_ratio if attraction_ratio > 0 else 1.0
+        signals.append(get_translation("magnet_stronger_below", lang, inverse_ratio))
+    else:
+        target_direction = "BALANCED"
+        signals.append(get_translation("magnet_balanced", lang))
+    
+    # ======== 4. FIND NEAREST MAGNETS ========
+    # Sort zones by attraction score
+    above_zones_sorted = sorted(above_zones, key=calculate_zone_attraction, reverse=True)
+    below_zones_sorted = sorted(below_zones, key=calculate_zone_attraction, reverse=True)
+    
+    # Primary magnet (strongest attraction side)
+    if target_direction == "UP" and above_zones_sorted:
+        nearest_magnet = above_zones_sorted[0]
+        nearest_magnet_distance = nearest_magnet["distance"]
+    elif target_direction == "DOWN" and below_zones_sorted:
+        nearest_magnet = below_zones_sorted[0]
+        nearest_magnet_distance = -nearest_magnet["distance"]  # Negative for below
+    elif above_zones_sorted and below_zones_sorted:
+        # Balanced - pick the one with higher attraction
+        if calculate_zone_attraction(above_zones_sorted[0]) >= calculate_zone_attraction(below_zones_sorted[0]):
+            nearest_magnet = above_zones_sorted[0]
+            nearest_magnet_distance = nearest_magnet["distance"]
+        else:
+            nearest_magnet = below_zones_sorted[0]
+            nearest_magnet_distance = -nearest_magnet["distance"]
+    elif above_zones_sorted:
+        nearest_magnet = above_zones_sorted[0]
+        nearest_magnet_distance = nearest_magnet["distance"]
+    elif below_zones_sorted:
+        nearest_magnet = below_zones_sorted[0]
+        nearest_magnet_distance = -nearest_magnet["distance"]
+    else:
+        nearest_magnet = {"price": current_price, "value": 0, "distance": 0}
+        nearest_magnet_distance = 0
+    
+    # Secondary magnet (opposite side)
+    secondary_magnet = None
+    secondary_distance = None
+    if target_direction == "UP" and below_zones_sorted:
+        secondary_magnet = below_zones_sorted[0]
+        secondary_distance = -secondary_magnet["distance"]
+    elif target_direction == "DOWN" and above_zones_sorted:
+        secondary_magnet = above_zones_sorted[0]
+        secondary_distance = secondary_magnet["distance"]
+    elif target_direction == "BALANCED":
+        if nearest_magnet_distance >= 0 and below_zones_sorted:
+            secondary_magnet = below_zones_sorted[0]
+            secondary_distance = -secondary_magnet["distance"]
+        elif nearest_magnet_distance < 0 and above_zones_sorted:
+            secondary_magnet = above_zones_sorted[0]
+            secondary_distance = secondary_magnet["distance"]
+    
+    # ======== 5. CALCULATE MAGNET SCORE ========
+    # Score 0-100 based on:
+    # - Total liquidity attraction
+    # - Proximity of nearest magnet
+    # - Imbalance between sides
+    
+    if total_attraction == 0:
+        magnet_score = 0
+    else:
+        # Base score from total attraction (normalized)
+        base_score = min(total_attraction / 10, 50)  # Max 50 points from total attraction
+        
+        # Proximity bonus (closer magnets = higher score)
+        proximity_bonus = 0
+        if nearest_magnet["distance"] > 0:
+            if nearest_magnet["distance"] < 1:
+                proximity_bonus = 30
+            elif nearest_magnet["distance"] < 2:
+                proximity_bonus = 20
+            elif nearest_magnet["distance"] < 3:
+                proximity_bonus = 10
+            else:
+                proximity_bonus = 5
+        
+        # Imbalance bonus (stronger directional pull = higher score)
+        imbalance_bonus = min(abs(attraction_ratio - 1) * 10, 20)
+        
+        magnet_score = min(base_score + proximity_bonus + imbalance_bonus, 100)
+    
+    # ======== 6. DETERMINE MAGNET STRENGTH ========
+    if magnet_score >= 81:
+        magnet_strength = "VERY_STRONG"
+        signals.append(get_translation("magnet_very_strong", lang))
+    elif magnet_score >= 61:
+        magnet_strength = "STRONG"
+        signals.append(get_translation("magnet_strong", lang))
+    elif magnet_score >= 31:
+        magnet_strength = "MODERATE"
+    else:
+        magnet_strength = "WEAK"
+    
+    # ======== 7. SWEEP EXPECTATION ========
+    # Determine if market is likely to sweep one side first before reversing
+    
+    sweep_expectation = "NO_CLEAR_SWEEP"
+    
+    if target_direction == "UP" and secondary_magnet:
+        # If going up but there's significant liquidity below
+        if secondary_magnet["value"] > 5000000 and secondary_magnet["distance"] < 2:
+            sweep_expectation = "SWEEP_DOWN_FIRST"
+            signals.append(get_translation("sweep_down_first", lang, secondary_magnet["price"]))
+    elif target_direction == "DOWN" and secondary_magnet:
+        # If going down but there's significant liquidity above
+        if secondary_magnet["value"] > 5000000 and secondary_magnet["distance"] < 2:
+            sweep_expectation = "SWEEP_UP_FIRST"
+            signals.append(get_translation("sweep_up_first", lang, secondary_magnet["price"]))
+    
+    # High magnet score with clear direction = likely direct sweep
+    if magnet_score >= 70 and target_direction != "BALANCED":
+        if target_direction == "UP":
+            sweep_expectation = "SWEEP_UP_FIRST"
+        else:
+            sweep_expectation = "SWEEP_DOWN_FIRST"
+    
+    # ======== 8. BUILD EXPLANATION ========
+    explanation = _build_magnet_explanation(
+        magnet_score, target_direction, magnet_strength,
+        nearest_magnet["price"], nearest_magnet_distance,
+        liquidity_above_total, liquidity_below_total,
+        sweep_expectation, lang
+    )
+    
+    return LiquidityMagnet(
+        magnet_score=round(magnet_score, 1),
+        target_direction=target_direction,
+        magnet_strength=magnet_strength,
+        nearest_magnet_price=round(nearest_magnet["price"], 2),
+        nearest_magnet_distance_percent=round(nearest_magnet_distance, 2),
+        nearest_magnet_value=round(nearest_magnet["value"], 0),
+        secondary_magnet_price=round(secondary_magnet["price"], 2) if secondary_magnet else None,
+        secondary_magnet_distance_percent=round(secondary_distance, 2) if secondary_distance else None,
+        secondary_magnet_value=round(secondary_magnet["value"], 0) if secondary_magnet else None,
+        liquidity_above_total=round(liquidity_above_total, 0),
+        liquidity_below_total=round(liquidity_below_total, 0),
+        sweep_expectation=sweep_expectation,
+        attraction_ratio=round(attraction_ratio, 2),
+        signals=signals[:5],
+        explanation=explanation,
+        data_source="Multi-Exchange + CoinGlass"
+    )
+
+
+def _build_magnet_explanation(
+    score: float, direction: str, strength: str,
+    magnet_price: float, distance: float,
+    liq_above: float, liq_below: float,
+    sweep: str, lang: str
+) -> str:
+    """Build comprehensive explanation for liquidity magnet."""
+    
+    if strength == "VERY_STRONG":
+        if direction == "UP":
+            return get_translation("magnet_explanation_very_strong_up", lang, magnet_price, abs(distance))
+        elif direction == "DOWN":
+            return get_translation("magnet_explanation_very_strong_down", lang, magnet_price, abs(distance))
+        else:
+            return get_translation("magnet_explanation_very_strong_balanced", lang)
+    
+    elif strength == "STRONG":
+        if direction == "UP":
+            return get_translation("magnet_explanation_strong_up", lang, magnet_price)
+        elif direction == "DOWN":
+            return get_translation("magnet_explanation_strong_down", lang, magnet_price)
+        else:
+            return get_translation("magnet_explanation_strong_balanced", lang)
+    
+    elif strength == "MODERATE":
+        if direction == "UP":
+            return get_translation("magnet_explanation_moderate_up", lang)
+        elif direction == "DOWN":
+            return get_translation("magnet_explanation_moderate_down", lang)
+        else:
+            return get_translation("magnet_explanation_moderate_balanced", lang)
+    
+    else:  # WEAK
+        return get_translation("magnet_explanation_weak", lang)
+
+
 # ============== WHALE ALERT ENGINE ==============
 
 def analyze_whale_activity(
@@ -4742,6 +5192,37 @@ def generate_trade_signal(
             else:
                 warnings.append(f"⚡ {get_translation('expansion_likely_no_direction', lang)}")
     
+    # ================== LIQUIDITY MAGNET INTEGRATION ==================
+    # Note: Liquidity Magnet is calculated inline here since we have all the data
+    # This provides directional context based on liquidity attraction
+    
+    magnet_context = None
+    
+    if liquidity_ladder:
+        # Use liquidity ladder data to determine magnet effect
+        more_attractive = liquidity_ladder.more_attractive_side
+        
+        if more_attractive == "above":
+            # Strong upward magnet
+            if direction == "LONG":
+                confidence = min(95, confidence + 5)  # Aligns with direction
+                magnet_context = get_translation("magnet_bullish_contribution", lang)
+            elif direction == "SHORT":
+                confidence = max(35, confidence - 5)  # Contradicts direction
+                warnings.append(f"🧲 Liquidity magnet suggests upward pressure")
+        elif more_attractive == "below":
+            # Strong downward magnet
+            if direction == "SHORT":
+                confidence = min(95, confidence + 5)  # Aligns with direction
+                magnet_context = get_translation("magnet_bearish_contribution", lang)
+            elif direction == "LONG":
+                confidence = max(35, confidence - 5)  # Contradicts direction
+                warnings.append(f"🧲 Liquidity magnet suggests downward pressure")
+        # balanced = no adjustment
+        
+        if magnet_context:
+            reasoning_parts.append(magnet_context)
+    
     if direction == "NO TRADE":
         confidence = max(30, 60 - abs(score) * 5)
     
@@ -5499,6 +5980,16 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         lang=lang
     )
     
+    # NEW v2.0: Analyze Liquidity Magnet
+    liquidity_magnet = analyze_liquidity_magnet(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
+        lang=lang
+    )
+    
     # Generate the final trade signal with all intelligence
     signal = generate_trade_signal(
         current_price=current_price,
@@ -5552,6 +6043,9 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
     
     # NEW v1.9.5: Add Market Energy data
     response["market_energy"] = market_energy.model_dump() if market_energy else None
+    
+    # NEW v2.0: Add Liquidity Magnet data
+    response["liquidity_magnet"] = liquidity_magnet.model_dump() if liquidity_magnet else None
     
     return response
 
@@ -5972,6 +6466,68 @@ async def get_market_energy(lang: str = Query(default="it", description="Languag
     )
     
     return market_energy
+
+@api_router.get("/liquidity-magnet", response_model=LiquidityMagnet)
+async def get_liquidity_magnet(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+    """
+    Get Liquidity Magnet Score data.
+    
+    Measures how strongly BTC price is attracted toward nearby liquidity zones:
+    - Liquidity size above and below price
+    - Distance from current price to each liquidity zone
+    - Liquidation cluster strength
+    - Multi-exchange order book confirmation
+    - CoinGlass liquidation/OI context
+    
+    Returns magnet score, target direction, and sweep expectation.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    # Fetch all required data
+    ticker_task = fetch_kraken_ticker()
+    aggregated_ob_task = get_aggregated_orderbook()
+    candles_task = fetch_kraken_ohlc(240)  # 4H for liquidity clusters
+    
+    ticker, aggregated_orderbook, candles = await asyncio.gather(
+        ticker_task, aggregated_ob_task, candles_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    # Get OI data and liquidation data
+    oi_task = fetch_coinglass_open_interest()
+    liq_task = fetch_coinglass_liquidation()
+    
+    oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
+    
+    open_interest_data = None
+    if oi_data:
+        open_interest_data = {
+            "change_1h": oi_data.get("change_1h", 0),
+            "change_24h": oi_data.get("change_24h", 0)
+        }
+    
+    liquidation_data = None
+    if liq_data:
+        liquidation_data = {
+            "liquidation_levels": liq_data.get("liquidation_levels", [])
+        }
+    
+    # Generate liquidity clusters
+    clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
+    
+    # Analyze liquidity magnet
+    magnet = analyze_liquidity_magnet(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data=open_interest_data,
+        lang=lang
+    )
+    
+    return magnet
 
 @api_router.post("/signal-history/record")
 async def record_signal():

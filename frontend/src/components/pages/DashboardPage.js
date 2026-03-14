@@ -10,7 +10,8 @@ import {
   OpenInterestCard,
   FundingRateCard,
   TradeSignalCard,
-  MarketEnergyCard
+  MarketEnergyCard,
+  LiquidityMagnetCard
 } from '../cards';
 
 export function DashboardPage() {
@@ -53,9 +54,10 @@ export function DashboardPage() {
         <FundingRateCard />
       </div>
 
-      {/* Market Energy & Whale Activity Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Market Energy, Liquidity Magnet & Whale Activity Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <MarketEnergyCard />
+        <LiquidityMagnetCard />
         <WhaleAlertCard compact />
       </div>
 
