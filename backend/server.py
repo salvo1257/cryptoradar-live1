@@ -26,9 +26,10 @@ db = client[os.environ['DB_NAME']]
 
 # MongoDB Collections
 signal_history_collection = db["signal_history"]
+telegram_settings_collection = db["telegram_settings"]
 
 # Create the main app
-app = FastAPI(title="CryptoRadar API", version="2.1.0")
+app = FastAPI(title="CryptoRadar API", version="2.3.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -347,6 +348,30 @@ class SignalOutcomeStats(BaseModel):
     # Time-based
     last_7d_win_rate: float = 0.0
     last_30d_win_rate: float = 0.0
+
+
+# ============== TELEGRAM MODELS ==============
+
+class TelegramNotificationPreferences(BaseModel):
+    """User preferences for Telegram notifications"""
+    notify_long_signals: bool = True
+    notify_short_signals: bool = True
+    notify_invalidated: bool = True
+    notify_expired: bool = True
+    notify_outcomes: bool = True
+    min_confidence_threshold: int = 50  # Only notify if confidence >= this
+
+
+class TelegramSettings(BaseModel):
+    """Telegram bot configuration"""
+    enabled: bool = False
+    bot_token: str = ""
+    chat_id: str = ""
+    language: str = "it"
+    preferences: TelegramNotificationPreferences = TelegramNotificationPreferences()
+    last_test_sent: Optional[datetime] = None
+    last_notification_sent: Optional[datetime] = None
+    total_notifications_sent: int = 0
 
 
 class SignalHistoryResponse(BaseModel):
