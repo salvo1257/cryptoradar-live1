@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, MinusCircle, Target, Shield, 
   AlertTriangle, Activity, RefreshCw, ChevronDown, ChevronUp,
-  Zap, Droplets, RotateCcw
+  Zap, Droplets, RotateCcw, Clock
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
