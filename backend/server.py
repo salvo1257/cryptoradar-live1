@@ -687,6 +687,11 @@ BACKEND_TRANSLATIONS = {
         "magnet_explanation_weak": "Debole attrazione di liquidità. Zone di magnete poco significative.",
         "magnet_bullish_contribution": "Magnete rialzista contribuisce al segnale.",
         "magnet_bearish_contribution": "Magnete ribassista contribuisce al segnale.",
+        
+        # Conflict handling
+        "conflict_high_energy_no_direction": "Alta energia ma direzione non chiara - modalità conservativa attivata.",
+        "conflict_conservative_mode": "Conflitto rilevato (energia alta + magnete bilanciato + balene neutrali) - confidenza ridotta.",
+        "conflict_wait_for_clarity": "Alta energia senza direzione chiara - attendere allineamento indicatori.",
     },
     "en": {
         # Market Bias
@@ -949,6 +954,11 @@ BACKEND_TRANSLATIONS = {
         "magnet_explanation_weak": "Weak liquidity attraction. Magnet zones not significant.",
         "magnet_bullish_contribution": "Bullish magnet contributes to signal.",
         "magnet_bearish_contribution": "Bearish magnet contributes to signal.",
+        
+        # Conflict handling
+        "conflict_high_energy_no_direction": "High energy but direction unclear - conservative mode activated.",
+        "conflict_conservative_mode": "Conflict detected (high energy + balanced magnet + neutral whales) - confidence reduced.",
+        "conflict_wait_for_clarity": "High energy without clear direction - wait for indicator alignment.",
     },
     "de": {
         # Market Bias
@@ -1211,6 +1221,11 @@ BACKEND_TRANSLATIONS = {
         "magnet_explanation_weak": "Schwache Liquiditätsanziehung. Magnetzonen nicht signifikant.",
         "magnet_bullish_contribution": "Bullischer Magnet trägt zum Signal bei.",
         "magnet_bearish_contribution": "Bärischer Magnet trägt zum Signal bei.",
+        
+        # Conflict handling
+        "conflict_high_energy_no_direction": "Hohe Energie aber Richtung unklar - konservativer Modus aktiviert.",
+        "conflict_conservative_mode": "Konflikt erkannt (hohe Energie + ausgeglichener Magnet + neutrale Wale) - Konfidenz reduziert.",
+        "conflict_wait_for_clarity": "Hohe Energie ohne klare Richtung - auf Indikator-Ausrichtung warten.",
     },
     "pl": {
         # Market Bias
@@ -1473,6 +1488,11 @@ BACKEND_TRANSLATIONS = {
         "magnet_explanation_weak": "Słabe przyciąganie płynności. Strefy magnesu nie są znaczące.",
         "magnet_bullish_contribution": "Byczy magnes przyczynia się do sygnału.",
         "magnet_bearish_contribution": "Niedźwiedzi magnes przyczynia się do sygnału.",
+        
+        # Conflict handling
+        "conflict_high_energy_no_direction": "Wysoka energia ale kierunek niejasny - tryb konserwatywny aktywowany.",
+        "conflict_conservative_mode": "Wykryto konflikt (wysoka energia + zrównoważony magnes + neutralne wieloryby) - pewność zmniejszona.",
+        "conflict_wait_for_clarity": "Wysoka energia bez wyraźnego kierunku - czekaj na wyrównanie wskaźników.",
     }
 }
 
@@ -3929,38 +3949,60 @@ def analyze_liquidity_magnet(
     # - Total liquidity attraction
     # - Proximity of nearest magnet
     # - Imbalance between sides
+    # 
+    # NEW SCALE:
+    # - WEAK: 0-30 (low directional attraction)
+    # - BALANCED: 40-60 (neutral state - liquidity present on both sides)
+    # - STRONG/VERY_STRONG: 70-100 (strong directional pull)
     
     if total_attraction == 0:
-        magnet_score = 0
+        # No liquidity data - show as neutral balanced state
+        magnet_score = 45  # Neutral middle score, not 0
     else:
-        # Base score from total attraction (normalized)
-        base_score = min(total_attraction / 10, 50)  # Max 50 points from total attraction
+        # Base score from total liquidity presence (not direction)
+        # More liquidity overall = higher base score
+        liquidity_presence_score = min(total_attraction / 5, 40)  # Max 40 from presence
         
         # Proximity bonus (closer magnets = higher score)
         proximity_bonus = 0
         if nearest_magnet["distance"] > 0:
             if nearest_magnet["distance"] < 1:
-                proximity_bonus = 30
+                proximity_bonus = 25
             elif nearest_magnet["distance"] < 2:
-                proximity_bonus = 20
+                proximity_bonus = 15
             elif nearest_magnet["distance"] < 3:
                 proximity_bonus = 10
             else:
                 proximity_bonus = 5
         
-        # Imbalance bonus (stronger directional pull = higher score)
-        imbalance_bonus = min(abs(attraction_ratio - 1) * 10, 20)
+        # Direction clarity bonus (stronger imbalance = clearer direction = higher score)
+        # BALANCED state should stay in 40-60 range
+        imbalance_factor = abs(attraction_ratio - 1) if attraction_ratio != 0 else 0
         
-        magnet_score = min(base_score + proximity_bonus + imbalance_bonus, 100)
+        if target_direction == "BALANCED":
+            # Balanced: Keep score in neutral range (40-60)
+            # Higher liquidity presence moves toward 60, lower toward 40
+            magnet_score = 40 + min(liquidity_presence_score / 2, 20)
+        else:
+            # Directional: Use full scoring with imbalance bonus
+            direction_bonus = min(imbalance_factor * 15, 35)  # Up to 35 for strong direction
+            magnet_score = min(liquidity_presence_score + proximity_bonus + direction_bonus, 100)
+            
+            # Ensure directional scores are above balanced range when strong
+            if magnet_score < 65 and imbalance_factor > 0.5:
+                magnet_score = max(magnet_score, 65)  # Boost clearly directional magnets
     
     # ======== 6. DETERMINE MAGNET STRENGTH ========
-    if magnet_score >= 81:
+    # Aligned with new scale
+    if target_direction == "BALANCED":
+        magnet_strength = "MODERATE"  # Balanced is always moderate, not weak
+    elif magnet_score >= 81:
         magnet_strength = "VERY_STRONG"
         signals.append(get_translation("magnet_very_strong", lang))
-    elif magnet_score >= 61:
+    elif magnet_score >= 65:
         magnet_strength = "STRONG"
         signals.append(get_translation("magnet_strong", lang))
-    elif magnet_score >= 31:
+    elif magnet_score >= 40:
         magnet_strength = "MODERATE"
     else:
         magnet_strength = "WEAK"
@@ -5222,6 +5264,34 @@ def generate_trade_signal(
         
         if magnet_context:
             reasoning_parts.append(magnet_context)
+    
+    # ================== CONFLICT HANDLING ==================
+    # Be more conservative when indicators conflict
+    # HIGH Energy + BALANCED Magnet + NEUTRAL Whale = Uncertainty -> prefer NO TRADE or SETUP_IN_CONFIRMATION
+    
+    conflict_detected = False
+    
+    if market_energy and liquidity_ladder and whale_activity:
+        energy_is_high = market_energy.compression_level == "HIGH" or market_energy.energy_score >= 60
+        magnet_is_balanced = liquidity_ladder.more_attractive_side == "balanced"
+        whale_is_neutral = whale_activity.direction == "NEUTRAL" or whale_activity.strength < 30
+        
+        if energy_is_high and magnet_is_balanced and whale_is_neutral:
+            conflict_detected = True
+            
+            if direction in ["LONG", "SHORT"]:
+                # Downgrade active signal to SETUP_IN_CONFIRMATION or reduce confidence significantly
+                if signal_state == "OPERATIONAL":
+                    signal_state = "SETUP_IN_CONFIRMATION"
+                    warnings.append(f"⚠️ {get_translation('conflict_high_energy_no_direction', lang)}")
+                
+                # Reduce confidence significantly due to conflict
+                confidence = max(35, confidence - 15)
+                reasoning_parts.append(get_translation("conflict_conservative_mode", lang))
+            
+            elif direction == "NO TRADE":
+                # Reinforce NO TRADE decision
+                warnings.append(f"⚠️ {get_translation('conflict_wait_for_clarity', lang)}")
     
     if direction == "NO TRADE":
         confidence = max(30, 60 - abs(score) * 5)
