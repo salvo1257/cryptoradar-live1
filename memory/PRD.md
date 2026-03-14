@@ -1,7 +1,7 @@
-# CryptoRadar v1.7 - Product Requirements Document
-**Last Updated:** 2026-03-12
+# CryptoRadar v1.8 - Product Requirements Document
+**Last Updated:** 2026-03-14
 
-## 🚀 DEPLOYMENT READINESS: ✅ VERIFIED (2026-03-12)
+## 🚀 DEPLOYMENT READINESS: ✅ VERIFIED (2026-03-14)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Readiness Endpoint: `/api/system/ready` - For load balancer health checks
 - Config Endpoint: `/api/system/config` - Configuration verification
@@ -13,6 +13,13 @@
 - **Status Labels (ATTIVO/INVALIDATO/SCADUTO): IMPLEMENTED** ✅
 - Startup checks implemented with logging
 - Auto-restart configured via Supervisor
+
+## 🆕 v1.8 Signal Confirmation System
+- **3 Signal States**: NO_TRADE, SETUP_IN_CONFIRMATION, OPERATIONAL
+- **Confirmation Rules**: 2+ consecutive signals, no contradictions, stable confidence
+- **Volatility Filter**: Prevents premature signals during high volatility
+- **Sweep-Reversal Fix**: Shows "IN CONFERMA" until sweep + rejection confirmed
+- **Auto-Recording**: Tracks setup_detected, confirmed, invalidated, expired
 
 ## Original Problem Statement
 Build CryptoRadar - a professional BTC market intelligence dashboard that reads multiple market signals and summarizes the market situation for Bitcoin.

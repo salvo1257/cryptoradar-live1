@@ -189,6 +189,14 @@ class TradeSignal(BaseModel):
     liquidity_ladder_summary: Optional[Dict[str, Any]] = None  # Liquidity Ladder summary
     sweep_first_expected: bool = False  # Whether price likely to sweep before real move
     whale_confirms_direction: bool = False  # Whether whale activity confirms signal direction
+    # NEW v1.8: Signal confirmation system
+    signal_state: str = "NO_TRADE"  # "NO_TRADE", "SETUP_IN_CONFIRMATION", "OPERATIONAL"
+    raw_direction: Optional[str] = None  # Original direction before confirmation
+    confirmation_progress: int = 0  # 0-100% progress toward confirmation
+    consecutive_signals: int = 0  # How many consecutive same-direction signals
+    awaiting_sweep_confirmation: bool = False  # Waiting for sweep + rejection
+    volatility_warning: bool = False  # Market in high volatility mode
+    time_in_setup: Optional[str] = None  # How long in SETUP_IN_CONFIRMATION state
 
 
 class SignalHistoryEntry(BaseModel):
@@ -362,6 +370,65 @@ CACHE_TTL = 15  # seconds
 ORDERBOOK_CACHE_TTL = 10  # seconds
 NEWS_CACHE_TTL = 300  # 5 minutes
 COINGLASS_CACHE_TTL = 60  # 1 minute for CoinGlass data
+TRADE_SIGNAL_CACHE_TTL = 180  # 3 minutes - Trade signal refresh rate
+
+# ============== SIGNAL CONFIRMATION SYSTEM ==============
+# Signal states
+SIGNAL_STATE_NO_TRADE = "NO_TRADE"
+SIGNAL_STATE_SETUP_DETECTED = "SETUP_IN_CONFIRMATION"  # Setup detected, waiting confirmation
+SIGNAL_STATE_OPERATIONAL = "OPERATIONAL"  # Confirmed, ready to trade
+
+# Signal confirmation tracking
+signal_confirmation_state = {
+    "current_direction": None,  # LONG, SHORT, or None
+    "current_state": SIGNAL_STATE_NO_TRADE,
+    "consecutive_count": 0,  # How many consecutive signals in same direction
+    "first_detected_at": None,
+    "confirmed_at": None,
+    "last_confidence": 0,
+    "confidence_trend": "stable",  # improving, stable, declining
+    "last_signal_data": None,
+    "volatility_spike": False,
+    "awaiting_sweep_confirmation": False,
+    "sweep_direction": None,
+    "last_btc_price": None,
+    "price_change_since_detection": 0,
+}
+
+# Trade signal cache
+trade_signal_cache = {
+    "signal": None,
+    "timestamp": None,
+    "raw_direction": None,  # Direction before confirmation logic
+}
+
+# Volatility tracking
+volatility_state = {
+    "recent_price_changes": [],  # Last 10 price change %
+    "is_volatile": False,
+    "last_check": None,
+}
+
+def calculate_volatility(current_price: float, last_price: float) -> bool:
+    """Check if market is in high volatility mode"""
+    global volatility_state
+    
+    if last_price and last_price > 0:
+        change_pct = abs((current_price - last_price) / last_price * 100)
+        volatility_state["recent_price_changes"].append(change_pct)
+        
+        # Keep only last 10 changes
+        if len(volatility_state["recent_price_changes"]) > 10:
+            volatility_state["recent_price_changes"] = volatility_state["recent_price_changes"][-10:]
+        
+        # High volatility if average change > 0.3% or any single change > 0.8%
+        avg_change = sum(volatility_state["recent_price_changes"]) / len(volatility_state["recent_price_changes"])
+        max_change = max(volatility_state["recent_price_changes"]) if volatility_state["recent_price_changes"] else 0
+        
+        volatility_state["is_volatile"] = avg_change > 0.3 or max_change > 0.8
+        volatility_state["last_check"] = datetime.now(timezone.utc)
+    
+    return volatility_state["is_volatile"]
 
 # Signal tracking for auto-recording
 last_signal_state = {
@@ -3754,24 +3821,257 @@ async def get_trade_signal():
         liquidity_ladder=liquidity_ladder
     )
     
+    # Apply confirmation system
+    confirmed_signal = apply_signal_confirmation(
+        raw_signal=signal,
+        current_price=current_price,
+        exchange_comparison=exchange_comparison,
+        whale_activity=whale_activity,
+        liquidity_ladder=liquidity_ladder
+    )
+    
     # Auto-record signal changes
     await auto_record_signal_change(
-        new_signal=signal,
+        new_signal=confirmed_signal,
         current_price=current_price,
         market_bias=market_bias,
         whale_activity=whale_activity,
         liquidity_direction=liquidity_direction
     )
     
-    return signal
+    return confirmed_signal
+
+
+def apply_signal_confirmation(
+    raw_signal: TradeSignal,
+    current_price: float,
+    exchange_comparison: Dict,
+    whale_activity,
+    liquidity_ladder
+) -> TradeSignal:
+    """
+    Apply confirmation logic to prevent premature signals.
+    
+    States:
+    - NO_TRADE: No setup detected
+    - SETUP_IN_CONFIRMATION: Setup detected, waiting for confirmation
+    - OPERATIONAL: Confirmed signal, ready to trade
+    
+    Confirmation requires:
+    1. At least 2 consecutive signals in same direction
+    2. No contradiction from exchange/whale/liquidity
+    3. Stable or improving confidence
+    4. For sweep-reversal: wait for sweep completion
+    """
+    global signal_confirmation_state, volatility_state
+    
+    raw_direction = raw_signal.direction
+    now = datetime.now(timezone.utc)
+    
+    # Check volatility
+    is_volatile = calculate_volatility(current_price, signal_confirmation_state.get("last_btc_price"))
+    signal_confirmation_state["last_btc_price"] = current_price
+    
+    # If NO TRADE, reset confirmation state
+    if raw_direction == "NO TRADE":
+        # Check if we're downgrading from a setup
+        if signal_confirmation_state["current_direction"] is not None:
+            signal_confirmation_state["current_direction"] = None
+            signal_confirmation_state["current_state"] = SIGNAL_STATE_NO_TRADE
+            signal_confirmation_state["consecutive_count"] = 0
+            signal_confirmation_state["first_detected_at"] = None
+            signal_confirmation_state["confirmed_at"] = None
+            signal_confirmation_state["awaiting_sweep_confirmation"] = False
+        
+        raw_signal.signal_state = SIGNAL_STATE_NO_TRADE
+        raw_signal.raw_direction = None
+        raw_signal.confirmation_progress = 0
+        raw_signal.consecutive_signals = 0
+        raw_signal.volatility_warning = is_volatile
+        return raw_signal
+    
+    # We have a LONG or SHORT signal - apply confirmation logic
+    prev_direction = signal_confirmation_state.get("current_direction")
+    prev_confidence = signal_confirmation_state.get("last_confidence", 0)
+    
+    # Check if direction changed
+    if prev_direction != raw_direction:
+        # New direction detected - start fresh confirmation
+        signal_confirmation_state["current_direction"] = raw_direction
+        signal_confirmation_state["current_state"] = SIGNAL_STATE_SETUP_DETECTED
+        signal_confirmation_state["consecutive_count"] = 1
+        signal_confirmation_state["first_detected_at"] = now
+        signal_confirmation_state["confirmed_at"] = None
+        signal_confirmation_state["last_confidence"] = raw_signal.confidence
+        signal_confirmation_state["confidence_trend"] = "stable"
+        signal_confirmation_state["awaiting_sweep_confirmation"] = raw_signal.sweep_first_expected
+        signal_confirmation_state["sweep_direction"] = raw_direction
+        
+        # Return as SETUP_IN_CONFIRMATION
+        raw_signal.signal_state = SIGNAL_STATE_SETUP_DETECTED
+        raw_signal.raw_direction = raw_direction
+        raw_signal.confirmation_progress = 25
+        raw_signal.consecutive_signals = 1
+        raw_signal.volatility_warning = is_volatile
+        
+        # Modify direction to show it's not confirmed yet
+        raw_signal.direction = f"{raw_direction} (IN CONFERMA)"
+        
+        # Update reasoning
+        raw_signal.reasoning = f"🔄 SETUP IN CONFERMA - {raw_direction}\n\n" + \
+            f"Setup rilevato, in attesa di conferma (1/2 segnali consecutivi).\n\n" + \
+            raw_signal.reasoning
+        
+        if raw_signal.sweep_first_expected:
+            raw_signal.reasoning = f"⏳ ATTESA SWEEP\n\nSweep atteso prima dell'ingresso. " + \
+                f"Attendere completamento sweep e conferma di rigetto/recupero.\n\n" + raw_signal.reasoning
+        
+        return raw_signal
+    
+    # Same direction as before - increment consecutive count
+    signal_confirmation_state["consecutive_count"] += 1
+    consecutive = signal_confirmation_state["consecutive_count"]
+    
+    # Update confidence trend
+    if raw_signal.confidence > prev_confidence + 2:
+        signal_confirmation_state["confidence_trend"] = "improving"
+    elif raw_signal.confidence < prev_confidence - 5:
+        signal_confirmation_state["confidence_trend"] = "declining"
+    else:
+        signal_confirmation_state["confidence_trend"] = "stable"
+    
+    signal_confirmation_state["last_confidence"] = raw_signal.confidence
+    
+    # Check for contradictions
+    contradictions = check_signal_contradictions(
+        direction=raw_direction,
+        exchange_comparison=exchange_comparison,
+        whale_activity=whale_activity,
+        liquidity_ladder=liquidity_ladder
+    )
+    
+    has_contradiction = len(contradictions) > 0
+    confidence_declining = signal_confirmation_state["confidence_trend"] == "declining"
+    awaiting_sweep = signal_confirmation_state.get("awaiting_sweep_confirmation", False)
+    
+    # Calculate confirmation progress
+    progress = min(100, consecutive * 30)  # Each consecutive signal = 30%
+    if has_contradiction:
+        progress = max(25, progress - 30)
+    if confidence_declining:
+        progress = max(25, progress - 20)
+    if awaiting_sweep and raw_signal.sweep_first_expected:
+        progress = min(50, progress)  # Cap at 50% if still awaiting sweep
+    
+    # Determine final state
+    can_confirm = (
+        consecutive >= 2 and
+        not has_contradiction and
+        not confidence_declining and
+        not (awaiting_sweep and raw_signal.sweep_first_expected) and
+        not is_volatile
+    )
+    
+    if can_confirm:
+        # OPERATIONAL - Confirmed signal
+        signal_confirmation_state["current_state"] = SIGNAL_STATE_OPERATIONAL
+        if not signal_confirmation_state["confirmed_at"]:
+            signal_confirmation_state["confirmed_at"] = now
+        
+        raw_signal.signal_state = SIGNAL_STATE_OPERATIONAL
+        raw_signal.raw_direction = raw_direction
+        raw_signal.direction = f"{raw_direction} (OPERATIVO)"
+        raw_signal.confirmation_progress = 100
+        raw_signal.consecutive_signals = consecutive
+        raw_signal.volatility_warning = False
+        
+        # Calculate time in setup
+        if signal_confirmation_state["first_detected_at"]:
+            time_diff = (now - signal_confirmation_state["first_detected_at"]).total_seconds()
+            raw_signal.time_in_setup = f"{int(time_diff // 60)}m {int(time_diff % 60)}s"
+        
+        # Update reasoning
+        raw_signal.reasoning = f"✅ SEGNALE OPERATIVO - {raw_direction}\n\n" + \
+            f"Conferma completata dopo {consecutive} segnali consecutivi.\n" + \
+            f"Confidenza: {signal_confirmation_state['confidence_trend']}\n" + \
+            f"Nessuna contraddizione rilevata.\n\n" + raw_signal.reasoning
+        
+    else:
+        # Still SETUP_IN_CONFIRMATION
+        signal_confirmation_state["current_state"] = SIGNAL_STATE_SETUP_DETECTED
+        
+        raw_signal.signal_state = SIGNAL_STATE_SETUP_DETECTED
+        raw_signal.raw_direction = raw_direction
+        raw_signal.direction = f"{raw_direction} (IN CONFERMA)"
+        raw_signal.confirmation_progress = progress
+        raw_signal.consecutive_signals = consecutive
+        raw_signal.volatility_warning = is_volatile
+        
+        # Build status message
+        status_parts = []
+        if consecutive < 2:
+            status_parts.append(f"Segnali consecutivi: {consecutive}/2")
+        if has_contradiction:
+            status_parts.append(f"Contraddizioni: {', '.join(contradictions)}")
+        if confidence_declining:
+            status_parts.append("Confidenza in calo")
+        if awaiting_sweep and raw_signal.sweep_first_expected:
+            status_parts.append("In attesa di sweep + conferma rigetto")
+        if is_volatile:
+            status_parts.append("Alta volatilità - attendere stabilizzazione")
+        
+        status_msg = " | ".join(status_parts) if status_parts else "In conferma..."
+        
+        raw_signal.reasoning = f"🔄 SETUP IN CONFERMA - {raw_direction}\n\n" + \
+            f"Progresso: {progress}%\n{status_msg}\n\n" + raw_signal.reasoning
+    
+    return raw_signal
+
+
+def check_signal_contradictions(
+    direction: str,
+    exchange_comparison: Dict,
+    whale_activity,
+    liquidity_ladder
+) -> List[str]:
+    """Check if other factors contradict the signal direction"""
+    contradictions = []
+    
+    # Check exchange consensus
+    if exchange_comparison:
+        bullish_count = sum(1 for ex in exchange_comparison.values() if ex.get("bias") == "BULLISH")
+        bearish_count = sum(1 for ex in exchange_comparison.values() if ex.get("bias") == "BEARISH")
+        
+        if direction == "LONG" and bearish_count > bullish_count:
+            contradictions.append("exchange consensus bearish")
+        elif direction == "SHORT" and bullish_count > bearish_count:
+            contradictions.append("exchange consensus bullish")
+    
+    # Check whale activity
+    if whale_activity and whale_activity.direction != "NEUTRAL":
+        if direction == "LONG" and whale_activity.direction == "SELL" and whale_activity.strength > 50:
+            contradictions.append("whale selling pressure")
+        elif direction == "SHORT" and whale_activity.direction == "BUY" and whale_activity.strength > 50:
+            contradictions.append("whale buying pressure")
+    
+    # Check liquidity ladder
+    if liquidity_ladder:
+        if direction == "LONG" and liquidity_ladder.more_attractive_side == "below":
+            if liquidity_ladder.sweep_expectation == "sweep_below_first":
+                contradictions.append("liquidity suggests sweep below first")
+        elif direction == "SHORT" and liquidity_ladder.more_attractive_side == "above":
+            if liquidity_ladder.sweep_expectation == "sweep_above_first":
+                contradictions.append("liquidity suggests sweep above first")
+    
+    return contradictions
 
 
 # ============== SIGNAL HISTORY ==============
 
 async def auto_record_signal_change(new_signal, current_price, market_bias, whale_activity, liquidity_direction, reason: str = None):
     """
-    Automatically record signal when direction changes or signal invalidates.
-    Tracks: LONG/SHORT appearing, changing to NO TRADE, invalidations
+    Automatically record signal when state changes.
+    Tracks: setup detected, setup confirmed, setup invalidated, signal expired
     """
     global last_signal_state
     
@@ -3780,58 +4080,87 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
         status = "active"
         
         old_direction = last_signal_state.get("direction")
-        new_direction = new_signal.direction
+        old_state = last_signal_state.get("signal_state")
         old_signal_id = last_signal_state.get("signal_id")
         
-        # Determine if we should record and what status
-        if old_direction is None:
-            # First signal
-            if new_direction in ["LONG", "SHORT"]:
+        # Get the raw direction and state from the new signal
+        new_raw_direction = new_signal.raw_direction or new_signal.direction.replace(" (IN CONFERMA)", "").replace(" (OPERATIVO)", "")
+        new_state = new_signal.signal_state
+        
+        # Clean up direction string
+        if "NO TRADE" in new_raw_direction or new_raw_direction == "NO_TRADE":
+            new_raw_direction = "NO TRADE"
+        
+        # Determine what to record based on state transitions
+        if new_state == SIGNAL_STATE_SETUP_DETECTED:
+            if old_state != SIGNAL_STATE_SETUP_DETECTED or old_direction != new_raw_direction:
+                # New setup detected
                 should_record = True
-                status = "active"
-                reason = "Nuovo segnale rilevato"
-        elif old_direction != new_direction:
-            # Direction changed
-            should_record = True
-            
-            if old_direction in ["LONG", "SHORT"] and new_direction == "NO TRADE":
-                # Signal invalidated or expired
-                status = "invalidated"
-                reason = reason or f"Segnale {old_direction} invalidato - condizioni cambiate"
+                status = "setup_detected"
+                reason = f"Setup {new_raw_direction} rilevato - in attesa conferma"
+        
+        elif new_state == SIGNAL_STATE_OPERATIONAL:
+            if old_state != SIGNAL_STATE_OPERATIONAL or old_direction != new_raw_direction:
+                # Setup confirmed
+                should_record = True
+                status = "confirmed"
+                reason = f"Segnale {new_raw_direction} CONFERMATO - operativo"
                 
-                # Update old signal status
+                # Update previous setup_detected entry if exists
+                if old_signal_id and old_state == SIGNAL_STATE_SETUP_DETECTED:
+                    await signal_history_collection.update_one(
+                        {"signal_id": old_signal_id},
+                        {"$set": {
+                            "status": "confirmed",
+                            "confirmed_at": datetime.now(timezone.utc),
+                        }}
+                    )
+        
+        elif new_state == SIGNAL_STATE_NO_TRADE:
+            if old_state in [SIGNAL_STATE_SETUP_DETECTED, SIGNAL_STATE_OPERATIONAL]:
+                if old_state == SIGNAL_STATE_SETUP_DETECTED:
+                    # Setup invalidated before confirmation
+                    should_record = True
+                    status = "setup_invalidated"
+                    reason = f"Setup {old_direction} invalidato prima della conferma"
+                else:
+                    # Confirmed signal expired/invalidated
+                    should_record = True
+                    status = "invalidated"
+                    reason = f"Segnale {old_direction} invalidato - condizioni cambiate"
+                
+                # Update old signal
                 if old_signal_id:
                     await signal_history_collection.update_one(
                         {"signal_id": old_signal_id},
                         {"$set": {
-                            "status": "invalidated",
+                            "status": status,
                             "closed_at": datetime.now(timezone.utc),
                             "exit_price": current_price,
                             "exit_reason": reason
                         }}
                     )
-            elif new_direction in ["LONG", "SHORT"]:
-                # New actionable signal
-                status = "active"
-                if old_direction in ["LONG", "SHORT"]:
-                    reason = f"Inversione da {old_direction} a {new_direction}"
-                else:
-                    reason = f"Nuovo segnale {new_direction}"
-        else:
-            # Same direction - check if enough time passed (record every 4 hours for tracking)
-            if last_signal_state.get("timestamp"):
-                time_diff = (datetime.now(timezone.utc) - last_signal_state["timestamp"]).total_seconds()
-                if time_diff > 14400 and new_direction in ["LONG", "SHORT"]:  # 4 hours
+        
+        # Also record periodic updates for active operational signals
+        if new_state == SIGNAL_STATE_OPERATIONAL and old_state == SIGNAL_STATE_OPERATIONAL:
+            if old_direction == new_raw_direction:
+                time_diff = 0
+                if last_signal_state.get("timestamp"):
+                    time_diff = (datetime.now(timezone.utc) - last_signal_state["timestamp"]).total_seconds()
+                
+                # Record every 4 hours
+                if time_diff > 14400:
                     should_record = True
-                    status = "active"
-                    reason = "Aggiornamento periodico (4H)"
+                    status = "active_update"
+                    reason = "Aggiornamento periodico segnale operativo"
         
         if should_record:
             signal_id = str(uuid.uuid4())
             history_entry = {
                 "signal_id": signal_id,
                 "timestamp": datetime.now(timezone.utc),
-                "direction": new_direction,
+                "direction": new_raw_direction,
+                "signal_state": new_state,
                 "confidence": new_signal.confidence,
                 "estimated_move": new_signal.estimated_move,
                 "entry_zone_low": new_signal.entry_zone_low,
@@ -3849,21 +4178,27 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
                 "reasoning_summary": new_signal.reasoning[:500] if new_signal.reasoning else "",
                 "status": status,
                 "reason": reason,
-                "previous_signal": old_direction,
+                "previous_direction": old_direction,
+                "previous_state": old_state,
+                "confirmation_progress": new_signal.confirmation_progress,
+                "consecutive_signals": new_signal.consecutive_signals,
+                "volatility_warning": new_signal.volatility_warning,
                 "exit_price": None,
                 "exit_reason": None,
-                "closed_at": None
+                "closed_at": None,
+                "confirmed_at": datetime.now(timezone.utc) if status == "confirmed" else None
             }
             
             await signal_history_collection.insert_one(history_entry)
             
             # Update tracking state
-            last_signal_state["direction"] = new_direction
-            last_signal_state["signal_id"] = signal_id if status == "active" else None
+            last_signal_state["direction"] = new_raw_direction
+            last_signal_state["signal_state"] = new_state
+            last_signal_state["signal_id"] = signal_id if status in ["confirmed", "setup_detected"] else None
             last_signal_state["timestamp"] = datetime.now(timezone.utc)
             last_signal_state["btc_price"] = current_price
             
-            logger.info(f"Auto-recorded signal: {new_direction} (status: {status}, reason: {reason})")
+            logger.info(f"Auto-recorded signal: {new_raw_direction} (state: {new_state}, status: {status})")
             return {"recorded": True, "signal_id": signal_id, "status": status, "reason": reason}
         
         return {"recorded": False, "reason": "Nessun cambiamento significativo"}

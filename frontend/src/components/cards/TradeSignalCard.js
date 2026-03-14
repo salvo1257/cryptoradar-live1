@@ -47,14 +47,33 @@ export function TradeSignalCard({ compact = false }) {
 
   // Translate direction for display
   const translateDirection = (direction) => {
+    if (!direction) return t('noTrade');
+    // Handle new confirmation states
+    if (direction.includes('(IN CONFERMA)')) {
+      const base = direction.replace(' (IN CONFERMA)', '');
+      return language === 'it' ? `${base} (IN CONFERMA)` : `${base} (CONFIRMING)`;
+    }
+    if (direction.includes('(OPERATIVO)')) {
+      const base = direction.replace(' (OPERATIVO)', '');
+      return language === 'it' ? `${base} (OPERATIVO)` : `${base} (OPERATIONAL)`;
+    }
     if (direction === 'LONG') return t('long');
     if (direction === 'SHORT') return t('short');
     if (direction === 'NO TRADE') return t('noTrade');
     return direction;
   };
 
+  // Get clean direction for styling (without state suffix)
+  const getCleanDirection = (direction) => {
+    if (!direction) return 'NO TRADE';
+    if (direction.includes('LONG')) return 'LONG';
+    if (direction.includes('SHORT')) return 'SHORT';
+    return 'NO TRADE';
+  };
+
   const getDirectionConfig = (direction) => {
-    switch (direction) {
+    const cleanDir = getCleanDirection(direction);
+    switch (cleanDir) {
       case 'LONG':
         return {
           icon: TrendingUp,
@@ -82,6 +101,41 @@ export function TradeSignalCard({ compact = false }) {
           textClass: 'text-zinc-400',
           glowClass: ''
         };
+    }
+  };
+
+  // Get signal state badge
+  const getSignalStateBadge = (signalState, confirmationProgress) => {
+    switch (signalState) {
+      case 'SETUP_IN_CONFIRMATION':
+        return (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded text-[10px] font-mono animate-pulse">
+              <Clock className="w-3 h-3" />
+              {language === 'it' ? 'IN CONFERMA' : 'CONFIRMING'}
+            </span>
+            {confirmationProgress > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-12 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-yellow-400 rounded-full transition-all duration-500"
+                    style={{ width: `${confirmationProgress}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-yellow-400 font-mono">{confirmationProgress}%</span>
+              </div>
+            )}
+          </div>
+        );
+      case 'OPERATIONAL':
+        return (
+          <span className="flex items-center gap-1 px-2 py-0.5 bg-bullish/20 text-bullish border border-bullish/30 rounded text-[10px] font-mono">
+            <Zap className="w-3 h-3" />
+            {language === 'it' ? 'OPERATIVO' : 'OPERATIONAL'}
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
@@ -138,6 +192,7 @@ export function TradeSignalCard({ compact = false }) {
             <Zap className="w-5 h-5 text-whale" />
             <h3 className="font-heading font-bold text-sm uppercase tracking-wider">{t('tradeSignal')}</h3>
             {signal.setup_type && getSetupTypeBadge(signal.setup_type)}
+            {signal.signal_state && getSignalStateBadge(signal.signal_state, signal.confirmation_progress)}
           </div>
           <button 
             onClick={fetchSignal}
@@ -148,6 +203,32 @@ export function TradeSignalCard({ compact = false }) {
           </button>
         </div>
       </div>
+
+      {/* Volatility Warning */}
+      {signal.volatility_warning && (
+        <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
+          <div className="flex items-center gap-2 text-yellow-400 text-xs">
+            <AlertTriangle className="w-4 h-4" />
+            <span>{language === 'it' ? 'Alta volatilità rilevata - attendere stabilizzazione prima di entrare' : 'High volatility detected - wait for stabilization before entry'}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Progress */}
+      {signal.signal_state === 'SETUP_IN_CONFIRMATION' && (
+        <div className="px-4 py-2 bg-yellow-500/5 border-b border-yellow-500/10">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-yellow-400">
+              {language === 'it' ? `Segnali consecutivi: ${signal.consecutive_signals || 1}/2` : `Consecutive signals: ${signal.consecutive_signals || 1}/2`}
+            </span>
+            {signal.time_in_setup && (
+              <span className="text-zinc-500">
+                {language === 'it' ? `In setup da: ${signal.time_in_setup}` : `Time in setup: ${signal.time_in_setup}`}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Signal Display */}
       <div className="p-4">
