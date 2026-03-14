@@ -321,33 +321,33 @@ export function TradeSignalCard({ compact = false }) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">🐋</span>
-                <span className="text-xs text-blue-400 font-semibold uppercase">{language === 'it' ? 'Motore Attività Balene' : 'Whale Activity Engine'}</span>
+                <span className="text-xs text-blue-400 font-semibold uppercase">{t('whaleActivityEngine')}</span>
               </div>
               <span className={cn(
                 "px-2 py-0.5 rounded text-[10px] font-mono font-bold",
                 signal.whale_activity.direction === 'BUY' ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
               )}>
-                {signal.whale_activity.direction === 'BUY' ? (language === 'it' ? 'ACQUISTO' : 'BUY') : (language === 'it' ? 'VENDITA' : 'SELL')}
+                {signal.whale_activity.direction === 'BUY' ? t('long') : t('short')}
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2 mb-2">
               <div>
-                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Forza' : 'Strength'}</div>
+                <div className="text-[10px] text-zinc-500">{t('strength')}</div>
                 <div className="font-mono text-sm">{signal.whale_activity.strength?.toFixed(0)}%</div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Press. Acquisto' : 'Buy Pressure'}</div>
+                <div className="text-[10px] text-zinc-500">{t('buyPressure')}</div>
                 <div className="font-mono text-sm text-bullish">{signal.whale_activity.buy_pressure?.toFixed(0)}</div>
               </div>
               <div>
-                <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Press. Vendita' : 'Sell Pressure'}</div>
+                <div className="text-[10px] text-zinc-500">{t('sellPressure')}</div>
                 <div className="font-mono text-sm text-bearish">{signal.whale_activity.sell_pressure?.toFixed(0)}</div>
               </div>
             </div>
             <p className="text-[10px] text-zinc-400">{signal.whale_activity.explanation}</p>
             {signal.whale_confirms_direction && (
               <div className="mt-2 pt-2 border-t border-blue-500/20">
-                <span className="text-[10px] text-bullish">{language === 'it' ? '✓ Attività balene conferma la direzione del segnale' : '✓ Whale activity confirms signal direction'}</span>
+                <span className="text-[10px] text-bullish">✓ {t('whaleConfirms')}</span>
               </div>
             )}
           </div>

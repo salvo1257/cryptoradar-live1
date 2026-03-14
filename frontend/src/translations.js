@@ -91,6 +91,9 @@ export const translations = {
     longCascade: "Long Cascade",
     balanced: "Balanced",
     direction: "Direction",
+    aggressiveBuying: "Aggressive Buying Detected",
+    aggressiveSelling: "Aggressive Selling Detected",
+    none: "None",
     
     // Support & Resistance
     support: "Support",
@@ -285,6 +288,9 @@ export const translations = {
     longCascade: "Cascata Long",
     balanced: "Bilanciato",
     direction: "Direzione",
+    aggressiveBuying: "Acquisto Aggressivo Rilevato",
+    aggressiveSelling: "Vendita Aggressiva Rilevata",
+    none: "Nessuno",
     
     // Support & Resistance
     support: "Supporto",
@@ -460,14 +466,29 @@ export const translations = {
     stopLoss: "Stop Loss",
     riskReward: "Risiko/Ertrag",
     whaleActivity: "Wal-Aktivität",
+    whaleActivityEngine: "Wal-Aktivitäts-Engine",
     buyPressure: "Kaufdruck",
     sellPressure: "Verkaufsdruck",
+    buyingPressure: "KAUFDRUCK",
+    sellingPressure: "VERKAUFSDRUCK",
+    direction: "Richtung",
+    volumeSpike: "Volumenspitze",
+    shortSqueeze: "Short Squeeze",
+    longCascade: "Long-Kaskade",
+    liquidationBias: "Liquidations-Bias",
+    detectedSignals: "Erkannte Signale",
+    aggressiveBuying: "Aggressiver Kauf erkannt",
+    aggressiveSelling: "Aggressiver Verkauf erkannt",
+    loadingWhaleActivity: "Wal-Aktivität laden...",
+    none: "Keine",
     liquidityLadder: "Liquiditätsleiter",
     signalHistory: "Signalverlauf",
     totalSignals: "Gesamt Signale",
     last24h: "Letzte 24H",
     loading: "Laden...",
-    noData: "Keine Daten verfügbar"
+    noData: "Keine Daten verfügbar",
+    updated: "Aktualisiert",
+    learnWhaleAlerts: "Wal-Aktivität analysiert Volumenspitzen, Orderbuch-Druck, Liquidationsdaten und OI-Momentum, um institutionelle Aktivitäten zu erkennen."
   },
   pl: {
     // Navigation
@@ -508,11 +529,26 @@ export const translations = {
     
     // Whale Activity
     whaleActivity: "Aktywność Wielorybów",
+    whaleActivityEngine: "Silnik Aktywności Wielorybów",
     buyPressure: "Presja Kupna",
     sellPressure: "Presja Sprzedaży",
+    buyingPressure: "PRESJA KUPNA",
+    sellingPressure: "PRESJA SPRZEDAŻY",
+    direction: "Kierunek",
+    strength: "Siła",
+    volumeSpike: "Skok Wolumenu",
+    shortSqueeze: "Short Squeeze",
+    longCascade: "Kaskada Long",
+    liquidationBias: "Bias Likwidacji",
+    detectedSignals: "Wykryte Sygnały",
+    aggressiveBuying: "Wykryto agresywne kupowanie",
+    aggressiveSelling: "Wykryto agresywną sprzedaż",
+    loadingWhaleActivity: "Ładowanie aktywności wielorybów...",
+    none: "Brak",
     
     // Liquidity
     liquidityLadder: "Drabina Płynności",
+    liquidityDirection: "Kierunek Płynności",
     above: "Powyżej",
     below: "Poniżej",
     balanced: "Zrównoważone",
@@ -531,7 +567,9 @@ export const translations = {
     loading: "Ładowanie...",
     noData: "Brak dostępnych danych",
     refresh: "Odśwież",
-    close: "Zamknij"
+    close: "Zamknij",
+    updated: "Zaktualizowano",
+    learnWhaleAlerts: "Aktywność wielorybów analizuje skoki wolumenu, presję orderbooka, dane o likwidacjach i momentum OI, aby wykryć aktywność instytucjonalną."
   }
 };
 

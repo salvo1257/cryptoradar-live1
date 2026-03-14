@@ -8,7 +8,7 @@ import { Progress } from '../ui/progress';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function WhaleAlertCard({ compact = false }) {
-  const { t, learnMode } = useApp();
+  const { t, learnMode, language } = useApp();
   const [whaleData, setWhaleData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -16,7 +16,7 @@ export function WhaleAlertCard({ compact = false }) {
   const fetchWhaleActivity = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/trade-signal`);
+      const response = await fetch(`${API_URL}/api/trade-signal?lang=${language}`);
       const data = await response.json();
       setWhaleData(data.whale_activity);
       setLastUpdate(new Date());
@@ -31,14 +31,14 @@ export function WhaleAlertCard({ compact = false }) {
     fetchWhaleActivity();
     const interval = setInterval(fetchWhaleActivity, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [language]);
 
   const getDirectionConfig = (direction) => {
     switch (direction) {
       case 'BUY':
         return {
           icon: TrendingUp,
-          label: 'BUYING PRESSURE',
+          label: t('buyingPressure'),
           color: 'bullish',
           bgClass: 'bg-bullish/10',
           borderClass: 'border-bullish',
@@ -47,7 +47,7 @@ export function WhaleAlertCard({ compact = false }) {
       case 'SELL':
         return {
           icon: TrendingDown,
-          label: 'SELLING PRESSURE',
+          label: t('sellingPressure'),
           color: 'bearish',
           bgClass: 'bg-bearish/10',
           borderClass: 'border-bearish',
@@ -56,7 +56,7 @@ export function WhaleAlertCard({ compact = false }) {
       default:
         return {
           icon: MinusCircle,
-          label: 'NEUTRAL',
+          label: t('neutral'),
           color: 'zinc-400',
           bgClass: 'bg-zinc-800',
           borderClass: 'border-zinc-600',
@@ -87,7 +87,7 @@ export function WhaleAlertCard({ compact = false }) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-2">
           <span className="text-lg">🐋</span>
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">Whale Activity</h3>
+          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('whaleActivity')}</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
@@ -95,7 +95,7 @@ export function WhaleAlertCard({ compact = false }) {
                   <HelpCircle className="w-3.5 h-3.5 text-whale cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
-                  <p className="text-xs">Analyzes volume spikes, order book pressure, liquidation data, and OI momentum to detect institutional activity.</p>
+                  <p className="text-xs">{t('learnWhaleAlerts')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -104,7 +104,7 @@ export function WhaleAlertCard({ compact = false }) {
         <button 
           onClick={fetchWhaleActivity}
           className="p-1.5 hover:bg-white/10 rounded-sm transition-colors"
-          title="Refresh"
+          title={t('refresh')}
         >
           <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
         </button>
@@ -126,12 +126,12 @@ export function WhaleAlertCard({ compact = false }) {
                   <div className={cn("font-mono font-bold text-sm", config.textClass)}>
                     {config.label}
                   </div>
-                  <div className="text-xs text-zinc-500">Direction</div>
+                  <div className="text-xs text-zinc-500">{t('direction')}</div>
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-xl font-mono font-bold">{whaleData.strength?.toFixed(0)}%</div>
-                <div className="text-xs text-zinc-500">Strength</div>
+                <div className="text-xs text-zinc-500">{t('strength')}</div>
               </div>
             </div>
 
@@ -141,7 +141,7 @@ export function WhaleAlertCard({ compact = false }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-zinc-500 flex items-center gap-1">
                     <TrendingUp className="w-3 h-3 text-bullish" />
-                    Buy Pressure
+                    {t('buyPressure')}
                   </span>
                   <span className="font-mono text-xs text-bullish">{whaleData.buy_pressure?.toFixed(0)}</span>
                 </div>
@@ -155,7 +155,7 @@ export function WhaleAlertCard({ compact = false }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-zinc-500 flex items-center gap-1">
                     <TrendingDown className="w-3 h-3 text-bearish" />
-                    Sell Pressure
+                    {t('sellPressure')}
                   </span>
                   <span className="font-mono text-xs text-bearish">{whaleData.sell_pressure?.toFixed(0)}</span>
                 </div>
@@ -176,7 +176,7 @@ export function WhaleAlertCard({ compact = false }) {
                   whaleData.volume_spike ? "bg-yellow-500/10 text-yellow-400" : "bg-crypto-surface/20 text-zinc-500"
                 )}>
                   <Waves className="w-3 h-3" />
-                  <span>Volume Spike: {whaleData.volume_spike ? `${whaleData.volume_ratio?.toFixed(1)}x` : 'None'}</span>
+                  <span>{t('volumeSpike')}: {whaleData.volume_spike ? `${whaleData.volume_ratio?.toFixed(1)}x` : t('none')}</span>
                 </div>
                 
                 {/* Liquidation Bias */}
@@ -188,8 +188,8 @@ export function WhaleAlertCard({ compact = false }) {
                 )}>
                   <BarChart3 className="w-3 h-3" />
                   <span>
-                    {whaleData.liquidation_bias === 'shorts_liquidated' ? 'Short Squeeze' :
-                     whaleData.liquidation_bias === 'longs_liquidated' ? 'Long Cascade' : 'Balanced'}
+                    {whaleData.liquidation_bias === 'shorts_liquidated' ? t('shortSqueeze') :
+                     whaleData.liquidation_bias === 'longs_liquidated' ? t('longCascade') : t('balanced')}
                   </span>
                 </div>
 
@@ -201,7 +201,7 @@ export function WhaleAlertCard({ compact = false }) {
                   )}>
                     <Activity className="w-3 h-3" />
                     <span>
-                      {whaleData.orderbook_aggression === 'aggressive_buying' ? 'Aggressive Buying Detected' : 'Aggressive Selling Detected'}
+                      {whaleData.orderbook_aggression === 'aggressive_buying' ? t('aggressiveBuying') : t('aggressiveSelling')}
                     </span>
                   </div>
                 )}
@@ -216,7 +216,7 @@ export function WhaleAlertCard({ compact = false }) {
             {/* Signals List */}
             {!compact && whaleData.signals && whaleData.signals.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[10px] text-zinc-500 uppercase">Detected Signals</div>
+                <div className="text-[10px] text-zinc-500 uppercase">{t('detectedSignals')}</div>
                 {whaleData.signals.slice(0, 4).map((signal, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-xs text-zinc-400">
                     <span className="w-1 h-1 rounded-full bg-whale" />
@@ -229,13 +229,13 @@ export function WhaleAlertCard({ compact = false }) {
             {/* Last Update */}
             {lastUpdate && (
               <div className="text-[10px] text-zinc-500 text-right">
-                Updated: {lastUpdate.toLocaleTimeString()}
+                {t('updated')}: {lastUpdate.toLocaleTimeString()}
               </div>
             )}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-32 text-zinc-500">
-            <span className="text-xs">Loading whale activity...</span>
+            <span className="text-xs">{t('loading')}</span>
           </div>
         )}
       </div>
