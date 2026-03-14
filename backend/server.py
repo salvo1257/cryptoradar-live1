@@ -2360,6 +2360,219 @@ async def fetch_kraken_ohlc(interval: int = 60, since: int = None):
         logger.error(f"Error fetching Kraken OHLC: {e}")
     return None
 
+
+async def analyze_ohlc_for_outcome(signal_timestamp: datetime, validity_hours: int, 
+                                    direction: str, stop_loss: float, target_1: float, 
+                                    target_2: float, entry_price: float) -> dict:
+    """
+    Analyze historical OHLC candle data to determine if targets or stops were hit.
+    
+    This is the CORRECT way to determine trade outcomes - by checking if price
+    touched targets/stops at ANY point during the signal's validity window,
+    not just the current price.
+    
+    For LONG trades:
+    - WIN: candle_high >= target_2
+    - PARTIAL_WIN: candle_high >= target_1 (but not target_2)
+    - LOSS: candle_low <= stop_loss
+    
+    For SHORT trades:
+    - WIN: candle_low <= target_2
+    - PARTIAL_WIN: candle_low <= target_1 (but not target_2)
+    - LOSS: candle_high >= stop_loss
+    
+    Returns dict with outcome info or None if no definitive outcome yet.
+    """
+    try:
+        # Fetch 1-hour candles for granular analysis
+        candles = await fetch_kraken_ohlc(interval=60)  # 1h candles
+        if not candles or len(candles) == 0:
+            logger.warning("No candle data available for outcome analysis")
+            return None
+        
+        # Ensure signal_timestamp is timezone aware
+        if signal_timestamp.tzinfo is None:
+            signal_timestamp = signal_timestamp.replace(tzinfo=timezone.utc)
+        
+        signal_unix = int(signal_timestamp.timestamp())
+        validity_seconds = validity_hours * 3600
+        end_unix = signal_unix + validity_seconds
+        now_unix = int(datetime.now(timezone.utc).timestamp())
+        
+        # Filter candles within the signal's validity window
+        relevant_candles = [
+            c for c in candles 
+            if c["time"] >= signal_unix and c["time"] <= min(end_unix, now_unix)
+        ]
+        
+        if not relevant_candles:
+            logger.debug(f"No relevant candles found for signal from {signal_timestamp}")
+            return None
+        
+        # Track what was hit and when
+        target_1_hit = False
+        target_1_hit_time = None
+        target_1_hit_price = None
+        target_2_hit = False
+        target_2_hit_time = None
+        target_2_hit_price = None
+        stop_hit = False
+        stop_hit_time = None
+        stop_hit_price = None
+        
+        # Analyze each candle in chronological order
+        for candle in sorted(relevant_candles, key=lambda x: x["time"]):
+            candle_high = candle["high"]
+            candle_low = candle["low"]
+            candle_time = datetime.fromtimestamp(candle["time"], tz=timezone.utc)
+            
+            if direction == "LONG":
+                # LONG: high touches targets, low touches stop
+                
+                # Check stop first (if stop hit, trade is over)
+                if not stop_hit and candle_low <= stop_loss:
+                    stop_hit = True
+                    stop_hit_time = candle_time
+                    stop_hit_price = stop_loss
+                    # If stop hit before any target, it's a loss
+                    if not target_1_hit:
+                        break
+                
+                # Check targets (only if not already stopped out)
+                if not stop_hit:
+                    if not target_1_hit and candle_high >= target_1:
+                        target_1_hit = True
+                        target_1_hit_time = candle_time
+                        target_1_hit_price = target_1
+                    
+                    if not target_2_hit and candle_high >= target_2:
+                        target_2_hit = True
+                        target_2_hit_time = candle_time
+                        target_2_hit_price = target_2
+                        break  # Full win achieved
+                        
+            elif direction == "SHORT":
+                # SHORT: low touches targets, high touches stop
+                
+                # Check stop first
+                if not stop_hit and candle_high >= stop_loss:
+                    stop_hit = True
+                    stop_hit_time = candle_time
+                    stop_hit_price = stop_loss
+                    if not target_1_hit:
+                        break
+                
+                # Check targets
+                if not stop_hit:
+                    if not target_1_hit and candle_low <= target_1:
+                        target_1_hit = True
+                        target_1_hit_time = candle_time
+                        target_1_hit_price = target_1
+                    
+                    if not target_2_hit and candle_low <= target_2:
+                        target_2_hit = True
+                        target_2_hit_time = candle_time
+                        target_2_hit_price = target_2
+                        break
+        
+        # Determine outcome based on what was hit
+        outcome = None
+        outcome_notes = ""
+        pnl_percent = 0.0
+        outcome_price = None
+        
+        if target_2_hit:
+            outcome = "WIN"
+            outcome_price = target_2_hit_price
+            if direction == "LONG":
+                pnl_percent = ((target_2 - entry_price) / entry_price) * 100
+            else:
+                pnl_percent = ((entry_price - target_2) / entry_price) * 100
+            outcome_notes = f"Target 2 hit at ${target_2:,.0f} on {target_2_hit_time.strftime('%Y-%m-%d %H:%M')} UTC"
+            
+        elif stop_hit and not target_1_hit:
+            outcome = "LOSS"
+            outcome_price = stop_hit_price
+            if direction == "LONG":
+                pnl_percent = ((stop_loss - entry_price) / entry_price) * 100
+            else:
+                pnl_percent = ((entry_price - stop_loss) / entry_price) * 100
+            outcome_notes = f"Stop loss hit at ${stop_loss:,.0f} on {stop_hit_time.strftime('%Y-%m-%d %H:%M')} UTC"
+            
+        elif target_1_hit and stop_hit:
+            # Target 1 hit, then stopped out - partial win
+            outcome = "PARTIAL_WIN"
+            outcome_price = target_1_hit_price
+            if direction == "LONG":
+                pnl_percent = ((target_1 - entry_price) / entry_price) * 100
+            else:
+                pnl_percent = ((entry_price - target_1) / entry_price) * 100
+            outcome_notes = f"T1 hit at ${target_1:,.0f}, then stopped at ${stop_loss:,.0f}"
+            
+        elif target_1_hit:
+            # Target 1 hit but not target 2 or stop yet
+            # Check if signal has expired
+            is_expired = now_unix > end_unix
+            if is_expired:
+                outcome = "PARTIAL_WIN"
+                outcome_price = target_1_hit_price
+                if direction == "LONG":
+                    pnl_percent = ((target_1 - entry_price) / entry_price) * 100
+                else:
+                    pnl_percent = ((entry_price - target_1) / entry_price) * 100
+                outcome_notes = f"T1 hit at ${target_1:,.0f}, expired before T2"
+            else:
+                # Still in play, T1 hit, waiting for T2 or stop
+                return {
+                    "outcome": None,
+                    "target_1_hit": True,
+                    "target_2_hit": False,
+                    "stop_hit": False,
+                    "in_progress": True,
+                    "notes": f"T1 reached, watching for T2 or stop"
+                }
+        
+        # If nothing hit, check expiry
+        if outcome is None:
+            is_expired = now_unix > end_unix
+            if is_expired:
+                # Get current price for expired PnL calculation
+                ticker = await fetch_kraken_ticker()
+                current_price = ticker["price"] if ticker else entry_price
+                outcome = "EXPIRED"
+                outcome_price = current_price
+                if direction == "LONG":
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                else:
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                outcome_notes = f"Expired without hitting any level. Final price: ${current_price:,.0f}"
+            else:
+                # Still in play, no hits yet
+                return {
+                    "outcome": None,
+                    "target_1_hit": False,
+                    "target_2_hit": False,
+                    "stop_hit": False,
+                    "in_progress": True,
+                    "notes": "Signal still active"
+                }
+        
+        return {
+            "outcome": outcome,
+            "outcome_price": outcome_price,
+            "pnl_percent": round(pnl_percent, 2),
+            "target_1_hit": target_1_hit,
+            "target_2_hit": target_2_hit,
+            "stop_hit": stop_hit,
+            "outcome_notes": outcome_notes,
+            "candles_analyzed": len(relevant_candles)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing OHLC for outcome: {e}")
+        return None
+
+
 async def fetch_kraken_orderbook(count: int = 100):
     """Fetch real order book from Kraken"""
     try:
@@ -7903,25 +8116,144 @@ async def migrate_signal_outcomes():
         return {"error": str(e)}
 
 
+@api_router.post("/signal-history/recalculate-with-ohlc")
+async def recalculate_outcomes_with_ohlc(limit: int = Query(default=50, description="Max signals to recalculate")):
+    """
+    Recalculate outcomes for EXPIRED signals using OHLC candle data.
+    
+    This endpoint re-analyzes signals that were previously marked as EXPIRED
+    to check if they actually hit targets or stops according to historical
+    candle data (which the old engine didn't check).
+    
+    Use this to correct historical statistics after upgrading to OHLC-based
+    outcome detection.
+    """
+    try:
+        # Find EXPIRED signals with actual targets (not NO TRADE)
+        expired_signals = await signal_history_collection.find(
+            {
+                "outcome": "EXPIRED",
+                "direction": {"$in": ["LONG", "SHORT"]},
+                "target_1": {"$gt": 0},
+                "target_2": {"$gt": 0},
+                "stop_loss": {"$gt": 0}
+            },
+            {"_id": 0}
+        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        
+        if not expired_signals:
+            return {"message": "No EXPIRED signals found to recalculate", "recalculated": 0}
+        
+        now = datetime.now(timezone.utc)
+        recalculated = 0
+        changed = []
+        unchanged = []
+        
+        for signal in expired_signals:
+            signal_id = signal["signal_id"]
+            direction = signal["direction"]
+            entry_price = signal["btc_price"]
+            stop_loss = signal["stop_loss"]
+            target_1 = signal["target_1"]
+            target_2 = signal["target_2"]
+            validity_hours = signal.get("validity_hours", 24)
+            signal_ts = signal["timestamp"]
+            
+            # Re-analyze with OHLC
+            ohlc_result = await analyze_ohlc_for_outcome(
+                signal_timestamp=signal_ts,
+                validity_hours=validity_hours,
+                direction=direction,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                entry_price=entry_price
+            )
+            
+            if ohlc_result is None:
+                unchanged.append({
+                    "signal_id": signal_id[:8],
+                    "direction": direction,
+                    "reason": "OHLC analysis failed"
+                })
+                continue
+            
+            new_outcome = ohlc_result.get("outcome")
+            
+            # Skip if still EXPIRED or in progress
+            if new_outcome is None or new_outcome == "EXPIRED" or ohlc_result.get("in_progress"):
+                unchanged.append({
+                    "signal_id": signal_id[:8],
+                    "direction": direction,
+                    "reason": f"Still {new_outcome or 'in_progress'}"
+                })
+                continue
+            
+            # We found a different outcome - update it!
+            await signal_history_collection.update_one(
+                {"signal_id": signal_id},
+                {"$set": {
+                    "outcome": new_outcome,
+                    "outcome_timestamp": now,
+                    "outcome_price": ohlc_result.get("outcome_price"),
+                    "pnl_percent": ohlc_result.get("pnl_percent", 0),
+                    "target_1_hit": ohlc_result.get("target_1_hit", False),
+                    "target_2_hit": ohlc_result.get("target_2_hit", False),
+                    "stop_hit": ohlc_result.get("stop_hit", False),
+                    "outcome_notes": f"[RECALCULATED] {ohlc_result.get('outcome_notes', '')}",
+                    "candles_analyzed": ohlc_result.get("candles_analyzed", 0),
+                    "recalculated_at": now.isoformat()
+                }}
+            )
+            
+            recalculated += 1
+            changed.append({
+                "signal_id": signal_id[:8],
+                "direction": direction,
+                "old_outcome": "EXPIRED",
+                "new_outcome": new_outcome,
+                "pnl_percent": ohlc_result.get("pnl_percent", 0)
+            })
+            
+            logger.info(f"Recalculated {signal_id[:8]}... EXPIRED -> {new_outcome}")
+        
+        return {
+            "analyzed": len(expired_signals),
+            "recalculated": recalculated,
+            "changed": changed,
+            "unchanged_count": len(unchanged),
+            "message": f"Recalculated {recalculated} signals from EXPIRED using OHLC analysis"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error recalculating outcomes: {e}")
+        return {"error": str(e)}
+
+
 # ============== SIGNAL OUTCOME TRACKING ==============
 
 @api_router.post("/signal-history/check-outcomes")
 async def check_signal_outcomes():
     """
-    Check and update outcomes for all pending signals.
-    This should be called periodically (e.g., every hour via cron or frontend timer).
+    Check and update outcomes for all pending signals using OHLC candle data.
+    
+    IMPORTANT: This function analyzes historical candle HIGH/LOW data to determine
+    if targets or stops were ever touched during the signal's validity window.
     
     For LONG signals:
-    - WIN: Target 2 reached before stop
-    - PARTIAL_WIN: Target 1 reached but not Target 2
-    - LOSS: Stop loss hit
-    - EXPIRED: Neither target nor stop hit within validity window
+    - WIN: candle_high >= target_2 at any point
+    - PARTIAL_WIN: candle_high >= target_1 (but not target_2) and expired/stopped
+    - LOSS: candle_low <= stop_loss (before targets)
+    - EXPIRED: Neither target nor stop touched within validity window
     
     For SHORT signals:
-    - Same logic, mirrored
+    - WIN: candle_low <= target_2 at any point
+    - PARTIAL_WIN: candle_low <= target_1 (but not target_2) and expired/stopped
+    - LOSS: candle_high >= stop_loss (before targets)
+    - EXPIRED: Neither target nor stop touched within validity window
     """
     try:
-        # Get current price
+        # Get current price for reference
         ticker = await fetch_kraken_ticker()
         current_price = ticker["price"] if ticker else 0
         
@@ -7948,103 +8280,54 @@ async def check_signal_outcomes():
             target_1 = signal["target_1"]
             target_2 = signal["target_2"]
             validity_hours = signal.get("validity_hours", 24)
-            target_1_already_hit = signal.get("target_1_hit", False)
-            
-            # Check if signal has expired
             signal_ts = signal["timestamp"]
-            if signal_ts.tzinfo is None:
-                signal_ts = signal_ts.replace(tzinfo=timezone.utc)
-            signal_age_hours = (now - signal_ts).total_seconds() / 3600
-            is_expired = signal_age_hours > validity_hours
             
-            outcome = None
-            outcome_notes = ""
-            pnl_percent = 0
-            target_1_hit = target_1_already_hit
-            target_2_hit = False
-            stop_hit = False
+            # Use OHLC-based analysis for accurate outcome detection
+            ohlc_result = await analyze_ohlc_for_outcome(
+                signal_timestamp=signal_ts,
+                validity_hours=validity_hours,
+                direction=direction,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                entry_price=entry_price
+            )
             
-            if direction == "LONG":
-                # LONG: price needs to go UP to targets, DOWN to stop
-                if current_price <= stop_loss:
-                    outcome = "LOSS"
-                    stop_hit = True
-                    pnl_percent = ((stop_loss - entry_price) / entry_price) * 100
-                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
-                    
-                elif current_price >= target_2:
-                    outcome = "WIN"
-                    target_1_hit = True
-                    target_2_hit = True
-                    pnl_percent = ((target_2 - entry_price) / entry_price) * 100
-                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
-                    
-                elif current_price >= target_1:
-                    target_1_hit = True
-                    if is_expired:
-                        outcome = "PARTIAL_WIN"
-                        pnl_percent = ((target_1 - entry_price) / entry_price) * 100
-                        outcome_notes = "Target 1 reached, expired before T2"
-                    else:
-                        # Still running, update target_1_hit flag
-                        await signal_history_collection.update_one(
-                            {"signal_id": signal_id},
-                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
-                        )
-                        continue
-                        
-                elif is_expired:
-                    outcome = "EXPIRED"
-                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    outcome_notes = "Expired without hitting targets or stop"
-                    
-            elif direction == "SHORT":
-                # SHORT: price needs to go DOWN to targets, UP to stop
-                if current_price >= stop_loss:
-                    outcome = "LOSS"
-                    stop_hit = True
-                    pnl_percent = ((entry_price - stop_loss) / entry_price) * 100
-                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
-                    
-                elif current_price <= target_2:
-                    outcome = "WIN"
-                    target_1_hit = True
-                    target_2_hit = True
-                    pnl_percent = ((entry_price - target_2) / entry_price) * 100
-                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
-                    
-                elif current_price <= target_1:
-                    target_1_hit = True
-                    if is_expired:
-                        outcome = "PARTIAL_WIN"
-                        pnl_percent = ((entry_price - target_1) / entry_price) * 100
-                        outcome_notes = "Target 1 reached, expired before T2"
-                    else:
-                        await signal_history_collection.update_one(
-                            {"signal_id": signal_id},
-                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
-                        )
-                        continue
-                        
-                elif is_expired:
-                    outcome = "EXPIRED"
-                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
-                    outcome_notes = "Expired without hitting targets or stop"
+            if ohlc_result is None:
+                # Error fetching data, skip this signal
+                logger.warning(f"Could not analyze OHLC for signal {signal_id[:8]}...")
+                continue
             
-            # Update signal if outcome determined
+            # Check if signal is still in progress
+            if ohlc_result.get("in_progress", False):
+                # Update target_1_hit if detected
+                if ohlc_result.get("target_1_hit", False):
+                    await signal_history_collection.update_one(
+                        {"signal_id": signal_id},
+                        {"$set": {
+                            "target_1_hit": True, 
+                            "price_at_check": current_price,
+                            "outcome_notes": ohlc_result.get("notes", "")
+                        }}
+                    )
+                continue
+            
+            # We have a definitive outcome
+            outcome = ohlc_result.get("outcome")
             if outcome:
                 await signal_history_collection.update_one(
                     {"signal_id": signal_id},
                     {"$set": {
                         "outcome": outcome,
                         "outcome_timestamp": now,
-                        "outcome_price": current_price,
-                        "pnl_percent": round(pnl_percent, 2),
-                        "target_1_hit": target_1_hit,
-                        "target_2_hit": target_2_hit,
-                        "stop_hit": stop_hit,
+                        "outcome_price": ohlc_result.get("outcome_price", current_price),
+                        "pnl_percent": ohlc_result.get("pnl_percent", 0),
+                        "target_1_hit": ohlc_result.get("target_1_hit", False),
+                        "target_2_hit": ohlc_result.get("target_2_hit", False),
+                        "stop_hit": ohlc_result.get("stop_hit", False),
                         "price_at_check": current_price,
-                        "outcome_notes": outcome_notes
+                        "outcome_notes": ohlc_result.get("outcome_notes", ""),
+                        "candles_analyzed": ohlc_result.get("candles_analyzed", 0)
                     }}
                 )
                 updated_count += 1
@@ -8052,7 +8335,8 @@ async def check_signal_outcomes():
                     "signal_id": signal_id,
                     "direction": direction,
                     "outcome": outcome,
-                    "pnl_percent": round(pnl_percent, 2)
+                    "pnl_percent": ohlc_result.get("pnl_percent", 0),
+                    "method": "OHLC_ANALYSIS"
                 })
                 
                 # Send Telegram notification for outcome
@@ -8060,9 +8344,9 @@ async def check_signal_outcomes():
                     outcome_notification_data = {
                         "direction": direction,
                         "entry_price": entry_price,
-                        "exit_price": current_price,
-                        "pnl_percent": round(pnl_percent, 2),
-                        "outcome_notes": outcome_notes,
+                        "exit_price": ohlc_result.get("outcome_price", current_price),
+                        "pnl_percent": ohlc_result.get("pnl_percent", 0),
+                        "outcome_notes": ohlc_result.get("outcome_notes", ""),
                         "outcome": outcome
                     }
                     asyncio.create_task(notify_signal_outcome(outcome_notification_data))
@@ -8074,7 +8358,8 @@ async def check_signal_outcomes():
             "checked": len(pending_signals),
             "updated": updated_count,
             "current_price": current_price,
-            "results": results
+            "results": results,
+            "analysis_method": "OHLC_CANDLE_DATA"
         }
         
     except Exception as e:
@@ -8621,21 +8906,21 @@ app.add_middleware(
 
 async def background_check_outcomes():
     """
-    Background job to automatically check and update signal outcomes.
+    Background job to automatically check and update signal outcomes using OHLC data.
     This runs every hour via APScheduler.
     
-    Checks all PENDING signals and updates their status to:
-    - WIN: Target 2 reached
-    - PARTIAL_WIN: Target 1 reached (after validity expires)
-    - LOSS: Stop loss hit
-    - EXPIRED: Neither target nor stop hit within validity window
+    Uses analyze_ohlc_for_outcome() to check historical candle data and determine
+    if targets or stops were ever touched during the signal's validity window.
+    
+    This is more accurate than just checking current price because it catches
+    cases where price touched target/stop and then moved away.
     """
     global scheduler_status
     
     try:
-        logger.info("🔄 [SCHEDULER] Starting automatic outcome check...")
+        logger.info("🔄 [SCHEDULER] Starting automatic outcome check (OHLC method)...")
         
-        # Get current price
+        # Get current price for reference
         ticker = await fetch_kraken_ticker()
         current_price = ticker["price"] if ticker else 0
         
@@ -8667,120 +8952,77 @@ async def background_check_outcomes():
             target_1 = signal["target_1"]
             target_2 = signal["target_2"]
             validity_hours = signal.get("validity_hours", 24)
-            target_1_already_hit = signal.get("target_1_hit", False)
-            
-            # Ensure timezone-aware comparison
             signal_ts = signal["timestamp"]
-            if signal_ts.tzinfo is None:
-                signal_ts = signal_ts.replace(tzinfo=timezone.utc)
             
-            signal_age_hours = (now - signal_ts).total_seconds() / 3600
-            is_expired = signal_age_hours > validity_hours
+            # Use OHLC-based analysis for accurate outcome detection
+            ohlc_result = await analyze_ohlc_for_outcome(
+                signal_timestamp=signal_ts,
+                validity_hours=validity_hours,
+                direction=direction,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                entry_price=entry_price
+            )
             
-            outcome = None
-            outcome_notes = ""
-            pnl_percent = 0
-            target_1_hit = target_1_already_hit
-            target_2_hit = False
-            stop_hit = False
+            if ohlc_result is None:
+                logger.warning(f"   ⚠️ Could not analyze OHLC for signal {signal_id[:8]}...")
+                continue
             
-            if direction == "LONG":
-                if current_price <= stop_loss:
-                    outcome = "LOSS"
-                    stop_hit = True
-                    pnl_percent = ((stop_loss - entry_price) / entry_price) * 100
-                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
-                    
-                elif current_price >= target_2:
-                    outcome = "WIN"
-                    target_1_hit = True
-                    target_2_hit = True
-                    pnl_percent = ((target_2 - entry_price) / entry_price) * 100
-                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
-                    
-                elif current_price >= target_1:
-                    target_1_hit = True
-                    if is_expired:
-                        outcome = "PARTIAL_WIN"
-                        pnl_percent = ((target_1 - entry_price) / entry_price) * 100
-                        outcome_notes = "Target 1 reached, expired before T2"
-                    else:
-                        await signal_history_collection.update_one(
-                            {"signal_id": signal_id},
-                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
-                        )
-                        continue
-                        
-                elif is_expired:
-                    outcome = "EXPIRED"
-                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    outcome_notes = "Expired without hitting targets or stop"
-                    
-            elif direction == "SHORT":
-                if current_price >= stop_loss:
-                    outcome = "LOSS"
-                    stop_hit = True
-                    pnl_percent = ((entry_price - stop_loss) / entry_price) * 100
-                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
-                    
-                elif current_price <= target_2:
-                    outcome = "WIN"
-                    target_1_hit = True
-                    target_2_hit = True
-                    pnl_percent = ((entry_price - target_2) / entry_price) * 100
-                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
-                    
-                elif current_price <= target_1:
-                    target_1_hit = True
-                    if is_expired:
-                        outcome = "PARTIAL_WIN"
-                        pnl_percent = ((entry_price - target_1) / entry_price) * 100
-                        outcome_notes = "Target 1 reached, expired before T2"
-                    else:
-                        await signal_history_collection.update_one(
-                            {"signal_id": signal_id},
-                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
-                        )
-                        continue
-                        
-                elif is_expired:
-                    outcome = "EXPIRED"
-                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
-                    outcome_notes = "Expired without hitting targets or stop"
+            # Check if signal is still in progress
+            if ohlc_result.get("in_progress", False):
+                # Update target_1_hit if detected
+                if ohlc_result.get("target_1_hit", False):
+                    await signal_history_collection.update_one(
+                        {"signal_id": signal_id},
+                        {"$set": {
+                            "target_1_hit": True, 
+                            "price_at_check": current_price,
+                            "outcome_notes": ohlc_result.get("notes", "")
+                        }}
+                    )
+                    logger.info(f"   🎯 {direction} signal {signal_id[:8]}... - T1 hit, watching T2")
+                continue
             
-            # Update signal if outcome determined
+            # We have a definitive outcome
+            outcome = ohlc_result.get("outcome")
             if outcome:
                 await signal_history_collection.update_one(
                     {"signal_id": signal_id},
                     {"$set": {
                         "outcome": outcome,
                         "outcome_timestamp": now,
-                        "outcome_price": current_price,
-                        "pnl_percent": round(pnl_percent, 2),
-                        "target_1_hit": target_1_hit,
-                        "target_2_hit": target_2_hit,
-                        "stop_hit": stop_hit,
+                        "outcome_price": ohlc_result.get("outcome_price", current_price),
+                        "pnl_percent": ohlc_result.get("pnl_percent", 0),
+                        "target_1_hit": ohlc_result.get("target_1_hit", False),
+                        "target_2_hit": ohlc_result.get("target_2_hit", False),
+                        "stop_hit": ohlc_result.get("stop_hit", False),
                         "price_at_check": current_price,
-                        "outcome_notes": outcome_notes
+                        "outcome_notes": ohlc_result.get("outcome_notes", ""),
+                        "candles_analyzed": ohlc_result.get("candles_analyzed", 0)
                     }}
                 )
                 updated_count += 1
+                pnl = ohlc_result.get("pnl_percent", 0)
                 results.append({
                     "signal_id": signal_id,
                     "direction": direction,
                     "outcome": outcome,
-                    "pnl_percent": round(pnl_percent, 2)
+                    "pnl_percent": pnl
                 })
-                logger.info(f"   ✅ {direction} signal {signal_id[:8]}... -> {outcome} ({pnl_percent:+.2f}%)")
+                
+                # Log with appropriate emoji
+                emoji = "✅" if outcome == "WIN" else ("🟡" if outcome == "PARTIAL_WIN" else ("❌" if outcome == "LOSS" else "⏰"))
+                logger.info(f"   {emoji} {direction} signal {signal_id[:8]}... -> {outcome} ({pnl:+.2f}%)")
                 
                 # Send Telegram notification for outcome
                 try:
                     outcome_notification_data = {
                         "direction": direction,
                         "entry_price": entry_price,
-                        "exit_price": current_price,
-                        "pnl_percent": round(pnl_percent, 2),
-                        "outcome_notes": outcome_notes,
+                        "exit_price": ohlc_result.get("outcome_price", current_price),
+                        "pnl_percent": pnl,
+                        "outcome_notes": ohlc_result.get("outcome_notes", ""),
                         "outcome": outcome
                     }
                     asyncio.create_task(notify_signal_outcome(outcome_notification_data))
@@ -8794,12 +9036,13 @@ async def background_check_outcomes():
             "checked": len(pending_signals),
             "updated": updated_count,
             "current_price": current_price,
-            "results": results
+            "results": results,
+            "analysis_method": "OHLC_CANDLE_DATA"
         }
         scheduler_status["total_runs"] += 1
         scheduler_status["total_updates"] += updated_count
         
-        logger.info(f"✅ [SCHEDULER] Outcome check complete: {updated_count}/{len(pending_signals)} signals updated")
+        logger.info(f"✅ [SCHEDULER] Outcome check complete: {updated_count}/{len(pending_signals)} signals updated (OHLC method)")
         
     except Exception as e:
         logger.error(f"❌ [SCHEDULER] Error during outcome check: {e}")

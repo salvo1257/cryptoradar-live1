@@ -1,4 +1,4 @@
-# CryptoRadar v2.4 - Product Requirements Document
+# CryptoRadar v2.5 - Product Requirements Document
 **Last Updated:** 2025-12-14
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
@@ -6,10 +6,49 @@
 - Background Scheduler: Active (outcome check every 1 hour)
 - Dynamic Signal Timing: Active
 - Telegram Notifications: Available (user configurable)
+- Outcome Engine: OHLC-based (accurate historical analysis)
 
 ---
 
-## v2.4 TELEGRAM NOTIFICATIONS ✅ (NEW)
+## v2.5 OHLC-BASED OUTCOME ENGINE ✅ (CRITICAL FIX)
+
+**ACCURATE TRADE OUTCOME DETECTION USING HISTORICAL CANDLE DATA:**
+
+### Problem Fixed:
+The previous outcome engine only checked the **current price** to determine if targets/stops were hit. This caused:
+- All 31 signals to show as EXPIRED (0 WIN, 0 LOSS)
+- Missed cases where price touched target/stop and then moved away
+
+### New Implementation:
+Uses `analyze_ohlc_for_outcome()` function that:
+1. Fetches 1-hour OHLC candles from Kraken
+2. Filters candles within the signal's validity window
+3. Checks **candle HIGH** and **candle LOW** against targets/stops
+4. For LONG: HIGH >= target (win), LOW <= stop (loss)
+5. For SHORT: LOW <= target (win), HIGH >= stop (loss)
+
+### Results After Fix:
+| Outcome | Before | After |
+|---------|--------|-------|
+| WIN | 0 | 2 |
+| LOSS | 0 | 5 |
+| PARTIAL_WIN | 0 | 3 |
+| EXPIRED | 31 | 21 |
+
+### New API Endpoint:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/signal-history/recalculate-with-ohlc` | POST | Re-analyze EXPIRED signals using OHLC |
+
+### Technical Details:
+- Analysis method now returns `"analysis_method": "OHLC_CANDLE_DATA"`
+- Outcome notes include timestamp of when target/stop was hit
+- `candles_analyzed` field shows how many candles were checked
+- Both manual and scheduler checks use the new OHLC logic
+
+---
+
+## v2.4 TELEGRAM NOTIFICATIONS ✅
 
 **REAL-TIME TELEGRAM ALERTS FOR TRADING SIGNALS:**
 
