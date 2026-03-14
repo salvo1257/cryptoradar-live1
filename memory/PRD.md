@@ -1,14 +1,57 @@
-# CryptoRadar v2.1 - Product Requirements Document
+# CryptoRadar v2.2 - Product Requirements Document
 **Last Updated:** 2025-12-14
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
 - System Health Endpoint: `/api/system/health` - All APIs OK
+- Background Scheduler: Active (outcome check every 1 hour)
 - All core features operational
-- Dashboard fully functional
 
 ---
 
-## v2.1 SIGNAL OUTCOME TRACKING ✅ (NEW)
+## v2.2 AUTOMATIC OUTCOME TRACKING SCHEDULER ✅ (NEW)
+
+**AUTOMATIC BACKGROUND JOB FOR SIGNAL OUTCOME TRACKING:**
+
+### Implementation:
+- **Technology:** APScheduler (AsyncIOScheduler)
+- **Interval:** Every 1 hour
+- **Max Instances:** 1 (prevents overlapping runs)
+
+### Startup Behavior:
+1. Scheduler starts on backend startup
+2. Runs initial check immediately
+3. Then runs every hour automatically
+
+### Monitoring:
+- **`scheduler_status`** global variable tracks:
+  - `running`: Boolean
+  - `last_run`: ISO timestamp
+  - `last_result`: Check results
+  - `total_runs`: Cumulative count
+  - `total_updates`: Total signals updated
+
+### New API Endpoints:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/signal-history/scheduler-status` | GET | Get scheduler status and statistics |
+| `/api/signal-history/trigger-check` | POST | Manually trigger immediate outcome check |
+
+### Frontend Indicator:
+- **"AUTO" badge** in Performance Trading panel
+- Green = Active, with pulsing timer icon
+- Tooltip shows: Status, Interval, Runs, Updated, Next check time
+
+### Logs:
+```
+✅ Background Scheduler: Started (outcome check every 1 hour)
+🔄 [SCHEDULER] Starting automatic outcome check...
+📊 [SCHEDULER] Found X pending signals to check (BTC: $XX,XXX)
+✅ [SCHEDULER] Outcome check complete: Y/X signals updated
+```
+
+---
+
+## v2.1 SIGNAL OUTCOME TRACKING ✅
 
 **AUTOMATIC SIGNAL PERFORMANCE TRACKING:**
 
@@ -150,8 +193,7 @@ When Market Energy is HIGH + Liquidity Magnet is BALANCED + Whale Activity is NE
 
 ## P1 - Next Tasks
 1. **Telegram notification backend** - Send alerts when signals are generated
-2. **Background outcome checker** - Cron job to check outcomes every hour
-3. **Refactor server.py** - Extract BACKEND_TRANSLATIONS to JSON files
+2. **Refactor server.py** - Extract BACKEND_TRANSLATIONS to JSON files
 
 ## P2 - Future Tasks
 1. Real Pattern Detection Engine (ML-based)

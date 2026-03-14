@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Progress } from '../ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
 import { useApp } from '../../contexts/AppContext';
 
@@ -15,6 +16,7 @@ export function AlertHistoryPage() {
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
   const [performanceStats, setPerformanceStats] = useState(null);
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -64,6 +66,16 @@ export function AlertHistoryPage() {
     }
   }, []);
 
+  const fetchSchedulerStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/signal-history/scheduler-status`);
+      const data = await response.json();
+      setSchedulerStatus(data);
+    } catch (error) {
+      console.error('Error fetching scheduler status:', error);
+    }
+  }, []);
+
   const recordCurrentSignal = async () => {
     try {
       setRecording(true);
@@ -102,7 +114,12 @@ export function AlertHistoryPage() {
     fetchHistory();
     fetchStats();
     fetchPerformanceStats();
-  }, [fetchHistory, fetchStats, fetchPerformanceStats]);
+    fetchSchedulerStatus();
+    
+    // Refresh scheduler status every 5 minutes
+    const schedulerInterval = setInterval(fetchSchedulerStatus, 300000);
+    return () => clearInterval(schedulerInterval);
+  }, [fetchHistory, fetchStats, fetchPerformanceStats, fetchSchedulerStatus]);
 
   const getDirectionConfig = (direction) => {
     switch (direction) {
@@ -197,6 +214,56 @@ export function AlertHistoryPage() {
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-yellow-400" />
               <h2 className="font-heading font-semibold">{language === 'it' ? 'Performance Trading' : 'Trading Performance'}</h2>
+              {/* Scheduler Status Indicator */}
+              {schedulerStatus && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Badge 
+                        className={cn(
+                          "ml-2 text-[10px] flex items-center gap-1",
+                          schedulerStatus.running 
+                            ? "bg-bullish/20 text-bullish border-bullish/30" 
+                            : "bg-bearish/20 text-bearish border-bearish/30"
+                        )}
+                      >
+                        <Timer className={cn("w-3 h-3", schedulerStatus.running && "animate-pulse")} />
+                        AUTO
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-crypto-surface border-crypto-border max-w-xs">
+                      <div className="text-xs space-y-1">
+                        <div className="flex justify-between gap-4">
+                          <span className="text-zinc-400">{language === 'it' ? 'Stato' : 'Status'}:</span>
+                          <span className={schedulerStatus.running ? "text-bullish" : "text-bearish"}>
+                            {schedulerStatus.running ? (language === 'it' ? 'Attivo' : 'Active') : (language === 'it' ? 'Inattivo' : 'Inactive')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-zinc-400">{language === 'it' ? 'Intervallo' : 'Interval'}:</span>
+                          <span>{schedulerStatus.check_interval}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-zinc-400">{language === 'it' ? 'Esecuzioni' : 'Runs'}:</span>
+                          <span>{schedulerStatus.total_runs}</span>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <span className="text-zinc-400">{language === 'it' ? 'Aggiornati' : 'Updated'}:</span>
+                          <span>{schedulerStatus.total_updates}</span>
+                        </div>
+                        {schedulerStatus.next_run && (
+                          <div className="flex justify-between gap-4">
+                            <span className="text-zinc-400">{language === 'it' ? 'Prossimo check' : 'Next check'}:</span>
+                            <span className="font-mono text-[10px]">
+                              {new Date(schedulerStatus.next_run).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
             <Button variant="ghost" size="sm" onClick={() => setShowPerformance(false)}>
               <XCircle className="w-4 h-4" />

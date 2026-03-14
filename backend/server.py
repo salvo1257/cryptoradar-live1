@@ -13,6 +13,8 @@ from datetime import datetime, timezone, timedelta
 import httpx
 import asyncio
 import json
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -26,10 +28,21 @@ db = client[os.environ['DB_NAME']]
 signal_history_collection = db["signal_history"]
 
 # Create the main app
-app = FastAPI(title="CryptoRadar API", version="1.7.0")
+app = FastAPI(title="CryptoRadar API", version="2.1.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# ============== BACKGROUND SCHEDULER ==============
+# APScheduler for automatic outcome tracking
+scheduler = AsyncIOScheduler()
+scheduler_status = {
+    "running": False,
+    "last_run": None,
+    "last_result": None,
+    "total_runs": 0,
+    "total_updates": 0
+}
 
 # Configure logging
 logging.basicConfig(
@@ -7144,6 +7157,59 @@ async def check_signal_outcomes():
         return {"error": str(e), "updated": 0}
 
 
+@api_router.get("/signal-history/scheduler-status")
+async def get_scheduler_status():
+    """
+    Get the status of the automatic outcome checker scheduler.
+    
+    Returns:
+    - running: Whether the scheduler is active
+    - last_run: Timestamp of last execution
+    - last_result: Result of last execution
+    - total_runs: Total number of runs since startup
+    - total_updates: Total signals updated since startup
+    - next_run: Estimated time of next run
+    """
+    try:
+        next_run = None
+        if scheduler.running:
+            job = scheduler.get_job("outcome_checker")
+            if job and job.next_run_time:
+                next_run = job.next_run_time.isoformat()
+        
+        return {
+            "running": scheduler_status["running"],
+            "scheduler_active": scheduler.running if scheduler else False,
+            "last_run": scheduler_status["last_run"],
+            "last_result": scheduler_status["last_result"],
+            "total_runs": scheduler_status["total_runs"],
+            "total_updates": scheduler_status["total_updates"],
+            "next_run": next_run,
+            "check_interval": "1 hour"
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        return {"error": str(e), "running": False}
+
+
+@api_router.post("/signal-history/trigger-check")
+async def trigger_outcome_check():
+    """
+    Manually trigger an immediate outcome check.
+    Useful for testing or forcing an update without waiting for the next scheduled run.
+    """
+    try:
+        logger.info("📍 Manual outcome check triggered via API")
+        await background_check_outcomes()
+        return {
+            "triggered": True,
+            "result": scheduler_status["last_result"]
+        }
+    except Exception as e:
+        logger.error(f"Error triggering outcome check: {e}")
+        return {"error": str(e), "triggered": False}
+
+
 @api_router.get("/signal-history/statistics")
 async def get_signal_statistics():
     """
@@ -7625,11 +7691,188 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============== BACKGROUND OUTCOME CHECKER ==============
+
+async def background_check_outcomes():
+    """
+    Background job to automatically check and update signal outcomes.
+    This runs every hour via APScheduler.
+    
+    Checks all PENDING signals and updates their status to:
+    - WIN: Target 2 reached
+    - PARTIAL_WIN: Target 1 reached (after validity expires)
+    - LOSS: Stop loss hit
+    - EXPIRED: Neither target nor stop hit within validity window
+    """
+    global scheduler_status
+    
+    try:
+        logger.info("🔄 [SCHEDULER] Starting automatic outcome check...")
+        
+        # Get current price
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker["price"] if ticker else 0
+        
+        if current_price == 0:
+            logger.warning("⚠️ [SCHEDULER] Cannot fetch current price, skipping check")
+            scheduler_status["last_run"] = datetime.now(timezone.utc).isoformat()
+            scheduler_status["last_result"] = {"error": "Cannot fetch price", "updated": 0}
+            return
+        
+        # Fetch all PENDING signals
+        pending_signals = await signal_history_collection.find(
+            {"outcome": "PENDING"},
+            {"_id": 1, "signal_id": 1, "direction": 1, "btc_price": 1, 
+             "stop_loss": 1, "target_1": 1, "target_2": 1, 
+             "timestamp": 1, "validity_hours": 1, "target_1_hit": 1}
+        ).to_list(100)
+        
+        now = datetime.now(timezone.utc)
+        updated_count = 0
+        results = []
+        
+        logger.info(f"📊 [SCHEDULER] Found {len(pending_signals)} pending signals to check (BTC: ${current_price:,.0f})")
+        
+        for signal in pending_signals:
+            signal_id = signal["signal_id"]
+            direction = signal["direction"]
+            entry_price = signal["btc_price"]
+            stop_loss = signal["stop_loss"]
+            target_1 = signal["target_1"]
+            target_2 = signal["target_2"]
+            validity_hours = signal.get("validity_hours", 24)
+            target_1_already_hit = signal.get("target_1_hit", False)
+            
+            # Ensure timezone-aware comparison
+            signal_ts = signal["timestamp"]
+            if signal_ts.tzinfo is None:
+                signal_ts = signal_ts.replace(tzinfo=timezone.utc)
+            
+            signal_age_hours = (now - signal_ts).total_seconds() / 3600
+            is_expired = signal_age_hours > validity_hours
+            
+            outcome = None
+            outcome_notes = ""
+            pnl_percent = 0
+            target_1_hit = target_1_already_hit
+            target_2_hit = False
+            stop_hit = False
+            
+            if direction == "LONG":
+                if current_price <= stop_loss:
+                    outcome = "LOSS"
+                    stop_hit = True
+                    pnl_percent = ((stop_loss - entry_price) / entry_price) * 100
+                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
+                    
+                elif current_price >= target_2:
+                    outcome = "WIN"
+                    target_1_hit = True
+                    target_2_hit = True
+                    pnl_percent = ((target_2 - entry_price) / entry_price) * 100
+                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
+                    
+                elif current_price >= target_1:
+                    target_1_hit = True
+                    if is_expired:
+                        outcome = "PARTIAL_WIN"
+                        pnl_percent = ((target_1 - entry_price) / entry_price) * 100
+                        outcome_notes = f"Target 1 reached, expired before T2"
+                    else:
+                        await signal_history_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
+                        )
+                        continue
+                        
+                elif is_expired:
+                    outcome = "EXPIRED"
+                    pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                    outcome_notes = f"Expired without hitting targets or stop"
+                    
+            elif direction == "SHORT":
+                if current_price >= stop_loss:
+                    outcome = "LOSS"
+                    stop_hit = True
+                    pnl_percent = ((entry_price - stop_loss) / entry_price) * 100
+                    outcome_notes = f"Stop loss hit at ${current_price:,.0f}"
+                    
+                elif current_price <= target_2:
+                    outcome = "WIN"
+                    target_1_hit = True
+                    target_2_hit = True
+                    pnl_percent = ((entry_price - target_2) / entry_price) * 100
+                    outcome_notes = f"Target 2 reached at ${current_price:,.0f}"
+                    
+                elif current_price <= target_1:
+                    target_1_hit = True
+                    if is_expired:
+                        outcome = "PARTIAL_WIN"
+                        pnl_percent = ((entry_price - target_1) / entry_price) * 100
+                        outcome_notes = f"Target 1 reached, expired before T2"
+                    else:
+                        await signal_history_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {"target_1_hit": True, "price_at_check": current_price}}
+                        )
+                        continue
+                        
+                elif is_expired:
+                    outcome = "EXPIRED"
+                    pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                    outcome_notes = f"Expired without hitting targets or stop"
+            
+            # Update signal if outcome determined
+            if outcome:
+                await signal_history_collection.update_one(
+                    {"signal_id": signal_id},
+                    {"$set": {
+                        "outcome": outcome,
+                        "outcome_timestamp": now,
+                        "outcome_price": current_price,
+                        "pnl_percent": round(pnl_percent, 2),
+                        "target_1_hit": target_1_hit,
+                        "target_2_hit": target_2_hit,
+                        "stop_hit": stop_hit,
+                        "price_at_check": current_price,
+                        "outcome_notes": outcome_notes
+                    }}
+                )
+                updated_count += 1
+                results.append({
+                    "signal_id": signal_id,
+                    "direction": direction,
+                    "outcome": outcome,
+                    "pnl_percent": round(pnl_percent, 2)
+                })
+                logger.info(f"   ✅ {direction} signal {signal_id[:8]}... -> {outcome} ({pnl_percent:+.2f}%)")
+        
+        # Update scheduler status
+        scheduler_status["last_run"] = now.isoformat()
+        scheduler_status["last_result"] = {
+            "checked": len(pending_signals),
+            "updated": updated_count,
+            "current_price": current_price,
+            "results": results
+        }
+        scheduler_status["total_runs"] += 1
+        scheduler_status["total_updates"] += updated_count
+        
+        logger.info(f"✅ [SCHEDULER] Outcome check complete: {updated_count}/{len(pending_signals)} signals updated")
+        
+    except Exception as e:
+        logger.error(f"❌ [SCHEDULER] Error during outcome check: {e}")
+        scheduler_status["last_run"] = datetime.now(timezone.utc).isoformat()
+        scheduler_status["last_result"] = {"error": str(e), "updated": 0}
+
 @app.on_event("startup")
 async def startup_event():
-    """Verify critical connections on startup"""
+    """Verify critical connections on startup and start background scheduler"""
+    global scheduler_status
+    
     logger.info("=" * 50)
-    logger.info("CryptoRadar v1.7 - Starting up...")
+    logger.info("CryptoRadar v2.1 - Starting up...")
     logger.info("=" * 50)
     
     # Check MongoDB
@@ -7656,12 +7899,50 @@ async def startup_event():
     else:
         logger.warning("⚠️ CoinGlass: No API key - derivatives data limited")
     
+    # ============== START BACKGROUND SCHEDULER ==============
+    try:
+        # Add the outcome checking job - runs every hour
+        scheduler.add_job(
+            background_check_outcomes,
+            trigger=IntervalTrigger(hours=1),
+            id="outcome_checker",
+            name="Signal Outcome Checker",
+            replace_existing=True,
+            max_instances=1  # Prevent overlapping runs
+        )
+        
+        # Start the scheduler
+        scheduler.start()
+        scheduler_status["running"] = True
+        logger.info("✅ Background Scheduler: Started (outcome check every 1 hour)")
+        
+        # Run immediately on startup to catch up
+        asyncio.create_task(background_check_outcomes())
+        logger.info("✅ Initial outcome check scheduled")
+        
+    except Exception as e:
+        logger.error(f"❌ Background Scheduler: Failed to start - {e}")
+        scheduler_status["running"] = False
+    
     logger.info("=" * 50)
     logger.info("CryptoRadar startup complete!")
     logger.info("=" * 50)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    """Shutdown scheduler and close connections"""
+    global scheduler_status
+    
     logger.info("CryptoRadar shutting down...")
+    
+    # Stop the scheduler gracefully
+    try:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+            scheduler_status["running"] = False
+            logger.info("✅ Background Scheduler: Stopped")
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}")
+    
     client.close()
     logger.info("MongoDB connection closed")
