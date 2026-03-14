@@ -170,6 +170,48 @@ export function WhaleAlertCard({ compact = false }) {
             {/* Indicators */}
             {!compact && (
               <div className="grid grid-cols-2 gap-2">
+                {/* OI Divergence - NEW */}
+                {whaleData.oi_divergence && (
+                  <div className={cn(
+                    "col-span-2 flex items-center gap-2 p-2 rounded-sm text-xs",
+                    whaleData.oi_divergence.includes('long') ? 
+                      (whaleData.oi_divergence.includes('opening') ? "bg-bullish/10 text-bullish" : "bg-bearish/10 text-bearish") :
+                      (whaleData.oi_divergence.includes('closing') ? "bg-bullish/10 text-bullish" : "bg-bearish/10 text-bearish")
+                  )}>
+                    <Activity className="w-3 h-3" />
+                    <span>
+                      {t('oiDivergence')}: {t(whaleData.oi_divergence)}
+                      {whaleData.oi_divergence_strength > 0 && ` (${whaleData.oi_divergence_strength.toFixed(0)}%)`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Whale Behavior - NEW */}
+                {whaleData.whale_behavior && whaleData.whale_behavior !== 'unknown' && (
+                  <div className={cn(
+                    "col-span-2 flex items-center gap-2 p-2 rounded-sm text-xs",
+                    whaleData.whale_behavior === 'accumulating' || whaleData.whale_behavior === 'position_building' ? "bg-bullish/10 text-bullish" :
+                    whaleData.whale_behavior === 'distributing' || whaleData.whale_behavior === 'hunting_stops' ? "bg-bearish/10 text-bearish" :
+                    "bg-yellow-500/10 text-yellow-400"
+                  )}>
+                    <span className="text-base">🐋</span>
+                    <span>{t('whaleBehavior')}: {t(whaleData.whale_behavior)}</span>
+                  </div>
+                )}
+
+                {/* Absorption Pattern - NEW */}
+                {whaleData.absorption_detected && (
+                  <div className={cn(
+                    "flex items-center gap-2 p-2 rounded-sm text-xs",
+                    whaleData.accumulation_distribution === 'accumulation' ? "bg-bullish/10 text-bullish" : 
+                    whaleData.accumulation_distribution === 'distribution' ? "bg-bearish/10 text-bearish" : 
+                    "bg-yellow-500/10 text-yellow-400"
+                  )}>
+                    <Waves className="w-3 h-3" />
+                    <span>{t('absorption')}: {t(whaleData.accumulation_distribution || 'detected')}</span>
+                  </div>
+                )}
+
                 {/* Volume Spike */}
                 <div className={cn(
                   "flex items-center gap-2 p-2 rounded-sm text-xs",
@@ -203,6 +245,26 @@ export function WhaleAlertCard({ compact = false }) {
                     <span>
                       {whaleData.orderbook_aggression === 'aggressive_buying' ? t('aggressiveBuying') : t('aggressiveSelling')}
                     </span>
+                  </div>
+                )}
+
+                {/* Liquidation Zones - NEW */}
+                {whaleData.liquidation_zones && whaleData.liquidation_zones.length > 0 && (
+                  <div className="col-span-2 space-y-1">
+                    <div className="text-[10px] text-zinc-500 uppercase">{t('liquidationZones')}</div>
+                    {whaleData.liquidation_zones.slice(0, 2).map((zone, idx) => (
+                      <div key={idx} className={cn(
+                        "flex items-center justify-between p-2 rounded-sm text-xs",
+                        zone.distance_percent < 0 ? "bg-bearish/10" : "bg-bullish/10"
+                      )}>
+                        <span className={zone.distance_percent < 0 ? "text-bearish" : "text-bullish"}>
+                          ${zone.price?.toLocaleString()}
+                        </span>
+                        <span className="text-zinc-400">
+                          {zone.distance_percent > 0 ? '+' : ''}{zone.distance_percent?.toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

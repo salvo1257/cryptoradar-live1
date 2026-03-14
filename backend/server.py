@@ -134,6 +134,13 @@ class WhaleActivity(BaseModel):
     liquidation_bias: Optional[str] = None  # "longs_liquidated", "shorts_liquidated", or None
     orderbook_aggression: Optional[str] = None  # "aggressive_buying", "aggressive_selling", or None
     data_source: str = "Multi-Exchange Aggregated"
+    # NEW FIELDS v1.9.4
+    oi_divergence: Optional[str] = None  # "short_closing", "short_opening", "long_closing", "long_opening"
+    oi_divergence_strength: float = 0  # 0-100
+    accumulation_distribution: Optional[str] = None  # "accumulation", "distribution", "absorption"
+    absorption_detected: bool = False
+    liquidation_zones: List[dict] = []  # List of nearby liquidation targets
+    whale_behavior: str = "unknown"  # "accumulating", "distributing", "hunting_stops", "position_building"
 
 # ============== LIQUIDITY LADDER ==============
 
@@ -545,6 +552,45 @@ BACKEND_TRANSLATIONS = {
         # Whale Alerts
         "volume_spike_reason": "Picco di volume rilevato ({0:.1f}x media). Pressione istituzionale di {1} identificata.",
         "multi_exchange_imbalance": "Sbilanciamento multi-exchange: {0:.1f}%. {1}/{2} exchange mostrano pressione di {3}.",
+        
+        # Whale Activity Engine v2.0
+        "absorption_bullish": "Assorbimento rilevato: alto volume ({0:.1f}x) con candela a corpo piccolo. Vendite assorbite = accumulazione.",
+        "absorption_bearish": "Assorbimento rilevato: alto volume ({0:.1f}x) con candela a corpo piccolo. Acquisti assorbiti = distribuzione.",
+        "absorption_neutral": "Pattern di assorbimento rilevato: alto volume ({0:.1f}x) senza direzione chiara.",
+        "large_bullish_volume": "Volume rialzista elevato ({0:.1f}x media) - acquisto istituzionale.",
+        "large_bearish_volume": "Volume ribassista elevato ({0:.1f}x media) - vendita istituzionale.",
+        "oi_div_short_closing": "Divergenza OI: prezzo +{0:.1f}% con OI {1:.1f}% = chiusura di short.",
+        "oi_div_long_closing": "Divergenza OI: prezzo {0:.1f}% con OI {1:.1f}% = chiusura di long.",
+        "oi_div_long_opening": "Convergenza OI: prezzo +{0:.1f}% con OI +{1:.1f}% = apertura nuovi long.",
+        "oi_div_short_opening": "Convergenza OI: prezzo {0:.1f}% con OI +{1:.1f}% = apertura nuovi short.",
+        "heavy_buy_orderbook": "Order book pesante lato buy ({0:.1f}% sbilanciamento).",
+        "buy_orderbook_dominance": "Dominanza buy nell'order book ({0:.1f}%).",
+        "heavy_sell_orderbook": "Order book pesante lato sell ({0:.1f}% sbilanciamento).",
+        "sell_orderbook_dominance": "Dominanza sell nell'order book ({0:.1f}%).",
+        "bid_wall_detected": "{0} muri bid rilevati vicino a ${1:,.0f}.",
+        "ask_wall_detected": "{0} muri ask rilevati vicino a ${1:,.0f}.",
+        "heavy_long_liquidations": "Liquidazioni long massicce ({0:.0f}% del totale).",
+        "more_longs_liquidated_signal": "Più long che short liquidati.",
+        "heavy_short_liquidations": "Liquidazioni short massicce ({0:.0f}% del totale).",
+        "more_shorts_liquidated_signal": "Più short che long liquidati.",
+        "long_liq_zone_near": "Zona liquidazione long vicina a ${0:,.0f} ({1:.1f}% distanza) - possibile caccia stop.",
+        "short_liq_zone_near": "Zona liquidazione short vicina a ${0:,.0f} ({1:.1f}% distanza) - possibile caccia stop.",
+        "whale_accumulating": "Le balene stanno accumulando.",
+        "whale_distributing": "Le balene stanno distribuendo.",
+        "whale_hunting_stops": "Probabile caccia agli stop in corso.",
+        "whale_position_building": "Costruzione posizioni istituzionali in corso.",
+        "whale_position_closing": "Chiusura posizioni istituzionali in corso.",
+        "whale_absorbing": "Assorbimento ordini da parte di grandi player.",
+        "oi_context_short_closing": "Gli short stanno chiudendo posizioni - continuazione rialzista probabile.",
+        "oi_context_long_closing": "I long stanno chiudendo posizioni - continuazione ribassista probabile.",
+        "oi_context_long_opening": "Nuove posizioni long in apertura - forte pressione rialzista.",
+        "oi_context_short_opening": "Nuove posizioni short in apertura - forte pressione ribassista.",
+        "absorption_context_bullish": "Pattern di assorbimento rialzista - venditori vengono assorbiti.",
+        "absorption_context_bearish": "Pattern di assorbimento ribassista - compratori vengono assorbiti.",
+        "vol_ob_bullish": "Volume elevato con order book aggressivo lato buy - forte domanda.",
+        "vol_ob_bearish": "Volume elevato con order book aggressivo lato sell - forte offerta.",
+        "liq_context_bullish": "Short squeeze in corso - short liquidati forzatamente.",
+        "liq_context_bearish": "Cascata di liquidazioni long - pressione ribassista.",
     },
     "en": {
         # Market Bias
@@ -716,6 +762,45 @@ BACKEND_TRANSLATIONS = {
         # Whale Alerts
         "volume_spike_reason": "Volume spike detected ({0:.1f}x average). Institutional {1} pressure identified.",
         "multi_exchange_imbalance": "Multi-exchange imbalance: {0:.1f}%. {1}/{2} exchanges show {3} pressure.",
+        
+        # Whale Activity Engine v2.0
+        "absorption_bullish": "Absorption detected: high volume ({0:.1f}x) with small body candle. Selling absorbed = accumulation.",
+        "absorption_bearish": "Absorption detected: high volume ({0:.1f}x) with small body candle. Buying absorbed = distribution.",
+        "absorption_neutral": "Absorption pattern detected: high volume ({0:.1f}x) without clear direction.",
+        "large_bullish_volume": "Large bullish volume ({0:.1f}x average) - institutional buying.",
+        "large_bearish_volume": "Large bearish volume ({0:.1f}x average) - institutional selling.",
+        "oi_div_short_closing": "OI Divergence: price +{0:.1f}% with OI {1:.1f}% = shorts closing.",
+        "oi_div_long_closing": "OI Divergence: price {0:.1f}% with OI {1:.1f}% = longs closing.",
+        "oi_div_long_opening": "OI Convergence: price +{0:.1f}% with OI +{1:.1f}% = new longs opening.",
+        "oi_div_short_opening": "OI Convergence: price {0:.1f}% with OI +{1:.1f}% = new shorts opening.",
+        "heavy_buy_orderbook": "Heavy buy-side order book ({0:.1f}% imbalance).",
+        "buy_orderbook_dominance": "Buy-side order book dominance ({0:.1f}%).",
+        "heavy_sell_orderbook": "Heavy sell-side order book ({0:.1f}% imbalance).",
+        "sell_orderbook_dominance": "Sell-side order book dominance ({0:.1f}%).",
+        "bid_wall_detected": "{0} bid walls detected near ${1:,.0f}.",
+        "ask_wall_detected": "{0} ask walls detected near ${1:,.0f}.",
+        "heavy_long_liquidations": "Heavy long liquidations ({0:.0f}% of total).",
+        "more_longs_liquidated_signal": "More longs than shorts liquidated.",
+        "heavy_short_liquidations": "Heavy short liquidations ({0:.0f}% of total).",
+        "more_shorts_liquidated_signal": "More shorts than longs liquidated.",
+        "long_liq_zone_near": "Long liquidation zone near ${0:,.0f} ({1:.1f}% distance) - possible stop hunt.",
+        "short_liq_zone_near": "Short liquidation zone near ${0:,.0f} ({1:.1f}% distance) - possible stop hunt.",
+        "whale_accumulating": "Whales are accumulating.",
+        "whale_distributing": "Whales are distributing.",
+        "whale_hunting_stops": "Likely stop hunting in progress.",
+        "whale_position_building": "Institutional position building in progress.",
+        "whale_position_closing": "Institutional position closing in progress.",
+        "whale_absorbing": "Large players absorbing orders.",
+        "oi_context_short_closing": "Shorts closing positions - bullish continuation likely.",
+        "oi_context_long_closing": "Longs closing positions - bearish continuation likely.",
+        "oi_context_long_opening": "New long positions opening - strong bullish pressure.",
+        "oi_context_short_opening": "New short positions opening - strong bearish pressure.",
+        "absorption_context_bullish": "Bullish absorption pattern - sellers being absorbed.",
+        "absorption_context_bearish": "Bearish absorption pattern - buyers being absorbed.",
+        "vol_ob_bullish": "High volume with aggressive buy-side order book - strong demand.",
+        "vol_ob_bearish": "High volume with aggressive sell-side order book - strong supply.",
+        "liq_context_bullish": "Short squeeze in progress - shorts being forcibly liquidated.",
+        "liq_context_bearish": "Long liquidation cascade - bearish pressure.",
     },
     "de": {
         # Market Bias
@@ -887,6 +972,45 @@ BACKEND_TRANSLATIONS = {
         # Whale Alerts
         "volume_spike_reason": "Volumenspitze erkannt ({0:.1f}x Durchschnitt). Institutioneller {1}druck identifiziert.",
         "multi_exchange_imbalance": "Multi-Börsen-Ungleichgewicht: {0:.1f}%. {1}/{2} Börsen zeigen {3}druck.",
+        
+        # Whale Activity Engine v2.0
+        "absorption_bullish": "Absorption erkannt: hohes Volumen ({0:.1f}x) mit kleinem Kerzenkörper. Verkäufe absorbiert = Akkumulation.",
+        "absorption_bearish": "Absorption erkannt: hohes Volumen ({0:.1f}x) mit kleinem Kerzenkörper. Käufe absorbiert = Distribution.",
+        "absorption_neutral": "Absorptionsmuster erkannt: hohes Volumen ({0:.1f}x) ohne klare Richtung.",
+        "large_bullish_volume": "Großes bullisches Volumen ({0:.1f}x Durchschnitt) - institutioneller Kauf.",
+        "large_bearish_volume": "Großes bärisches Volumen ({0:.1f}x Durchschnitt) - institutioneller Verkauf.",
+        "oi_div_short_closing": "OI-Divergenz: Preis +{0:.1f}% mit OI {1:.1f}% = Shorts schließen.",
+        "oi_div_long_closing": "OI-Divergenz: Preis {0:.1f}% mit OI {1:.1f}% = Longs schließen.",
+        "oi_div_long_opening": "OI-Konvergenz: Preis +{0:.1f}% mit OI +{1:.1f}% = neue Longs öffnen.",
+        "oi_div_short_opening": "OI-Konvergenz: Preis {0:.1f}% mit OI +{1:.1f}% = neue Shorts öffnen.",
+        "heavy_buy_orderbook": "Starke Kaufseite im Orderbuch ({0:.1f}% Ungleichgewicht).",
+        "buy_orderbook_dominance": "Dominanz der Kaufseite im Orderbuch ({0:.1f}%).",
+        "heavy_sell_orderbook": "Starke Verkaufsseite im Orderbuch ({0:.1f}% Ungleichgewicht).",
+        "sell_orderbook_dominance": "Dominanz der Verkaufsseite im Orderbuch ({0:.1f}%).",
+        "bid_wall_detected": "{0} Bid-Wände erkannt nahe ${1:,.0f}.",
+        "ask_wall_detected": "{0} Ask-Wände erkannt nahe ${1:,.0f}.",
+        "heavy_long_liquidations": "Massive Long-Liquidationen ({0:.0f}% des Gesamten).",
+        "more_longs_liquidated_signal": "Mehr Longs als Shorts liquidiert.",
+        "heavy_short_liquidations": "Massive Short-Liquidationen ({0:.0f}% des Gesamten).",
+        "more_shorts_liquidated_signal": "Mehr Shorts als Longs liquidiert.",
+        "long_liq_zone_near": "Long-Liquidationszone nahe ${0:,.0f} ({1:.1f}% Entfernung) - mögliche Stop-Jagd.",
+        "short_liq_zone_near": "Short-Liquidationszone nahe ${0:,.0f} ({1:.1f}% Entfernung) - mögliche Stop-Jagd.",
+        "whale_accumulating": "Wale akkumulieren.",
+        "whale_distributing": "Wale verteilen.",
+        "whale_hunting_stops": "Wahrscheinlich Stop-Jagd im Gange.",
+        "whale_position_building": "Institutioneller Positionsaufbau läuft.",
+        "whale_position_closing": "Institutionelle Positionsschließung läuft.",
+        "whale_absorbing": "Große Spieler absorbieren Orders.",
+        "oi_context_short_closing": "Shorts schließen Positionen - bullische Fortsetzung wahrscheinlich.",
+        "oi_context_long_closing": "Longs schließen Positionen - bärische Fortsetzung wahrscheinlich.",
+        "oi_context_long_opening": "Neue Long-Positionen werden eröffnet - starker bullischer Druck.",
+        "oi_context_short_opening": "Neue Short-Positionen werden eröffnet - starker bärischer Druck.",
+        "absorption_context_bullish": "Bullisches Absorptionsmuster - Verkäufer werden absorbiert.",
+        "absorption_context_bearish": "Bärisches Absorptionsmuster - Käufer werden absorbiert.",
+        "vol_ob_bullish": "Hohes Volumen mit aggressiver Kaufseite - starke Nachfrage.",
+        "vol_ob_bearish": "Hohes Volumen mit aggressiver Verkaufsseite - starkes Angebot.",
+        "liq_context_bullish": "Short Squeeze läuft - Shorts werden zwangsliquidiert.",
+        "liq_context_bearish": "Long-Liquidationskaskade - bärischer Druck.",
     },
     "pl": {
         # Market Bias
@@ -1058,6 +1182,45 @@ BACKEND_TRANSLATIONS = {
         # Whale Alerts
         "volume_spike_reason": "Wykryto skok wolumenu ({0:.1f}x średnia). Zidentyfikowano instytucjonalną presję {1}.",
         "multi_exchange_imbalance": "Nierównowaga multi-giełdowa: {0:.1f}%. {1}/{2} giełd pokazuje presję {3}.",
+        
+        # Whale Activity Engine v2.0
+        "absorption_bullish": "Wykryto absorpcję: wysoki wolumen ({0:.1f}x) z małym korpusem świecy. Sprzedaże absorbowane = akumulacja.",
+        "absorption_bearish": "Wykryto absorpcję: wysoki wolumen ({0:.1f}x) z małym korpusem świecy. Kupna absorbowane = dystrybucja.",
+        "absorption_neutral": "Wykryto wzorzec absorpcji: wysoki wolumen ({0:.1f}x) bez wyraźnego kierunku.",
+        "large_bullish_volume": "Duży byczy wolumen ({0:.1f}x średniej) - instytucjonalne kupno.",
+        "large_bearish_volume": "Duży niedźwiedzi wolumen ({0:.1f}x średniej) - instytucjonalna sprzedaż.",
+        "oi_div_short_closing": "Dywergencja OI: cena +{0:.1f}% z OI {1:.1f}% = shorty zamykają.",
+        "oi_div_long_closing": "Dywergencja OI: cena {0:.1f}% z OI {1:.1f}% = longi zamykają.",
+        "oi_div_long_opening": "Konwergencja OI: cena +{0:.1f}% z OI +{1:.1f}% = nowe longi otwierają.",
+        "oi_div_short_opening": "Konwergencja OI: cena {0:.1f}% z OI +{1:.1f}% = nowe shorty otwierają.",
+        "heavy_buy_orderbook": "Ciężka strona kupna w orderbooku ({0:.1f}% nierównowaga).",
+        "buy_orderbook_dominance": "Dominacja strony kupna w orderbooku ({0:.1f}%).",
+        "heavy_sell_orderbook": "Ciężka strona sprzedaży w orderbooku ({0:.1f}% nierównowaga).",
+        "sell_orderbook_dominance": "Dominacja strony sprzedaży w orderbooku ({0:.1f}%).",
+        "bid_wall_detected": "{0} ścian bid wykrytych blisko ${1:,.0f}.",
+        "ask_wall_detected": "{0} ścian ask wykrytych blisko ${1:,.0f}.",
+        "heavy_long_liquidations": "Masywne likwidacje long ({0:.0f}% całości).",
+        "more_longs_liquidated_signal": "Więcej longów niż shortów zlikwidowanych.",
+        "heavy_short_liquidations": "Masywne likwidacje short ({0:.0f}% całości).",
+        "more_shorts_liquidated_signal": "Więcej shortów niż longów zlikwidowanych.",
+        "long_liq_zone_near": "Strefa likwidacji long blisko ${0:,.0f} ({1:.1f}% odległości) - możliwe polowanie na stopy.",
+        "short_liq_zone_near": "Strefa likwidacji short blisko ${0:,.0f} ({1:.1f}% odległości) - możliwe polowanie na stopy.",
+        "whale_accumulating": "Wieloryby akumulują.",
+        "whale_distributing": "Wieloryby dystrybuują.",
+        "whale_hunting_stops": "Prawdopodobnie polowanie na stopy w toku.",
+        "whale_position_building": "Instytucjonalne budowanie pozycji w toku.",
+        "whale_position_closing": "Instytucjonalne zamykanie pozycji w toku.",
+        "whale_absorbing": "Duzi gracze absorbują zlecenia.",
+        "oi_context_short_closing": "Shorty zamykają pozycje - bycza kontynuacja prawdopodobna.",
+        "oi_context_long_closing": "Longi zamykają pozycje - niedźwiedzia kontynuacja prawdopodobna.",
+        "oi_context_long_opening": "Nowe pozycje long otwierane - silna presja bycza.",
+        "oi_context_short_opening": "Nowe pozycje short otwierane - silna presja niedźwiedzia.",
+        "absorption_context_bullish": "Byczy wzorzec absorpcji - sprzedający są absorbowani.",
+        "absorption_context_bearish": "Niedźwiedzi wzorzec absorpcji - kupujący są absorbowani.",
+        "vol_ob_bullish": "Wysoki wolumen z agresywną stroną kupna - silny popyt.",
+        "vol_ob_bearish": "Wysoki wolumen z agresywną stroną sprzedaży - silna podaż.",
+        "liq_context_bullish": "Short squeeze w toku - shorty przymusowo likwidowane.",
+        "liq_context_bearish": "Kaskada likwidacji long - niedźwiedzia presja.",
     }
 }
 
@@ -2927,55 +3090,148 @@ def analyze_whale_activity(
     lang: str = "it"
 ) -> WhaleActivity:
     """
-    Whale Alert Engine - detects unusual large market activity.
+    Advanced Whale Alert Engine v2.0 - Professional large player behavior detection.
     
     Analyzes:
-    - Volume spikes vs average
-    - Order book buy/sell pressure imbalance
-    - CoinGlass liquidation data (long vs short liquidations)
-    - Aggressive buying/selling patterns
+    1. Volume spikes and absorption patterns
+    2. Order book buy/sell pressure imbalance
+    3. OI Divergence Analysis (price vs OI)
+    4. Accumulation/Distribution detection
+    5. Liquidation cluster targeting
+    6. Smart money behavior inference
     
-    Returns direction (BUY/SELL/NEUTRAL), strength score, and explanation.
+    Returns direction (BUY/SELL/NEUTRAL), strength score, and detailed explanation.
     """
     
     signals = []
     buy_pressure = 0
     sell_pressure = 0
     
-    # 1. VOLUME ANALYSIS
+    # Initialize new analysis fields
+    oi_divergence = None
+    oi_divergence_strength = 0
+    accumulation_distribution = None
+    absorption_detected = False
+    liquidation_zones = []
+    whale_behavior = "unknown"
+    
+    # ======== 1. VOLUME ANALYSIS WITH ABSORPTION DETECTION ========
     volume_spike = False
     volume_ratio = 1.0
+    price_volatility = 0
     
     if candles and len(candles) >= 20:
         recent_volumes = [c["volume"] for c in candles[-20:]]
         avg_volume = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 0
         current_volume = candles[-1]["volume"] if candles else 0
         
+        # Calculate price volatility for absorption detection
+        if len(candles) >= 5:
+            recent_ranges = [(c["high"] - c["low"]) / c["low"] * 100 for c in candles[-5:]]
+            price_volatility = sum(recent_ranges) / len(recent_ranges)
+        
         if avg_volume > 0:
             volume_ratio = current_volume / avg_volume
             
+            # High volume analysis
             if volume_ratio >= 2.5:
                 volume_spike = True
-                # Determine if bullish or bearish volume
-                if candles[-1]["close"] > candles[-1]["open"]:
-                    buy_pressure += 25
-                    signals.append(f"Large bullish volume ({volume_ratio:.1f}x average)")
+                candle = candles[-1]
+                is_bullish = candle["close"] > candle["open"]
+                body_size = abs(candle["close"] - candle["open"])
+                total_range = candle["high"] - candle["low"]
+                body_ratio = body_size / total_range if total_range > 0 else 0
+                
+                # ABSORPTION DETECTION: High volume + small body = orders being absorbed
+                if body_ratio < 0.3 and volume_ratio >= 2.0:
+                    absorption_detected = True
+                    # Determine absorption direction from wicks
+                    upper_wick = candle["high"] - max(candle["open"], candle["close"])
+                    lower_wick = min(candle["open"], candle["close"]) - candle["low"]
+                    
+                    if upper_wick > lower_wick * 2:
+                        # Long upper wick = selling absorbed, bullish
+                        buy_pressure += 25
+                        accumulation_distribution = "accumulation"
+                        signals.append(get_translation("absorption_bullish", lang, volume_ratio))
+                    elif lower_wick > upper_wick * 2:
+                        # Long lower wick = buying absorbed, bearish
+                        sell_pressure += 25
+                        accumulation_distribution = "distribution"
+                        signals.append(get_translation("absorption_bearish", lang, volume_ratio))
+                    else:
+                        signals.append(get_translation("absorption_neutral", lang, volume_ratio))
                 else:
-                    sell_pressure += 25
-                    signals.append(f"Large bearish volume ({volume_ratio:.1f}x average)")
+                    # Normal volume spike with direction
+                    if is_bullish:
+                        buy_pressure += 25
+                        signals.append(get_translation("large_bullish_volume", lang, volume_ratio))
+                    else:
+                        sell_pressure += 25
+                        signals.append(get_translation("large_bearish_volume", lang, volume_ratio))
+                        
             elif volume_ratio >= 1.5:
                 if candles[-1]["close"] > candles[-1]["open"]:
                     buy_pressure += 10
                 else:
                     sell_pressure += 10
     
-    # 2. ORDER BOOK PRESSURE ANALYSIS
+    # ======== 2. OI DIVERGENCE ANALYSIS ========
+    if open_interest_data and candles and len(candles) >= 5:
+        oi_change_1h = open_interest_data.get("change_1h", 0)
+        oi_change_24h = open_interest_data.get("change_24h", 0)
+        
+        # Calculate price change over same period
+        price_change_1h = 0
+        if len(candles) >= 4:
+            price_change_1h = (candles[-1]["close"] - candles[-4]["close"]) / candles[-4]["close"] * 100
+        
+        price_change_5c = (candles[-1]["close"] - candles[-5]["close"]) / candles[-5]["close"] * 100 if len(candles) >= 5 else 0
+        
+        # OI DIVERGENCE INTERPRETATION
+        # Price UP + OI DOWN = Short Closing (bullish continuation likely)
+        # Price DOWN + OI DOWN = Long Closing (bearish continuation likely)
+        # Price UP + OI UP = New Longs Opening (strong bullish)
+        # Price DOWN + OI UP = New Shorts Opening (strong bearish)
+        
+        oi_threshold = 0.3  # Minimum OI change to consider
+        price_threshold = 0.15  # Minimum price change to consider
+        
+        if abs(oi_change_1h) > oi_threshold and abs(price_change_1h) > price_threshold:
+            if price_change_1h > price_threshold and oi_change_1h < -oi_threshold:
+                # Price up + OI down = Short Closing
+                oi_divergence = "short_closing"
+                oi_divergence_strength = min(100, abs(price_change_1h) * 20 + abs(oi_change_1h) * 15)
+                buy_pressure += 20
+                signals.append(get_translation("oi_div_short_closing", lang, price_change_1h, oi_change_1h))
+                
+            elif price_change_1h < -price_threshold and oi_change_1h < -oi_threshold:
+                # Price down + OI down = Long Closing
+                oi_divergence = "long_closing"
+                oi_divergence_strength = min(100, abs(price_change_1h) * 20 + abs(oi_change_1h) * 15)
+                sell_pressure += 20
+                signals.append(get_translation("oi_div_long_closing", lang, price_change_1h, oi_change_1h))
+                
+            elif price_change_1h > price_threshold and oi_change_1h > oi_threshold:
+                # Price up + OI up = New Longs Opening
+                oi_divergence = "long_opening"
+                oi_divergence_strength = min(100, price_change_1h * 25 + oi_change_1h * 20)
+                buy_pressure += 30
+                signals.append(get_translation("oi_div_long_opening", lang, price_change_1h, oi_change_1h))
+                
+            elif price_change_1h < -price_threshold and oi_change_1h > oi_threshold:
+                # Price down + OI up = New Shorts Opening
+                oi_divergence = "short_opening"
+                oi_divergence_strength = min(100, abs(price_change_1h) * 25 + oi_change_1h * 20)
+                sell_pressure += 30
+                signals.append(get_translation("oi_div_short_opening", lang, price_change_1h, oi_change_1h))
+    
+    # ======== 3. ORDER BOOK PRESSURE ANALYSIS ========
     orderbook_aggression = None
     
     if aggregated_orderbook:
         bids = aggregated_orderbook.get("bids", [])
         asks = aggregated_orderbook.get("asks", [])
-        exchange_stats = aggregated_orderbook.get("exchange_stats", {})
         
         total_bid_depth = aggregated_orderbook.get("total_bid_depth", 0)
         total_ask_depth = aggregated_orderbook.get("total_ask_depth", 0)
@@ -2986,36 +3242,52 @@ def analyze_whale_activity(
             if ob_imbalance > 25:
                 buy_pressure += 30
                 orderbook_aggression = "aggressive_buying"
-                signals.append(f"Heavy buy-side order book ({ob_imbalance:.1f}% imbalance)")
+                signals.append(get_translation("heavy_buy_orderbook", lang, ob_imbalance))
             elif ob_imbalance > 15:
                 buy_pressure += 15
-                signals.append(f"Buy-side order book dominance ({ob_imbalance:.1f}%)")
+                signals.append(get_translation("buy_orderbook_dominance", lang, ob_imbalance))
             elif ob_imbalance < -25:
                 sell_pressure += 30
                 orderbook_aggression = "aggressive_selling"
-                signals.append(f"Heavy sell-side order book ({abs(ob_imbalance):.1f}% imbalance)")
+                signals.append(get_translation("heavy_sell_orderbook", lang, abs(ob_imbalance)))
             elif ob_imbalance < -15:
                 sell_pressure += 15
-                signals.append(f"Sell-side order book dominance ({abs(ob_imbalance):.1f}%)")
+                signals.append(get_translation("sell_orderbook_dominance", lang, abs(ob_imbalance)))
         
-        # Check for exchange-level whale activity (large walls)
+        # Detect large whale walls
         if bids:
             bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:30]]
             avg_bid = sum(v[1] for v in bid_volumes) / len(bid_volumes) if bid_volumes else 0
-            large_bid_walls = [v for v in bid_volumes if v[1] > avg_bid * 4]
+            large_bid_walls = [(price, vol) for price, vol in bid_volumes if vol > avg_bid * 4]
             if large_bid_walls:
                 buy_pressure += 10
-                signals.append(f"{len(large_bid_walls)} large bid walls detected")
+                wall_price = large_bid_walls[0][0]
+                wall_distance = ((current_price - wall_price) / current_price) * 100
+                signals.append(get_translation("bid_wall_detected", lang, len(large_bid_walls), wall_price))
+                liquidation_zones.append({
+                    "type": "bid_wall",
+                    "price": wall_price,
+                    "distance_percent": -wall_distance,
+                    "strength": "high"
+                })
         
         if asks:
             ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:30]]
             avg_ask = sum(v[1] for v in ask_volumes) / len(ask_volumes) if ask_volumes else 0
-            large_ask_walls = [v for v in ask_volumes if v[1] > avg_ask * 4]
+            large_ask_walls = [(price, vol) for price, vol in ask_volumes if vol > avg_ask * 4]
             if large_ask_walls:
                 sell_pressure += 10
-                signals.append(f"{len(large_ask_walls)} large ask walls detected")
+                wall_price = large_ask_walls[0][0]
+                wall_distance = ((wall_price - current_price) / current_price) * 100
+                signals.append(get_translation("ask_wall_detected", lang, len(large_ask_walls), wall_price))
+                liquidation_zones.append({
+                    "type": "ask_wall",
+                    "price": wall_price,
+                    "distance_percent": wall_distance,
+                    "strength": "high"
+                })
     
-    # 3. LIQUIDATION DATA ANALYSIS (CoinGlass)
+    # ======== 4. LIQUIDATION DATA ANALYSIS ========
     liquidation_bias = None
     
     if liquidation_data:
@@ -3027,84 +3299,124 @@ def analyze_whale_activity(
             long_ratio = long_liq_24h / total_liq
             short_ratio = short_liq_24h / total_liq
             
-            # Large long liquidations = bearish pressure / shorts winning
             if long_ratio > 0.65:
                 sell_pressure += 20
                 liquidation_bias = "longs_liquidated"
-                signals.append(f"Heavy long liquidations ({long_ratio*100:.0f}% of total)")
+                signals.append(get_translation("heavy_long_liquidations", lang, long_ratio * 100))
             elif long_ratio > 0.55:
                 sell_pressure += 10
-                signals.append(f"More longs than shorts liquidated")
-            
-            # Large short liquidations = bullish pressure / longs winning  
+                signals.append(get_translation("more_longs_liquidated_signal", lang))
             elif short_ratio > 0.65:
                 buy_pressure += 20
                 liquidation_bias = "shorts_liquidated"
-                signals.append(f"Heavy short liquidations ({short_ratio*100:.0f}% of total)")
+                signals.append(get_translation("heavy_short_liquidations", lang, short_ratio * 100))
             elif short_ratio > 0.55:
                 buy_pressure += 10
-                signals.append(f"More shorts than longs liquidated")
-    
-    # 4. OPEN INTEREST MOMENTUM
-    if open_interest_data:
-        oi_change_1h = open_interest_data.get("change_1h", 0)
-        oi_change_24h = open_interest_data.get("change_24h", 0)
+                signals.append(get_translation("more_shorts_liquidated_signal", lang))
         
-        # Rising OI with price going up = new longs entering (bullish)
-        # Rising OI with price going down = new shorts entering (bearish)
-        if candles and len(candles) >= 2:
-            price_change = (candles[-1]["close"] - candles[-2]["close"]) / candles[-2]["close"] * 100
+        # LIQUIDATION CLUSTER TARGETING
+        # Identify where major liquidation zones are based on recent liquidation data
+        if candles and len(candles) >= 10:
+            recent_high = max(c["high"] for c in candles[-10:])
+            recent_low = min(c["low"] for c in candles[-10:])
             
-            if oi_change_1h > 0.5 and price_change > 0.2:
-                buy_pressure += 15
-                signals.append("Rising OI with bullish price (new longs)")
-            elif oi_change_1h > 0.5 and price_change < -0.2:
-                sell_pressure += 15
-                signals.append("Rising OI with bearish price (new shorts)")
+            # Estimate liquidation clusters based on typical leverage
+            # Long liquidations cluster below recent lows
+            # Short liquidations cluster above recent highs
+            long_liq_zone = recent_low * 0.98  # -2% below recent low
+            short_liq_zone = recent_high * 1.02  # +2% above recent high
+            
+            long_liq_distance = ((current_price - long_liq_zone) / current_price) * 100
+            short_liq_distance = ((short_liq_zone - current_price) / current_price) * 100
+            
+            # Determine which zone is more attractive to hunt
+            if long_liq_distance < short_liq_distance and long_liq_distance < 3:
+                # Long liquidation zone is closer - price may hunt it
+                liquidation_zones.append({
+                    "type": "long_liquidation_cluster",
+                    "price": round(long_liq_zone, 0),
+                    "distance_percent": round(-long_liq_distance, 2),
+                    "strength": "major",
+                    "target_type": "stop_hunt"
+                })
+                if long_liq_distance < 1.5:
+                    signals.append(get_translation("long_liq_zone_near", lang, long_liq_zone, long_liq_distance))
+                    
+            if short_liq_distance < long_liq_distance and short_liq_distance < 3:
+                # Short liquidation zone is closer - price may hunt it
+                liquidation_zones.append({
+                    "type": "short_liquidation_cluster",
+                    "price": round(short_liq_zone, 0),
+                    "distance_percent": round(short_liq_distance, 2),
+                    "strength": "major",
+                    "target_type": "stop_hunt"
+                })
+                if short_liq_distance < 1.5:
+                    signals.append(get_translation("short_liq_zone_near", lang, short_liq_zone, short_liq_distance))
     
-    # CALCULATE FINAL WHALE DIRECTION
+    # ======== 5. DETERMINE WHALE BEHAVIOR ========
+    # Infer what large players are doing based on combined signals
+    
+    if absorption_detected:
+        if accumulation_distribution == "accumulation":
+            whale_behavior = "accumulating"
+        elif accumulation_distribution == "distribution":
+            whale_behavior = "distributing"
+        else:
+            whale_behavior = "absorbing"
+    elif oi_divergence in ["long_opening", "short_opening"]:
+        whale_behavior = "position_building"
+    elif oi_divergence in ["long_closing", "short_closing"]:
+        whale_behavior = "position_closing"
+    elif liquidation_zones and any(z.get("target_type") == "stop_hunt" for z in liquidation_zones):
+        whale_behavior = "hunting_stops"
+    elif buy_pressure > sell_pressure + 30:
+        whale_behavior = "accumulating"
+    elif sell_pressure > buy_pressure + 30:
+        whale_behavior = "distributing"
+    
+    # ======== 6. CALCULATE FINAL DIRECTION ========
     total_pressure = buy_pressure + sell_pressure
     strength = min(100, total_pressure)
     
-    if buy_pressure > sell_pressure + 20:
-        direction = "BUY"
-        net_pressure = buy_pressure - sell_pressure
-        confidence = min(95, 50 + net_pressure)
-    elif sell_pressure > buy_pressure + 20:
-        direction = "SELL"
-        net_pressure = sell_pressure - buy_pressure
-        confidence = min(95, 50 + net_pressure)
-    else:
-        direction = "NEUTRAL"
-        confidence = max(30, 50 - abs(buy_pressure - sell_pressure))
+    # More nuanced direction calculation - reduce NEUTRAL tendency
+    pressure_diff = buy_pressure - sell_pressure
     
-    # BUILD EXPLANATION
-    if direction == "BUY":
-        if volume_spike and orderbook_aggression == "aggressive_buying":
-            explanation = get_translation("large_buy_pressure", lang)
-        elif liquidation_bias == "shorts_liquidated":
-            explanation = get_translation("whale_buying_squeeze", lang)
-        elif signals:
-            explanation = get_translation("buy_pressure_detected", lang, signals[0])
-        else:
-            explanation = get_translation("moderate_whale_buying", lang)
-    elif direction == "SELL":
-        if volume_spike and orderbook_aggression == "aggressive_selling":
-            explanation = get_translation("large_sell_pressure", lang)
-        elif liquidation_bias == "longs_liquidated":
-            explanation = get_translation("whale_selling_cascade", lang)
-        elif signals:
-            explanation = get_translation("sell_pressure_detected", lang, signals[0])
-        else:
-            explanation = get_translation("moderate_whale_selling", lang)
+    if pressure_diff > 15:  # Lowered from 20
+        direction = "BUY"
+        confidence = min(95, 50 + pressure_diff * 0.8)
+    elif pressure_diff < -15:  # Lowered from 20
+        direction = "SELL"
+        confidence = min(95, 50 + abs(pressure_diff) * 0.8)
     else:
-        explanation = get_translation("no_whale_bias", lang)
+        # Even in "neutral" range, lean toward the stronger side
+        if buy_pressure > sell_pressure:
+            direction = "BUY"
+            confidence = max(40, 50 + pressure_diff)
+        elif sell_pressure > buy_pressure:
+            direction = "SELL"
+            confidence = max(40, 50 + abs(pressure_diff))
+        else:
+            direction = "NEUTRAL"
+            confidence = 50
+    
+    # Boost confidence if multiple strong signals align
+    strong_signal_count = sum(1 for s in signals if any(word in s.lower() for word in ["heavy", "large", "major", "forte", "grande", "massiccio"]))
+    if strong_signal_count >= 2:
+        confidence = min(95, confidence + 10)
+    
+    # ======== 7. BUILD COMPREHENSIVE EXPLANATION ========
+    explanation = _build_whale_explanation(
+        direction, whale_behavior, oi_divergence, oi_divergence_strength,
+        accumulation_distribution, absorption_detected, liquidation_bias,
+        volume_spike, orderbook_aggression, signals, lang
+    )
     
     return WhaleActivity(
         direction=direction,
         strength=round(strength, 1),
         confidence=round(confidence, 1),
-        signals=signals,
+        signals=signals[:6],  # Limit to 6 most important signals
         explanation=explanation,
         volume_spike=volume_spike,
         volume_ratio=round(volume_ratio, 2),
@@ -3112,8 +3424,80 @@ def analyze_whale_activity(
         sell_pressure=round(sell_pressure, 1),
         liquidation_bias=liquidation_bias,
         orderbook_aggression=orderbook_aggression,
+        oi_divergence=oi_divergence,
+        oi_divergence_strength=round(oi_divergence_strength, 1),
+        accumulation_distribution=accumulation_distribution,
+        absorption_detected=absorption_detected,
+        liquidation_zones=liquidation_zones[:3],  # Limit to 3 nearest zones
+        whale_behavior=whale_behavior,
         data_source="Multi-Exchange + CoinGlass"
     )
+
+
+def _build_whale_explanation(
+    direction: str, whale_behavior: str, oi_divergence: str, oi_div_strength: float,
+    accum_dist: str, absorption: bool, liq_bias: str,
+    vol_spike: bool, ob_aggression: str, signals: List[str], lang: str
+) -> str:
+    """Build a comprehensive explanation of whale activity."""
+    
+    parts = []
+    
+    # Primary behavior explanation
+    if whale_behavior == "accumulating":
+        parts.append(get_translation("whale_accumulating", lang))
+    elif whale_behavior == "distributing":
+        parts.append(get_translation("whale_distributing", lang))
+    elif whale_behavior == "hunting_stops":
+        parts.append(get_translation("whale_hunting_stops", lang))
+    elif whale_behavior == "position_building":
+        parts.append(get_translation("whale_position_building", lang))
+    elif whale_behavior == "position_closing":
+        parts.append(get_translation("whale_position_closing", lang))
+    elif whale_behavior == "absorbing":
+        parts.append(get_translation("whale_absorbing", lang))
+    
+    # OI Divergence context
+    if oi_divergence and oi_div_strength > 40:
+        if oi_divergence == "short_closing":
+            parts.append(get_translation("oi_context_short_closing", lang))
+        elif oi_divergence == "long_closing":
+            parts.append(get_translation("oi_context_long_closing", lang))
+        elif oi_divergence == "long_opening":
+            parts.append(get_translation("oi_context_long_opening", lang))
+        elif oi_divergence == "short_opening":
+            parts.append(get_translation("oi_context_short_opening", lang))
+    
+    # Absorption context
+    if absorption:
+        if accum_dist == "accumulation":
+            parts.append(get_translation("absorption_context_bullish", lang))
+        elif accum_dist == "distribution":
+            parts.append(get_translation("absorption_context_bearish", lang))
+    
+    # Volume and orderbook context
+    if vol_spike and ob_aggression:
+        if ob_aggression == "aggressive_buying":
+            parts.append(get_translation("vol_ob_bullish", lang))
+        else:
+            parts.append(get_translation("vol_ob_bearish", lang))
+    
+    # Liquidation context
+    if liq_bias:
+        if liq_bias == "shorts_liquidated":
+            parts.append(get_translation("liq_context_bullish", lang))
+        else:
+            parts.append(get_translation("liq_context_bearish", lang))
+    
+    # Build final explanation
+    if parts:
+        return " ".join(parts)
+    elif direction == "BUY":
+        return get_translation("moderate_whale_buying", lang)
+    elif direction == "SELL":
+        return get_translation("moderate_whale_selling", lang)
+    else:
+        return get_translation("no_whale_bias", lang)
 
 # ============== LIQUIDITY LADDER ==============
 

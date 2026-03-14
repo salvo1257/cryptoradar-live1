@@ -1,4 +1,4 @@
-# CryptoRadar v1.9.3 - Product Requirements Document
+# CryptoRadar v1.9.4 - Product Requirements Document
 **Last Updated:** 2025-12-14
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
@@ -8,37 +8,46 @@
 - All 6 PDF manuals downloadable
 - Dashboard fully operational
 
-## v1.9.3 COMPLETE Multilingual System ✅ (ALL CARDS)
-**Backend Localization COMPLETE:**
+## v1.9.4 ENHANCED Whale Activity Engine v2.0 ✅
+
+**NEW ANALYSIS FEATURES:**
+1. **OI Divergence Analysis**
+   - Price UP + OI DOWN = Short Closing (bullish continuation)
+   - Price DOWN + OI UP = Short Opening (bearish pressure)
+   - Price UP + OI UP = Long Opening (strong bullish)
+   - Price DOWN + OI DOWN = Long Closing (bearish continuation)
+
+2. **Accumulation/Distribution Detection**
+   - High volume + small candle body = Absorption pattern
+   - Long upper wick = Selling absorbed (bullish accumulation)
+   - Long lower wick = Buying absorbed (bearish distribution)
+
+3. **Liquidation Cluster Targeting**
+   - Identifies major liquidation zones above and below price
+   - Estimates stop-hunt targets based on recent high/low levels
+   - Alerts when price approaches liquidation clusters
+
+4. **Smart Whale Behavior Inference**
+   - "accumulating", "distributing", "hunting_stops"
+   - "position_building", "position_closing", "absorbing"
+
+**NEW MODEL FIELDS:**
+- `oi_divergence`: short_closing, short_opening, long_closing, long_opening
+- `oi_divergence_strength`: 0-100 score
+- `accumulation_distribution`: accumulation, distribution, absorption
+- `absorption_detected`: boolean
+- `liquidation_zones`: List of nearby liquidation targets
+- `whale_behavior`: Inferred large player behavior
+
+**REDUCED NEUTRAL TENDENCY:**
+- Lowered threshold from 20 to 15 pressure points
+- Leans toward stronger side even in neutral range
+- More actionable signals instead of "no clear bias"
+
+## v1.9.3 COMPLETE Multilingual System ✅
 - All API endpoints accept `?lang=it|en|de|pl` parameter
-- All explanatory text translated in all 4 languages
-- Localized Backend Functions:
-  - `generate_trade_signal()` - All reasoning text
-  - `generate_open_interest()` - Signal descriptions
-  - `generate_funding_rate()` - Signal text
-  - `calculate_market_bias()` - Analysis text
-  - `analyze_whale_activity()` - Explanation
-  - `build_liquidity_ladder()` - Path analysis
-  - `generate_liquidity_clusters_enhanced()` - Cluster explanations + direction
-  - `generate_whale_alerts_enhanced()` - Alert reasons
-
-**Frontend Localization COMPLETE:**
-- Language change triggers data refresh via useEffect
-- `fetchAnalysisData` has `language` dependency
-- ALL cards fully localized:
-  - Trade Signal Card ✅
-  - Market Bias Card ✅
-  - Open Interest Card ✅
-  - Funding Rate Card ✅
-  - Liquidity Direction Card ✅
-  - Liquidity Ladder ✅
-  - Whale Activity Card ✅
-  - Whale Activity Engine (in Trade Signal) ✅
-  - Support & Resistance ✅
-
-**Translation Files:**
-- Backend: `BACKEND_TRANSLATIONS` dict in server.py (100+ keys per language)
-- Frontend: `/app/frontend/src/translations.js` (200+ keys per language)
+- ALL cards fully localized (Trade Signal, Market Bias, OI, Funding, Liquidity, Whale Activity)
+- Language change triggers automatic data refresh
 
 ## v1.9 Multilingual UI System
 - **Supported Languages**: Italian (default), English, German, Polish
