@@ -476,9 +476,537 @@ class Settings(BaseModel):
     notify_candlesticks: bool = True
     notify_price_alerts: bool = True
     notify_sr_breaks: bool = True
+    # NEW: Signal-specific Telegram notifications
+    notify_operational_signals: bool = True  # When signal becomes OPERATIONAL
+    notify_signal_invalidations: bool = True  # When signal is invalidated
+    notify_signal_outcomes: bool = True  # WIN/LOSS/PARTIAL_WIN/EXPIRED
 
 class TelegramMessage(BaseModel):
     message: str
+
+# ============== TELEGRAM NOTIFICATION SYSTEM ==============
+
+# Telegram notification templates (multilingual)
+TELEGRAM_TEMPLATES = {
+    "operational_signal": {
+        "en": """🚀 <b>NEW OPERATIONAL SIGNAL</b>
+
+📈 Direction: <b>{direction}</b>
+💰 BTC Price: ${btc_price:,.0f}
+🎯 Confidence: {confidence:.0f}%
+
+📍 Entry Zone: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f}
+🎯 Target 1: ${target_1:,.0f}
+🎯 Target 2: ${target_2:,.0f}
+
+⚖️ Risk/Reward: {rr:.1f}:1
+⏰ Urgency: {urgency}
+📊 Valid for: {valid_for} min
+
+⚡ Setup: {setup_type}
+{reasoning}
+
+#CryptoRadar #BTC #{direction}""",
+        
+        "it": """🚀 <b>NUOVO SEGNALE OPERATIVO</b>
+
+📈 Direzione: <b>{direction}</b>
+💰 Prezzo BTC: ${btc_price:,.0f}
+🎯 Confidenza: {confidence:.0f}%
+
+📍 Zona Entrata: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f}
+🎯 Target 1: ${target_1:,.0f}
+🎯 Target 2: ${target_2:,.0f}
+
+⚖️ Rischio/Rendimento: {rr:.1f}:1
+⏰ Urgenza: {urgency}
+📊 Valido per: {valid_for} min
+
+⚡ Setup: {setup_type}
+{reasoning}
+
+#CryptoRadar #BTC #{direction}""",
+        
+        "de": """🚀 <b>NEUES OPERATIVES SIGNAL</b>
+
+📈 Richtung: <b>{direction}</b>
+💰 BTC Preis: ${btc_price:,.0f}
+🎯 Konfidenz: {confidence:.0f}%
+
+📍 Einstiegszone: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f}
+🎯 Ziel 1: ${target_1:,.0f}
+🎯 Ziel 2: ${target_2:,.0f}
+
+⚖️ Risiko/Ertrag: {rr:.1f}:1
+⏰ Dringlichkeit: {urgency}
+📊 Gültig für: {valid_for} Min
+
+⚡ Setup: {setup_type}
+{reasoning}
+
+#CryptoRadar #BTC #{direction}""",
+
+        "pl": """🚀 <b>NOWY SYGNAŁ OPERACYJNY</b>
+
+📈 Kierunek: <b>{direction}</b>
+💰 Cena BTC: ${btc_price:,.0f}
+🎯 Pewność: {confidence:.0f}%
+
+📍 Strefa Wejścia: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f}
+🎯 Cel 1: ${target_1:,.0f}
+🎯 Cel 2: ${target_2:,.0f}
+
+⚖️ Ryzyko/Zysk: {rr:.1f}:1
+⏰ Pilność: {urgency}
+📊 Ważny przez: {valid_for} min
+
+⚡ Setup: {setup_type}
+{reasoning}
+
+#CryptoRadar #BTC #{direction}"""
+    },
+    
+    "signal_invalidation": {
+        "en": """⚠️ <b>SIGNAL INVALIDATED</b>
+
+❌ Direction: {direction}
+💰 Entry was: ${entry_price:,.0f}
+📍 Current price: ${current_price:,.0f}
+
+Reason: {reason}
+
+The signal is no longer valid.
+#CryptoRadar #Invalidated""",
+        
+        "it": """⚠️ <b>SEGNALE INVALIDATO</b>
+
+❌ Direzione: {direction}
+💰 Entrata era: ${entry_price:,.0f}
+📍 Prezzo attuale: ${current_price:,.0f}
+
+Motivo: {reason}
+
+Il segnale non è più valido.
+#CryptoRadar #Invalidato""",
+        
+        "de": """⚠️ <b>SIGNAL UNGÜLTIG</b>
+
+❌ Richtung: {direction}
+💰 Einstieg war: ${entry_price:,.0f}
+📍 Aktueller Preis: ${current_price:,.0f}
+
+Grund: {reason}
+
+Das Signal ist nicht mehr gültig.
+#CryptoRadar #Ungültig""",
+        
+        "pl": """⚠️ <b>SYGNAŁ UNIEWAŻNIONY</b>
+
+❌ Kierunek: {direction}
+💰 Wejście było: ${entry_price:,.0f}
+📍 Aktualna cena: ${current_price:,.0f}
+
+Powód: {reason}
+
+Sygnał nie jest już ważny.
+#CryptoRadar #Unieważniony"""
+    },
+    
+    "outcome_win": {
+        "en": """🎉 <b>TRADE OUTCOME: WIN!</b>
+
+✅ Direction: {direction}
+💰 Entry: ${entry_price:,.0f}
+📍 Exit: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Excellent trade! Target 2 reached.
+#CryptoRadar #WIN #BTC""",
+        
+        "it": """🎉 <b>ESITO TRADE: VITTORIA!</b>
+
+✅ Direzione: {direction}
+💰 Entrata: ${entry_price:,.0f}
+📍 Uscita: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Trade eccellente! Target 2 raggiunto.
+#CryptoRadar #WIN #BTC""",
+        
+        "de": """🎉 <b>TRADE ERGEBNIS: GEWINN!</b>
+
+✅ Richtung: {direction}
+💰 Einstieg: ${entry_price:,.0f}
+📍 Ausstieg: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Ausgezeichneter Trade! Ziel 2 erreicht.
+#CryptoRadar #WIN #BTC""",
+        
+        "pl": """🎉 <b>WYNIK TRADE: WYGRANA!</b>
+
+✅ Kierunek: {direction}
+💰 Wejście: ${entry_price:,.0f}
+📍 Wyjście: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Doskonały trade! Cel 2 osiągnięty.
+#CryptoRadar #WIN #BTC"""
+    },
+    
+    "outcome_partial_win": {
+        "en": """✨ <b>TRADE OUTCOME: PARTIAL WIN</b>
+
+🟡 Direction: {direction}
+💰 Entry: ${entry_price:,.0f}
+📍 Exit: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Target 1 reached, T2 not hit before expiry.
+#CryptoRadar #PartialWin #BTC""",
+        
+        "it": """✨ <b>ESITO TRADE: VITTORIA PARZIALE</b>
+
+🟡 Direzione: {direction}
+💰 Entrata: ${entry_price:,.0f}
+📍 Uscita: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Target 1 raggiunto, T2 non colpito prima della scadenza.
+#CryptoRadar #VittoriaParziale #BTC""",
+        
+        "de": """✨ <b>TRADE ERGEBNIS: TEILGEWINN</b>
+
+🟡 Richtung: {direction}
+💰 Einstieg: ${entry_price:,.0f}
+📍 Ausstieg: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Ziel 1 erreicht, Z2 vor Ablauf nicht erreicht.
+#CryptoRadar #Teilgewinn #BTC""",
+        
+        "pl": """✨ <b>WYNIK TRADE: CZĘŚCIOWA WYGRANA</b>
+
+🟡 Kierunek: {direction}
+💰 Wejście: ${entry_price:,.0f}
+📍 Wyjście: ${exit_price:,.0f}
+📈 P&L: <b>+{pnl:.2f}%</b>
+
+{notes}
+
+Cel 1 osiągnięty, C2 nie trafiony przed wygaśnięciem.
+#CryptoRadar #CzęściowaWygrana #BTC"""
+    },
+    
+    "outcome_loss": {
+        "en": """❌ <b>TRADE OUTCOME: LOSS</b>
+
+🔴 Direction: {direction}
+💰 Entry: ${entry_price:,.0f}
+📍 Exit: ${exit_price:,.0f}
+📉 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Stop loss hit. Risk managed correctly.
+#CryptoRadar #LOSS #BTC""",
+        
+        "it": """❌ <b>ESITO TRADE: PERDITA</b>
+
+🔴 Direzione: {direction}
+💰 Entrata: ${entry_price:,.0f}
+📍 Uscita: ${exit_price:,.0f}
+📉 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Stop loss colpito. Rischio gestito correttamente.
+#CryptoRadar #PERDITA #BTC""",
+        
+        "de": """❌ <b>TRADE ERGEBNIS: VERLUST</b>
+
+🔴 Richtung: {direction}
+💰 Einstieg: ${entry_price:,.0f}
+📍 Ausstieg: ${exit_price:,.0f}
+📉 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Stop Loss erreicht. Risiko korrekt verwaltet.
+#CryptoRadar #VERLUST #BTC""",
+        
+        "pl": """❌ <b>WYNIK TRADE: STRATA</b>
+
+🔴 Kierunek: {direction}
+💰 Wejście: ${entry_price:,.0f}
+📍 Wyjście: ${exit_price:,.0f}
+📉 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Stop loss trafiony. Ryzyko zarządzane prawidłowo.
+#CryptoRadar #STRATA #BTC"""
+    },
+    
+    "outcome_expired": {
+        "en": """⏰ <b>TRADE OUTCOME: EXPIRED</b>
+
+🟠 Direction: {direction}
+💰 Entry: ${entry_price:,.0f}
+📍 Current: ${exit_price:,.0f}
+📊 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Signal expired without hitting targets or stop.
+#CryptoRadar #Expired #BTC""",
+        
+        "it": """⏰ <b>ESITO TRADE: SCADUTO</b>
+
+🟠 Direzione: {direction}
+💰 Entrata: ${entry_price:,.0f}
+📍 Attuale: ${exit_price:,.0f}
+📊 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Segnale scaduto senza raggiungere target o stop.
+#CryptoRadar #Scaduto #BTC""",
+        
+        "de": """⏰ <b>TRADE ERGEBNIS: ABGELAUFEN</b>
+
+🟠 Richtung: {direction}
+💰 Einstieg: ${entry_price:,.0f}
+📍 Aktuell: ${exit_price:,.0f}
+📊 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Signal abgelaufen ohne Ziele oder Stop zu erreichen.
+#CryptoRadar #Abgelaufen #BTC""",
+        
+        "pl": """⏰ <b>WYNIK TRADE: WYGASŁ</b>
+
+🟠 Kierunek: {direction}
+💰 Wejście: ${entry_price:,.0f}
+📍 Aktualnie: ${exit_price:,.0f}
+📊 P&L: <b>{pnl:.2f}%</b>
+
+{notes}
+
+Sygnał wygasł bez trafienia celów lub stopu.
+#CryptoRadar #Wygasł #BTC"""
+    }
+}
+
+
+async def get_telegram_settings():
+    """Fetch Telegram settings from database"""
+    try:
+        settings = await db.settings.find_one({}, {"_id": 0})
+        if settings:
+            return {
+                "enabled": settings.get("telegram_enabled", False),
+                "bot_token": settings.get("telegram_bot_token"),
+                "chat_id": settings.get("telegram_chat_id"),
+                "language": settings.get("language", "en"),
+                "notify_operational_signals": settings.get("notify_operational_signals", True),
+                "notify_signal_invalidations": settings.get("notify_signal_invalidations", True),
+                "notify_signal_outcomes": settings.get("notify_signal_outcomes", True)
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching telegram settings: {e}")
+        return None
+
+
+async def send_telegram_notification(template_key: str, data: dict, force_lang: str = None):
+    """
+    Send a Telegram notification using a predefined template.
+    
+    Args:
+        template_key: Key from TELEGRAM_TEMPLATES (e.g., 'operational_signal', 'outcome_win')
+        data: Dictionary with placeholders for the template
+        force_lang: Force a specific language (overrides settings)
+    
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    try:
+        tg_settings = await get_telegram_settings()
+        
+        if not tg_settings:
+            logger.debug("Telegram settings not found")
+            return False
+        
+        if not tg_settings["enabled"]:
+            logger.debug("Telegram notifications disabled")
+            return False
+        
+        if not tg_settings["bot_token"] or not tg_settings["chat_id"]:
+            logger.warning("Telegram credentials not configured")
+            return False
+        
+        # Check if this notification type is enabled
+        notification_type_map = {
+            "operational_signal": "notify_operational_signals",
+            "signal_invalidation": "notify_signal_invalidations",
+            "outcome_win": "notify_signal_outcomes",
+            "outcome_partial_win": "notify_signal_outcomes",
+            "outcome_loss": "notify_signal_outcomes",
+            "outcome_expired": "notify_signal_outcomes"
+        }
+        
+        setting_key = notification_type_map.get(template_key)
+        if setting_key and not tg_settings.get(setting_key, True):
+            logger.debug(f"Notification type {template_key} is disabled")
+            return False
+        
+        # Get template in appropriate language
+        lang = force_lang or tg_settings.get("language", "en")
+        if lang not in TELEGRAM_TEMPLATES.get(template_key, {}):
+            lang = "en"  # Fallback to English
+        
+        template = TELEGRAM_TEMPLATES.get(template_key, {}).get(lang)
+        if not template:
+            logger.error(f"Template {template_key} not found for language {lang}")
+            return False
+        
+        # Format message with data
+        try:
+            message = template.format(**data)
+        except KeyError as e:
+            logger.error(f"Missing placeholder in template {template_key}: {e}")
+            return False
+        
+        # Send to Telegram
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.post(
+                f"https://api.telegram.org/bot{tg_settings['bot_token']}/sendMessage",
+                json={
+                    "chat_id": tg_settings['chat_id'],
+                    "text": message,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True
+                }
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Telegram notification sent: {template_key}")
+                return True
+            else:
+                logger.error(f"Telegram API error: {response.status_code} - {response.text}")
+                return False
+                
+    except httpx.TimeoutException:
+        logger.error("Telegram notification timeout")
+        return False
+    except Exception as e:
+        logger.error(f"Error sending Telegram notification: {e}")
+        return False
+
+
+async def notify_operational_signal(signal_data: dict):
+    """
+    Send Telegram notification for a new operational signal.
+    
+    Args:
+        signal_data: Dictionary containing signal information
+    """
+    try:
+        # Only notify for LONG or SHORT signals
+        direction = signal_data.get("direction", "")
+        if direction not in ["LONG", "SHORT"]:
+            return False
+        
+        # Only notify for OPERATIONAL signals
+        signal_state = signal_data.get("signal_state", "NO_TRADE")
+        if signal_state != "OPERATIONAL":
+            return False
+        
+        # Prepare reasoning summary
+        reasoning = signal_data.get("reasoning", "")
+        if len(reasoning) > 200:
+            reasoning = reasoning[:200] + "..."
+        reasoning_text = f"\n💡 {reasoning}" if reasoning else ""
+        
+        data = {
+            "direction": direction,
+            "btc_price": signal_data.get("btc_price", 0),
+            "confidence": signal_data.get("confidence", 0),
+            "entry_low": signal_data.get("entry_zone_low", 0),
+            "entry_high": signal_data.get("entry_zone_high", 0),
+            "stop_loss": signal_data.get("stop_loss", 0),
+            "target_1": signal_data.get("target_1", 0),
+            "target_2": signal_data.get("target_2", 0),
+            "rr": signal_data.get("risk_reward_ratio", 0),
+            "urgency": signal_data.get("signal_urgency", "LOW"),
+            "valid_for": signal_data.get("valid_for_minutes", 90),
+            "setup_type": signal_data.get("setup_type", "Standard"),
+            "reasoning": reasoning_text
+        }
+        
+        return await send_telegram_notification("operational_signal", data)
+        
+    except Exception as e:
+        logger.error(f"Error sending operational signal notification: {e}")
+        return False
+
+
+async def notify_signal_outcome(outcome_data: dict):
+    """
+    Send Telegram notification for a signal outcome (WIN/LOSS/PARTIAL/EXPIRED).
+    
+    Args:
+        outcome_data: Dictionary containing outcome information
+    """
+    try:
+        outcome = outcome_data.get("outcome", "")
+        
+        # Map outcome to template key
+        template_map = {
+            "WIN": "outcome_win",
+            "LOSS": "outcome_loss",
+            "PARTIAL_WIN": "outcome_partial_win",
+            "EXPIRED": "outcome_expired"
+        }
+        
+        template_key = template_map.get(outcome)
+        if not template_key:
+            return False
+        
+        data = {
+            "direction": outcome_data.get("direction", ""),
+            "entry_price": outcome_data.get("entry_price", 0),
+            "exit_price": outcome_data.get("exit_price", 0),
+            "pnl": outcome_data.get("pnl_percent", 0),
+            "notes": outcome_data.get("outcome_notes", "")
+        }
+        
+        return await send_telegram_notification(template_key, data)
+        
+    except Exception as e:
+        logger.error(f"Error sending outcome notification: {e}")
+        return False
+
 
 # ============== KRAKEN API HELPERS ==============
 
@@ -5644,7 +6172,7 @@ def generate_trade_signal(
                 magnet_context = get_translation("magnet_bullish_contribution", lang)
             elif direction == "SHORT":
                 confidence = max(35, confidence - 5)  # Contradicts direction
-                warnings.append(f"🧲 Liquidity magnet suggests upward pressure")
+                warnings.append("🧲 Liquidity magnet suggests upward pressure")
         elif more_attractive == "below":
             # Strong downward magnet
             if direction == "SHORT":
@@ -5652,7 +6180,7 @@ def generate_trade_signal(
                 magnet_context = get_translation("magnet_bearish_contribution", lang)
             elif direction == "LONG":
                 confidence = max(35, confidence - 5)  # Contradicts direction
-                warnings.append(f"🧲 Liquidity magnet suggests downward pressure")
+                warnings.append("🧲 Liquidity magnet suggests downward pressure")
         # balanced = no adjustment
         
         if magnet_context:
@@ -6620,12 +7148,12 @@ def apply_signal_confirmation(
         
         # Update reasoning
         raw_signal.reasoning = f"🔄 SETUP IN CONFERMA - {raw_direction}\n\n" + \
-            f"Setup rilevato, in attesa di conferma (1/2 segnali consecutivi).\n\n" + \
+            "Setup rilevato, in attesa di conferma (1/2 segnali consecutivi).\n\n" + \
             raw_signal.reasoning
         
         if raw_signal.sweep_first_expected:
-            raw_signal.reasoning = f"⏳ ATTESA SWEEP\n\nSweep atteso prima dell'ingresso. " + \
-                f"Attendere completamento sweep e conferma di rigetto/recupero.\n\n" + raw_signal.reasoning
+            raw_signal.reasoning = "⏳ ATTESA SWEEP\n\nSweep atteso prima dell'ingresso. " + \
+                "Attendere completamento sweep e conferma di rigetto/recupero.\n\n" + raw_signal.reasoning
         
         return raw_signal
     
@@ -6695,7 +7223,7 @@ def apply_signal_confirmation(
         raw_signal.reasoning = f"✅ SEGNALE OPERATIVO - {raw_direction}\n\n" + \
             f"Conferma completata dopo {consecutive} segnali consecutivi.\n" + \
             f"Confidenza: {signal_confirmation_state['confidence_trend']}\n" + \
-            f"Nessuna contraddizione rilevata.\n\n" + raw_signal.reasoning
+            "Nessuna contraddizione rilevata.\n\n" + raw_signal.reasoning
         
     else:
         # Still SETUP_IN_CONFIRMATION
@@ -6891,6 +7419,30 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
             }
             
             await signal_history_collection.insert_one(history_entry)
+            
+            # Send Telegram notification for OPERATIONAL signals
+            if status == "confirmed" and new_state == SIGNAL_STATE_OPERATIONAL:
+                try:
+                    notification_data = {
+                        "direction": new_raw_direction,
+                        "btc_price": current_price,
+                        "confidence": new_signal.confidence,
+                        "entry_zone_low": new_signal.entry_zone_low,
+                        "entry_zone_high": new_signal.entry_zone_high,
+                        "stop_loss": new_signal.stop_loss,
+                        "target_1": new_signal.target_1,
+                        "target_2": new_signal.target_2,
+                        "risk_reward_ratio": new_signal.risk_reward_ratio,
+                        "signal_urgency": getattr(new_signal, 'signal_urgency', 'LOW'),
+                        "valid_for_minutes": getattr(new_signal, 'valid_for_minutes', 90),
+                        "setup_type": new_signal.setup_type,
+                        "reasoning": new_signal.reasoning[:200] if new_signal.reasoning else "",
+                        "signal_state": "OPERATIONAL"
+                    }
+                    asyncio.create_task(notify_operational_signal(notification_data))
+                    logger.info(f"Telegram notification queued for OPERATIONAL signal: {new_raw_direction}")
+                except Exception as tg_err:
+                    logger.error(f"Error queuing Telegram notification: {tg_err}")
             
             # Update tracking state
             last_signal_state["direction"] = new_raw_direction
@@ -7432,7 +7984,7 @@ async def check_signal_outcomes():
                     if is_expired:
                         outcome = "PARTIAL_WIN"
                         pnl_percent = ((target_1 - entry_price) / entry_price) * 100
-                        outcome_notes = f"Target 1 reached, expired before T2"
+                        outcome_notes = "Target 1 reached, expired before T2"
                     else:
                         # Still running, update target_1_hit flag
                         await signal_history_collection.update_one(
@@ -7444,7 +7996,7 @@ async def check_signal_outcomes():
                 elif is_expired:
                     outcome = "EXPIRED"
                     pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    outcome_notes = f"Expired without hitting targets or stop"
+                    outcome_notes = "Expired without hitting targets or stop"
                     
             elif direction == "SHORT":
                 # SHORT: price needs to go DOWN to targets, UP to stop
@@ -7466,7 +8018,7 @@ async def check_signal_outcomes():
                     if is_expired:
                         outcome = "PARTIAL_WIN"
                         pnl_percent = ((entry_price - target_1) / entry_price) * 100
-                        outcome_notes = f"Target 1 reached, expired before T2"
+                        outcome_notes = "Target 1 reached, expired before T2"
                     else:
                         await signal_history_collection.update_one(
                             {"signal_id": signal_id},
@@ -7477,7 +8029,7 @@ async def check_signal_outcomes():
                 elif is_expired:
                     outcome = "EXPIRED"
                     pnl_percent = ((entry_price - current_price) / entry_price) * 100
-                    outcome_notes = f"Expired without hitting targets or stop"
+                    outcome_notes = "Expired without hitting targets or stop"
             
             # Update signal if outcome determined
             if outcome:
@@ -7502,6 +8054,21 @@ async def check_signal_outcomes():
                     "outcome": outcome,
                     "pnl_percent": round(pnl_percent, 2)
                 })
+                
+                # Send Telegram notification for outcome
+                try:
+                    outcome_notification_data = {
+                        "direction": direction,
+                        "entry_price": entry_price,
+                        "exit_price": current_price,
+                        "pnl_percent": round(pnl_percent, 2),
+                        "outcome_notes": outcome_notes,
+                        "outcome": outcome
+                    }
+                    asyncio.create_task(notify_signal_outcome(outcome_notification_data))
+                    logger.info(f"Telegram notification queued for outcome: {outcome} ({direction})")
+                except Exception as tg_err:
+                    logger.error(f"Error queuing outcome notification: {tg_err}")
         
         return {
             "checked": len(pending_signals),
@@ -8136,7 +8703,7 @@ async def background_check_outcomes():
                     if is_expired:
                         outcome = "PARTIAL_WIN"
                         pnl_percent = ((target_1 - entry_price) / entry_price) * 100
-                        outcome_notes = f"Target 1 reached, expired before T2"
+                        outcome_notes = "Target 1 reached, expired before T2"
                     else:
                         await signal_history_collection.update_one(
                             {"signal_id": signal_id},
@@ -8147,7 +8714,7 @@ async def background_check_outcomes():
                 elif is_expired:
                     outcome = "EXPIRED"
                     pnl_percent = ((current_price - entry_price) / entry_price) * 100
-                    outcome_notes = f"Expired without hitting targets or stop"
+                    outcome_notes = "Expired without hitting targets or stop"
                     
             elif direction == "SHORT":
                 if current_price >= stop_loss:
@@ -8168,7 +8735,7 @@ async def background_check_outcomes():
                     if is_expired:
                         outcome = "PARTIAL_WIN"
                         pnl_percent = ((entry_price - target_1) / entry_price) * 100
-                        outcome_notes = f"Target 1 reached, expired before T2"
+                        outcome_notes = "Target 1 reached, expired before T2"
                     else:
                         await signal_history_collection.update_one(
                             {"signal_id": signal_id},
@@ -8179,7 +8746,7 @@ async def background_check_outcomes():
                 elif is_expired:
                     outcome = "EXPIRED"
                     pnl_percent = ((entry_price - current_price) / entry_price) * 100
-                    outcome_notes = f"Expired without hitting targets or stop"
+                    outcome_notes = "Expired without hitting targets or stop"
             
             # Update signal if outcome determined
             if outcome:
@@ -8205,6 +8772,21 @@ async def background_check_outcomes():
                     "pnl_percent": round(pnl_percent, 2)
                 })
                 logger.info(f"   ✅ {direction} signal {signal_id[:8]}... -> {outcome} ({pnl_percent:+.2f}%)")
+                
+                # Send Telegram notification for outcome
+                try:
+                    outcome_notification_data = {
+                        "direction": direction,
+                        "entry_price": entry_price,
+                        "exit_price": current_price,
+                        "pnl_percent": round(pnl_percent, 2),
+                        "outcome_notes": outcome_notes,
+                        "outcome": outcome
+                    }
+                    asyncio.create_task(notify_signal_outcome(outcome_notification_data))
+                    logger.info(f"   📱 Telegram notification queued for outcome: {outcome}")
+                except Exception as tg_err:
+                    logger.error(f"Error queuing outcome notification: {tg_err}")
         
         # Update scheduler status
         scheduler_status["last_run"] = now.isoformat()

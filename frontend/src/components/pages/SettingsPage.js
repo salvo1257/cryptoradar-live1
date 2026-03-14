@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, Check, X } from 'lucide-react';
+import { Save, Send, Check, X, Info, MessageCircle, Bell, BellOff } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -102,7 +102,10 @@ export function SettingsPage() {
       {/* Telegram Settings */}
       <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-heading font-semibold text-lg">{t('telegram')}</h2>
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-[#0088cc]" />
+            <h2 className="font-heading font-semibold text-lg">{t('telegramSettings') || t('telegram')}</h2>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-zinc-500">{t('enabled')}</span>
             <Switch
@@ -113,33 +116,52 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* Instructions Collapsible */}
+        <div className="bg-crypto-bg/50 border border-crypto-border rounded-sm p-3">
+          <div className="flex items-start gap-2">
+            <Info className="w-4 h-4 text-whale mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-zinc-400 space-y-1">
+              <p className="font-medium text-zinc-300">{t('telegramHowTo') || 'How to get Bot Token and Chat ID'}:</p>
+              <ol className="list-decimal ml-4 space-y-0.5">
+                <li>{language === 'it' ? 'Apri Telegram e cerca' : 'Open Telegram and search for'} <span className="text-whale">@BotFather</span></li>
+                <li>{language === 'it' ? 'Invia /newbot e segui le istruzioni' : 'Send /newbot and follow instructions'}</li>
+                <li>{language === 'it' ? 'Copia il Bot Token fornito' : 'Copy the Bot Token provided'}</li>
+                <li>{language === 'it' ? 'Per il Chat ID, invia un messaggio al bot, poi visita:' : 'For Chat ID, message your bot, then visit:'}</li>
+              </ol>
+              <code className="block text-[10px] bg-crypto-surface p-1 rounded mt-1 break-all">
+                https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+              </code>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-3">
           <div className="space-y-2">
-            <label className="text-sm text-zinc-400">Bot Token</label>
+            <label className="text-sm text-zinc-400">{t('telegramBotToken') || 'Bot Token'}</label>
             <Input
               type="password"
               value={localSettings.telegram_bot_token || ''}
               onChange={(e) => setLocalSettings({...localSettings, telegram_bot_token: e.target.value})}
-              placeholder="Enter your Telegram bot token"
-              className="bg-crypto-surface border-crypto-border font-mono"
+              placeholder={language === 'it' ? 'Inserisci il token del bot Telegram' : 'Enter your Telegram bot token'}
+              className="bg-crypto-surface border-crypto-border font-mono text-sm"
               data-testid="telegram-token-input"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-zinc-400">Chat ID</label>
+            <label className="text-sm text-zinc-400">{t('telegramChatId') || 'Chat ID'}</label>
             <Input
               value={localSettings.telegram_chat_id || ''}
               onChange={(e) => setLocalSettings({...localSettings, telegram_chat_id: e.target.value})}
-              placeholder="Enter your Telegram chat ID"
-              className="bg-crypto-surface border-crypto-border font-mono"
+              placeholder={language === 'it' ? 'Inserisci il tuo Chat ID' : 'Enter your Telegram chat ID'}
+              className="bg-crypto-surface border-crypto-border font-mono text-sm"
               data-testid="telegram-chatid-input"
             />
           </div>
           <Button 
             variant="outline"
             onClick={handleTestTelegram}
-            disabled={isTesting}
-            className="border-whale text-whale hover:bg-whale/10"
+            disabled={isTesting || !localSettings.telegram_bot_token || !localSettings.telegram_chat_id}
+            className="border-[#0088cc] text-[#0088cc] hover:bg-[#0088cc]/10"
             data-testid="test-telegram-btn"
           >
             {isTesting ? (
@@ -147,15 +169,61 @@ export function SettingsPage() {
             ) : (
               <Send className="w-4 h-4 mr-2" />
             )}
-            Test Connection
+            {t('telegramTest') || 'Test Connection'}
           </Button>
         </div>
 
         <Separator className="bg-crypto-border" />
 
-        {/* Notification preferences */}
+        {/* Signal Notification preferences */}
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-400">Notification Preferences</h3>
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-bullish" />
+            <h3 className="text-sm font-medium text-zinc-300">{language === 'it' ? 'Notifiche Segnali' : 'Signal Notifications'}</h3>
+          </div>
+          
+          <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
+            <div className="flex flex-col">
+              <span className="text-sm">{t('notifyOperationalSignals') || 'Operational Signals'}</span>
+              <span className="text-xs text-zinc-500">{language === 'it' ? 'Quando un segnale LONG/SHORT diventa operativo' : 'When a LONG/SHORT signal becomes operational'}</span>
+            </div>
+            <Switch
+              checked={localSettings.notify_operational_signals ?? true}
+              onCheckedChange={(v) => setLocalSettings({...localSettings, notify_operational_signals: v})}
+              data-testid="notify-operational-switch"
+            />
+          </div>
+          
+          <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
+            <div className="flex flex-col">
+              <span className="text-sm">{t('notifySignalInvalidations') || 'Signal Invalidations'}</span>
+              <span className="text-xs text-zinc-500">{language === 'it' ? 'Quando un segnale viene invalidato' : 'When a signal is invalidated'}</span>
+            </div>
+            <Switch
+              checked={localSettings.notify_signal_invalidations ?? true}
+              onCheckedChange={(v) => setLocalSettings({...localSettings, notify_signal_invalidations: v})}
+              data-testid="notify-invalidations-switch"
+            />
+          </div>
+          
+          <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
+            <div className="flex flex-col">
+              <span className="text-sm">{t('notifySignalOutcomes') || 'Trade Outcomes'}</span>
+              <span className="text-xs text-zinc-500">{language === 'it' ? 'WIN, LOSS, Vittoria Parziale, Scaduto' : 'WIN, LOSS, Partial Win, Expired'}</span>
+            </div>
+            <Switch
+              checked={localSettings.notify_signal_outcomes ?? true}
+              onCheckedChange={(v) => setLocalSettings({...localSettings, notify_signal_outcomes: v})}
+              data-testid="notify-outcomes-switch"
+            />
+          </div>
+        </div>
+
+        <Separator className="bg-crypto-border" />
+
+        {/* Other notification preferences */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-zinc-400">{language === 'it' ? 'Altre Notifiche' : 'Other Notifications'}</h3>
           
           <div className="flex items-center justify-between">
             <span className="text-sm">{t('whaleAlerts')}</span>

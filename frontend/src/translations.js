@@ -247,6 +247,21 @@ export const translations = {
     multiExchange: "Multi-Exchange",
     none: "None",
     
+    // Telegram Settings
+    telegramSettings: "Telegram Notifications",
+    telegramBotToken: "Bot Token",
+    telegramChatId: "Chat ID",
+    telegramEnabled: "Enable Telegram",
+    telegramTest: "Test Connection",
+    telegramTestSuccess: "Test message sent successfully!",
+    telegramTestFail: "Failed to send test message",
+    telegramNotConfigured: "Please configure Telegram credentials first",
+    notifyOperationalSignals: "Operational Signals",
+    notifySignalInvalidations: "Signal Invalidations",
+    notifySignalOutcomes: "Trade Outcomes (WIN/LOSS)",
+    telegramHowTo: "How to get Bot Token and Chat ID",
+    telegramInstructions: "1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the Bot Token\n4. For Chat ID, send a message to your bot, then visit:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    
     // Learn mode explanations
     learnMarketBias: "Market Bias analyzes multiple indicators to determine overall market direction. Confidence shows how strong the signal is.",
     learnSupportResistance: "Support levels are prices where buying pressure historically prevents further decline. Resistance levels are where selling pressure prevents further rise.",
@@ -507,6 +522,21 @@ export const translations = {
     multiExchange: "Multi-Exchange",
     none: "Nessuno",
     
+    // Telegram Settings
+    telegramSettings: "Notifiche Telegram",
+    telegramBotToken: "Bot Token",
+    telegramChatId: "Chat ID",
+    telegramEnabled: "Attiva Telegram",
+    telegramTest: "Testa Connessione",
+    telegramTestSuccess: "Messaggio di test inviato con successo!",
+    telegramTestFail: "Invio messaggio di test fallito",
+    telegramNotConfigured: "Configura prima le credenziali Telegram",
+    notifyOperationalSignals: "Segnali Operativi",
+    notifySignalInvalidations: "Invalidazioni Segnali",
+    notifySignalOutcomes: "Esiti Trade (WIN/LOSS)",
+    telegramHowTo: "Come ottenere Bot Token e Chat ID",
+    telegramInstructions: "1. Apri Telegram e cerca @BotFather\n2. Invia /newbot e segui le istruzioni\n3. Copia il Bot Token\n4. Per il Chat ID, invia un messaggio al tuo bot, poi visita:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    
     // Learn mode explanations
     learnMarketBias: "Il Bias di Mercato analizza diversi indicatori per determinare la direzione generale del mercato. La fiducia mostra quanto è forte il segnale.",
     learnSupportResistance: "I livelli di supporto sono prezzi dove la pressione di acquisto storicamente impedisce ulteriori cali. Le resistenze sono dove la pressione di vendita impedisce ulteriori rialzi.",
@@ -585,6 +615,21 @@ export const translations = {
     german: "Deutsch",
     polish: "Polski",
     documentation: "Dokumentation",
+    
+    // Telegram Settings
+    telegramSettings: "Telegram Benachrichtigungen",
+    telegramBotToken: "Bot Token",
+    telegramChatId: "Chat ID",
+    telegramEnabled: "Telegram aktivieren",
+    telegramTest: "Verbindung testen",
+    telegramTestSuccess: "Testnachricht erfolgreich gesendet!",
+    telegramTestFail: "Testnachricht konnte nicht gesendet werden",
+    telegramNotConfigured: "Bitte zuerst Telegram-Zugangsdaten konfigurieren",
+    notifyOperationalSignals: "Operative Signale",
+    notifySignalInvalidations: "Signal-Ungültigkeiten",
+    notifySignalOutcomes: "Trade-Ergebnisse (WIN/LOSS)",
+    telegramHowTo: "Wie man Bot Token und Chat ID erhält",
+    telegramInstructions: "1. Öffne Telegram und suche nach @BotFather\n2. Sende /newbot und folge den Anweisungen\n3. Kopiere den Bot Token\n4. Für die Chat ID, sende eine Nachricht an deinen Bot, dann besuche:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
     tradeSignal: "Handelssignal",
     entryZone: "Einstiegszone",
     stopLoss: "Stop Loss",
@@ -773,6 +818,22 @@ export const translations = {
     close: "Zamknij",
     updated: "Zaktualizowano",
     learnWhaleAlerts: "Aktywność wielorybów analizuje skoki wolumenu, presję orderbooka, dane o likwidacjach i momentum OI, aby wykryć aktywność instytucjonalną.",
+    
+    // Telegram Settings
+    telegram: "Telegram",
+    telegramSettings: "Powiadomienia Telegram",
+    telegramBotToken: "Token Bota",
+    telegramChatId: "ID Czatu",
+    telegramEnabled: "Włącz Telegram",
+    telegramTest: "Testuj Połączenie",
+    telegramTestSuccess: "Wiadomość testowa wysłana pomyślnie!",
+    telegramTestFail: "Nie udało się wysłać wiadomości testowej",
+    telegramNotConfigured: "Najpierw skonfiguruj dane Telegram",
+    notifyOperationalSignals: "Sygnały Operacyjne",
+    notifySignalInvalidations: "Unieważnienia Sygnałów",
+    notifySignalOutcomes: "Wyniki Transakcji (WIN/LOSS)",
+    telegramHowTo: "Jak uzyskać Token Bota i ID Czatu",
+    telegramInstructions: "1. Otwórz Telegram i wyszukaj @BotFather\n2. Wyślij /newbot i postępuj zgodnie z instrukcjami\n3. Skopiuj Token Bota\n4. Dla ID Czatu wyślij wiadomość do swojego bota, a potem odwiedź:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
     
     // Market Energy
     marketEnergy: "Energia Rynku",

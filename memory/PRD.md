@@ -1,14 +1,80 @@
-# CryptoRadar v2.3 - Product Requirements Document
+# CryptoRadar v2.4 - Product Requirements Document
 **Last Updated:** 2025-12-14
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Background Scheduler: Active (outcome check every 1 hour)
 - Dynamic Signal Timing: Active
+- Telegram Notifications: Available (user configurable)
 
 ---
 
-## v2.3 DYNAMIC SIGNAL TIMING ✅ (NEW)
+## v2.4 TELEGRAM NOTIFICATIONS ✅ (NEW)
+
+**REAL-TIME TELEGRAM ALERTS FOR TRADING SIGNALS:**
+
+### Implementation:
+- **Backend:** Async notification system with templates
+- **Frontend:** Comprehensive settings panel with instructions
+- **Languages:** IT, EN, DE, PL (all templates translated)
+- **Default State:** Disabled (user must enable and configure)
+
+### Notification Types:
+| Type | Template Key | Trigger |
+|------|--------------|---------|
+| Operational Signal | `operational_signal` | When LONG/SHORT signal becomes OPERATIONAL |
+| Signal Invalidation | `signal_invalidation` | When signal is invalidated (future) |
+| WIN | `outcome_win` | Target 2 reached |
+| LOSS | `outcome_loss` | Stop loss hit |
+| Partial Win | `outcome_partial_win` | Target 1 reached, T2 expired |
+| Expired | `outcome_expired` | Signal validity window elapsed |
+
+### New Settings Fields:
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `telegram_bot_token` | string | null | Telegram Bot API token |
+| `telegram_chat_id` | string | null | Target chat/channel ID |
+| `telegram_enabled` | bool | false | Master toggle |
+| `notify_operational_signals` | bool | true | Send operational alerts |
+| `notify_signal_invalidations` | bool | true | Send invalidation alerts |
+| `notify_signal_outcomes` | bool | true | Send WIN/LOSS alerts |
+
+### API Endpoints:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/settings` | GET | Get all settings including Telegram |
+| `/api/settings` | PUT | Update settings |
+| `/api/telegram/test` | POST | Send test message |
+
+### Frontend Settings UI:
+- Instructions box with @BotFather setup guide
+- Bot Token input (password masked)
+- Chat ID input
+- "Testa Connessione" button (Telegram blue color)
+- Signal Notifications section:
+  - Segnali Operativi
+  - Invalidazioni Segnali
+  - Esiti Trade (WIN/LOSS)
+- Other Notifications section (existing toggles)
+
+### Message Templates:
+Each template includes:
+- Emoji indicators (🚀 signals, ❌ loss, 🎉 win, etc.)
+- Direction, Price, Confidence
+- Entry/Exit prices, P&L percentage
+- HTML formatting for Telegram
+- Hashtags (#CryptoRadar #BTC)
+
+### How to Get Telegram Credentials:
+1. Open Telegram and search for @BotFather
+2. Send `/newbot` and follow instructions
+3. Copy the Bot Token provided
+4. For Chat ID, send a message to your bot, then visit:
+   `https://api.telegram.org/bot<TOKEN>/getUpdates`
+
+---
+
+## v2.3 DYNAMIC SIGNAL TIMING ✅
 
 **INTELLIGENT SIGNAL URGENCY & VALIDITY WINDOWS:**
 
