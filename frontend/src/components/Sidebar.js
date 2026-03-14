@@ -12,6 +12,7 @@ import {
   History,
   StickyNote,
   Settings,
+  BookOpen,
   X
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
@@ -28,6 +29,7 @@ const navItems = [
   { path: '/alerts', icon: Bell, label: 'alerts' },
   { path: '/alert-history', icon: History, label: 'alertHistory' },
   { path: '/notes', icon: StickyNote, label: 'notes' },
+  { path: '/manual', icon: BookOpen, label: 'manual' },
   { path: '/settings', icon: Settings, label: 'settings' },
 ];
 

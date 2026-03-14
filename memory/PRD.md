@@ -1,4 +1,4 @@
-# CryptoRadar v1.8 - Product Requirements Document
+# CryptoRadar v1.9 - Product Requirements Document
 **Last Updated:** 2026-03-14
 
 ## 🚀 DEPLOYMENT READINESS: ✅ VERIFIED (2026-03-14)
@@ -6,13 +6,20 @@
 - Readiness Endpoint: `/api/system/ready` - For load balancer health checks
 - Config Endpoint: `/api/system/config` - Configuration verification
 - All 6 PDF manuals downloadable
-- Dashboard fully operational in Italian
-- **Trade Signal Reasoning: FULLY TRANSLATED TO ITALIAN** ✅
-- **All Card Explanations: FULLY TRANSLATED TO ITALIAN** ✅
+- Dashboard fully operational
+- **Trade Signal Reasoning: FULLY TRANSLATED** ✅
+- **All Card Explanations: FULLY TRANSLATED** ✅
 - **Signal History Auto-Recording: IMPLEMENTED** ✅
 - **Status Labels (ATTIVO/INVALIDATO/SCADUTO): IMPLEMENTED** ✅
 - Startup checks implemented with logging
 - Auto-restart configured via Supervisor
+
+## 🆕 v1.9 Multilingual System
+- **Supported Languages**: Italian (default), English, German, Polish
+- **UI Components**: All navigation, labels, buttons translated
+- **In-App Manual**: Complete system manual + trading guide
+- **Backend Translations**: Full translation dictionary for all 4 languages
+- **Manual Page**: /manual route with collapsible sections
 
 ## 🆕 v1.8 Signal Confirmation System
 - **3 Signal States**: NO_TRADE, SETUP_IN_CONFIRMATION, OPERATIONAL

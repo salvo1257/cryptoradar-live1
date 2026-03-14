@@ -18,6 +18,7 @@ import {
   NotesPage,
   SettingsPage,
 } from "./components/pages";
+import ManualPage from "./components/pages/ManualPage";
 
 function AppLayout({ children }) {
   return (
@@ -50,6 +51,7 @@ function App() {
             <Route path="/alert-history" element={<AlertHistoryPage />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/manual" element={<ManualPage />} />
           </Routes>
         </AppLayout>
         <Toaster position="top-right" richColors />

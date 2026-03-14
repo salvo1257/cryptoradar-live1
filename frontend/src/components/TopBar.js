@@ -143,6 +143,9 @@ export function TopBar() {
             <DropdownMenuItem onClick={() => setLanguage('de')} className={language === 'de' ? 'bg-white/5' : ''}>
               {t('german')}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setLanguage('pl')} className={language === 'pl' ? 'bg-white/5' : ''}>
+              {t('polish')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

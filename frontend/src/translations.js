@@ -13,6 +13,7 @@ export const translations = {
     alerts: "Alerts",
     alertHistory: "Signal History",
     notes: "Notes",
+    manual: "Manual",
     settings: "Settings",
     
     // Market Bias
@@ -173,6 +174,7 @@ export const translations = {
     english: "English",
     italian: "Italiano",
     german: "Deutsch",
+    polish: "Polski",
     documentation: "Documentation",
     loading: "Loading...",
     noData: "No data available",
@@ -205,6 +207,7 @@ export const translations = {
     alerts: "Avvisi",
     alertHistory: "Storico Segnali",
     notes: "Note",
+    manual: "Manuale",
     settings: "Impostazioni",
     
     // Market Bias
@@ -365,6 +368,7 @@ export const translations = {
     english: "English",
     italian: "Italiano",
     german: "Deutsch",
+    polish: "Polski",
     documentation: "Documentazione",
     loading: "Caricamento...",
     noData: "Nessun dato disponibile",
@@ -396,6 +400,7 @@ export const translations = {
     alerts: "Warnungen",
     alertHistory: "Signalverlauf",
     notes: "Notizen",
+    manual: "Handbuch",
     settings: "Einstellungen",
     marketBias: "Marktneigung",
     bullish: "BULLISCH",
@@ -448,6 +453,7 @@ export const translations = {
     english: "English",
     italian: "Italiano",
     german: "Deutsch",
+    polish: "Polski",
     documentation: "Dokumentation",
     tradeSignal: "Handelssignal",
     entryZone: "Einstiegszone",
@@ -462,6 +468,70 @@ export const translations = {
     last24h: "Letzte 24H",
     loading: "Laden...",
     noData: "Keine Daten verfügbar"
+  },
+  pl: {
+    // Navigation
+    dashboard: "Pulpit",
+    supportResistance: "Wsparcie/Opór",
+    whaleAlerts: "Alerty Wielorybów",
+    liquidity: "Płynność",
+    patterns: "Wzorce",
+    candlesticks: "Świece",
+    news: "Wiadomości",
+    alerts: "Alerty",
+    alertHistory: "Historia Sygnałów",
+    notes: "Notatki",
+    manual: "Podręcznik",
+    settings: "Ustawienia",
+    
+    // Trade Signal
+    tradeSignal: "Sygnał Handlowy",
+    long: "LONG",
+    short: "SHORT",
+    noTrade: "BRAK HANDLU",
+    setupInConfirmation: "SETUP W POTWIERDZENIU",
+    operational: "OPERACYJNY",
+    confirming: "Potwierdzanie",
+    consecutiveSignals: "Kolejne sygnały",
+    timeInSetup: "Czas w setup",
+    volatilityWarning: "Wysoka zmienność - poczekaj na stabilizację",
+    entryZone: "Strefa Wejścia",
+    stopLoss: "Stop Loss",
+    riskReward: "Ryzyko/Zysk",
+    
+    // Market
+    marketBias: "Bias Rynku",
+    bullish: "BYCZY",
+    bearish: "NIEDŹWIEDZI",
+    neutral: "NEUTRALNY",
+    confidence: "Pewność",
+    
+    // Whale Activity
+    whaleActivity: "Aktywność Wielorybów",
+    buyPressure: "Presja Kupna",
+    sellPressure: "Presja Sprzedaży",
+    
+    // Liquidity
+    liquidityLadder: "Drabina Płynności",
+    above: "Powyżej",
+    below: "Poniżej",
+    balanced: "Zrównoważone",
+    
+    // Signal History
+    signalHistory: "Historia Sygnałów",
+    totalSignals: "Wszystkie Sygnały",
+    last24h: "Ostatnie 24H",
+    
+    // Common
+    english: "English",
+    italian: "Italiano",
+    german: "Deutsch",
+    polish: "Polski",
+    documentation: "Dokumentacja",
+    loading: "Ładowanie...",
+    noData: "Brak dostępnych danych",
+    refresh: "Odśwież",
+    close: "Zamknij"
   }
 };
 

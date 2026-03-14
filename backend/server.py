@@ -372,6 +372,630 @@ NEWS_CACHE_TTL = 300  # 5 minutes
 COINGLASS_CACHE_TTL = 60  # 1 minute for CoinGlass data
 TRADE_SIGNAL_CACHE_TTL = 180  # 3 minutes - Trade signal refresh rate
 
+# ============== MULTILINGUAL SYSTEM ==============
+# Supported languages: it, en, de, pl
+BACKEND_TRANSLATIONS = {
+    "it": {
+        # Market Bias
+        "strong_buying_pressure": "Forte pressione di acquisto nell'order book.",
+        "momentum_favors_bulls": "Il momentum favorisce i rialzisti.",
+        "short_squeeze_prob": "Probabilità di short squeeze al {0:.0f}%.",
+        "heavy_selling_pressure": "Forte pressione di vendita rilevata.",
+        "momentum_favors_bears": "Il momentum favorisce i ribassisti.",
+        "long_squeeze_prob": "Probabilità di long squeeze al {0:.0f}%.",
+        "market_indecision": "Indecisione del mercato. Attendere segnali più chiari.",
+        "analyzing_conditions": "Analisi delle condizioni di mercato in corso...",
+        
+        # Open Interest
+        "oi_increasing": "OI in aumento con nuove posizioni. Nuovi capitali stanno entrando nel mercato. Se il prezzo sale = continuazione rialzista.",
+        "oi_decreasing": "OI in diminuzione indica chiusura di posizioni. Possibile esaurimento del trend o presa di profitto.",
+        "oi_stable": "OI stabile indica consolidamento del mercato. Attendere una rottura con aumento dei volumi.",
+        
+        # Funding Rate
+        "more_longs_liquidated": "Più long liquidati ({0:.1f}%). Pressione ribassista. Gli short pagano i long.",
+        "more_shorts_liquidated": "Più short liquidati ({0:.1f}%). Pressione rialzista. I long pagano gli short.",
+        "balanced_liquidations": "Liquidazioni bilanciate. Ambiente di funding neutrale.",
+        "api_unavailable": "API temporaneamente non disponibile. Dati stimati.",
+        
+        # S/R Levels
+        "price_rejected_at": "Prezzo respinto a ${0:,.0f} in {1} occasioni.",
+        "high_rejection_prob": "Alta probabilità di rigetto se testato di nuovo.",
+        "likely_selling_pressure": "Probabile pressione di vendita a questo livello.",
+        "may_break_momentum": "Potrebbe cedere con forte momentum.",
+        "buyers_stepped_in": "I compratori sono intervenuti a ${0:,.0f} in {1} occasioni.",
+        "strong_demand_zone": "Zona di domanda forte - alta probabilità di rimbalzo.",
+        "likely_buying_interest": "Probabile interesse d'acquisto a questo livello.",
+        "may_break_selling": "Potrebbe cedere con forte pressione di vendita.",
+        
+        # Order Book
+        "buy_orders_across": "${0:,.0f} ({1:.2f} BTC) in ordini di acquisto su {2} exchange.",
+        "sell_orders_across": "${0:,.0f} ({1:.2f} BTC) in ordini di vendita su {2} exchange.",
+        "major_support_wall": "Muro di supporto importante - difficile da rompere.",
+        "moderate_buying": "Interesse d'acquisto moderato a questo livello.",
+        "major_resistance_wall": "Muro di resistenza importante - attendersi forte vendita qui.",
+        "moderate_selling": "Pressione di vendita moderata a questo livello.",
+        
+        # Liquidity Direction
+        "more_liq_above": "Più liquidità sopra il prezzo attuale (${0:,.0f} ordini di vendita vs ${1:,.0f} ordini di acquisto). Il prezzo tende a cercare liquidità - attendersi movimento verso l'alto per cacciare stop.",
+        "more_liq_below": "Più liquidità sotto il prezzo attuale (${0:,.0f} ordini di acquisto vs ${1:,.0f} ordini di vendita). Il prezzo tende a cercare liquidità - attendersi movimento verso il basso per cacciare stop.",
+        "balanced_liquidity": "Distribuzione liquidità bilanciata. Nessuna direzione chiara - il mercato potrebbe consolidare fino a sviluppo di sbilanciamento.",
+        
+        # Liquidity Ladder
+        "upper_ladder_stronger": "Scala di liquidità superiore più forte (${0:.1f}M sopra vs ${1:.1f}M sotto). Prezzo probabile sweep verso ${2:,.0f} prima di potenziale inversione.",
+        "lower_ladder_stronger": "Scala di liquidità inferiore più forte (${0:.1f}M sotto vs ${1:.1f}M sopra). Prezzo probabile sweep verso ${2:,.0f} prima di potenziale inversione.",
+        "balanced_distribution": "Distribuzione liquidità bilanciata. Nessuna direzione di sweep chiara - monitorare per catalizzatore di breakout.",
+        "no_clear_sweep": "Livelli di liquidità presenti ma nessun setup di sweep chiaro. Monitorare accumulazione/distribuzione.",
+        "insufficient_data": "Dati di liquidità insufficienti per l'analisi del percorso.",
+        
+        # Whale Activity
+        "large_buy_pressure": "Forte pressione di acquisto rilevata: picco di volume combinato con order book pesantemente lato bid.",
+        "whale_buying_squeeze": "Pressione di acquisto delle balene: short squeeze in corso con pesanti liquidazioni short.",
+        "buy_pressure_detected": "Pressione di acquisto rilevata: {0}",
+        "moderate_whale_buying": "Attività moderata di acquisto balene rilevata sugli exchange.",
+        "large_sell_pressure": "Forte pressione di vendita rilevata: picco di volume combinato con order book pesantemente lato ask.",
+        "whale_selling_cascade": "Pressione di vendita delle balene: cascata di liquidazioni long in corso.",
+        "sell_pressure_detected": "Pressione di vendita rilevata: {0}",
+        "moderate_whale_selling": "Attività moderata di vendita balene rilevata sugli exchange.",
+        "no_whale_bias": "Nessun bias direzionale chiaro delle balene. Attività bilanciata o insufficiente per generare segnale.",
+        
+        # Trade Signal Reasoning
+        "market_bias_is": "Bias di Mercato è {0} con confidenza del {1:.0f}%",
+        "liquidity_points": "La liquidità punta verso {0} in direzione ${1:,.0f}",
+        "exchange_consensus_bullish": "Consenso multi-exchange è bullish ({0})",
+        "exchange_consensus_bearish": "Consenso multi-exchange è bearish ({0})",
+        "funding_sentiment": "Il sentiment del funding rate è {0}",
+        "oi_increasing_bullish": "Open Interest in aumento con trend bullish (nuovi long in ingresso)",
+        "oi_increasing_bearish": "Open Interest in aumento con trend bearish (nuovi short in ingresso)",
+        "oi_decreasing_profit": "OI in diminuzione - possibile presa di profitto / esaurimento",
+        "oi_decreasing_covering": "OI in diminuzione - gli short potrebbero stare coprendo",
+        "pattern_detected": "Pattern {0} rilevato ({1}, {2:.0f}% conf)",
+        "whale_favors_longs": "Attività balene favorisce i long ({0} long vs {1} short)",
+        "whale_favors_shorts": "Attività balene favorisce gli short ({0} short vs {1} long)",
+        "whale_engine_buy": "Whale Engine rileva pressione di ACQUISTO ({0:.0f}% forza): {1}",
+        "whale_engine_sell": "Whale Engine rileva pressione di VENDITA ({0:.0f}% forza): {1}",
+        "volume_spike": "Picco di volume rilevato: {0:.1f}x la media",
+        "long_liquidation_cascade": "Cascata di liquidazioni long in corso",
+        "short_squeeze_progress": "Short squeeze in corso",
+        "orderbook_aggressive_buy": "L'order book mostra acquisto aggressivo",
+        "orderbook_aggressive_sell": "L'order book mostra vendita aggressiva",
+        "ladder_more_above": "Liquidity Ladder: Più liquidità sopra - analisi percorso suggerisce sweep verso ${0:,.0f}",
+        "ladder_favors_upside": "Liquidity Ladder: Percorso favorisce il rialzo",
+        "ladder_more_below": "Liquidity Ladder: Più liquidità sotto - analisi percorso suggerisce sweep verso ${0:,.0f}",
+        "ladder_favors_downside": "Liquidity Ladder: Percorso favorisce il ribasso",
+        "sweep_expected_down": "Sweep atteso: Il prezzo potrebbe scendere a ${0:,.0f} prima di salire",
+        "possible_dip": "Possibile discesa prima del rialzo",
+        "sweep_expected_up": "Sweep atteso: Il prezzo potrebbe salire a ${0:,.0f} prima di scendere",
+        "possible_spike": "Possibile spike prima del ribasso",
+        "high_trap_risk": "Alto rischio di trappola - possibile falso breakout / caccia alla liquidità",
+        "longs_overcrowded": "Long affollati - rischio squeeze long / opportunità short potenziale",
+        "shorts_overcrowded": "Short affollati - rischio squeeze short / opportunità long potenziale",
+        
+        # Invalidation
+        "true_invalidation_below": "Invalidazione reale sotto ${0:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${1:,.0f} potrebbero essere spazzati prima.",
+        "stop_beyond_sweep_below": "Stop posizionato a ${0:,.0f}, oltre la probabile zona di sweep di ${1:,.0f}",
+        "true_invalidation_above": "Invalidazione reale sopra ${0:,.0f} (oltre la zona di sweep). Gli stop ovvi a ${1:,.0f} potrebbero essere spazzati prima.",
+        "stop_beyond_sweep_above": "Stop posizionato a ${0:,.0f}, oltre la probabile zona di sweep di ${1:,.0f}",
+        "mixed_signals": "Segnali misti - attendere configurazione più chiara",
+        
+        # Signal States
+        "no_trade_insufficient": "NO TRADE - MOVIMENTO INSUFFICIENTE",
+        "move_below_threshold": "Movimento stimato ({0:.2f}%) è sotto la soglia minima ({1}%)",
+        "move_too_small": "Movimento troppo piccolo: {0:.2f}% < {1}% minimo",
+        "mixed_signals_no_setup": "SEGNALI MISTI - NESSUNA CONFIGURAZIONE CHIARA",
+        "factors_not_aligned": "I fattori di intelligence non sono allineati:",
+        "wait_clearer_bias": "Attendere un bias direzionale più chiaro prima di entrare in posizione.",
+        "sweep_reversal_setup": "CONFIGURAZIONE SWEEP E INVERSIONE",
+        "continuation_setup": "CONFIGURAZIONE CONTINUAZIONE",
+        "large_move_potential": "Grande potenziale di movimento: {0:.2f}%",
+        "decent_move_potential": "Discreto potenziale di movimento: {0:.2f}%",
+        "small_move": "Movimento ridotto: {0:.2f}% (minimo è {1}%)",
+        "key_factors": "Fattori chiave a supporto del trade:",
+        "liquidity_stop_placement": "Liquidità & Posizionamento Stop:",
+        "obvious_stop_zone": "Zona di caccia stop ovvia: ${0:,.0f} (sotto primo supporto)",
+        "obvious_stop_zone_above": "Zona di caccia stop ovvia: ${0:,.0f} (sopra prima resistenza)",
+        "safe_invalidation": "Invalidazione sicura: ${0:,.0f} (oltre lo sweep)",
+        "stop_placed_at": "Stop posizionato a ${0:,.0f} per evitare caccia agli stop",
+        "sweep_analysis": "Analisi Sweep:",
+        "liquidity_path": "Percorso Liquidità:",
+        "whale_activity_section": "Attività Balene:",
+        "risk_warnings": "Avvisi di Rischio:",
+        "rr_below_ideal": "Risk/Reward ({0:.1f}:1) sotto l'ideale 1.5:1",
+        
+        # Sweep Analysis
+        "approaching_support": "Il prezzo si avvicina al supporto ${0:,.0f}. Probabile sweep della liquidità sotto ${1:,.0f} prima di un'inversione bullish. Attendere il recupero di ${2:,.0f} per confermare l'ingresso long.",
+        "approaching_resistance": "Il prezzo si avvicina alla resistenza ${0:,.0f}. Probabile sweep della liquidità sopra ${1:,.0f} prima di un'inversione bearish. Attendere il rigetto di ${2:,.0f} per confermare l'ingresso short.",
+        
+        # Confirmation System
+        "setup_in_confirmation": "SETUP IN CONFERMA - {0}",
+        "setup_detected_waiting": "Setup rilevato, in attesa di conferma ({0}/2 segnali consecutivi).",
+        "awaiting_sweep": "Sweep atteso prima dell'ingresso. Attendere completamento sweep e conferma di rigetto/recupero.",
+        "operational_signal": "SEGNALE OPERATIVO - {0}",
+        "confirmation_complete": "Conferma completata dopo {0} segnali consecutivi.",
+        "confidence_trend": "Confidenza: {0}",
+        "no_contradictions": "Nessuna contraddizione rilevata.",
+        "consecutive_signals": "Segnali consecutivi: {0}/2",
+        "contradictions": "Contraddizioni: {0}",
+        "confidence_declining": "Confidenza in calo",
+        "awaiting_sweep_confirm": "In attesa di sweep + conferma rigetto",
+        "high_volatility_wait": "Alta volatilità - attendere stabilizzazione",
+        "in_confirmation": "In conferma...",
+        
+        # Signal History
+        "setup_detected_reason": "Setup {0} rilevato - in attesa conferma",
+        "signal_confirmed": "Segnale {0} CONFERMATO - operativo",
+        "setup_invalidated": "Setup {0} invalidato prima della conferma",
+        "signal_invalidated": "Segnale {0} invalidato - condizioni cambiate",
+        "periodic_update": "Aggiornamento periodico segnale operativo",
+    },
+    "en": {
+        # Market Bias
+        "strong_buying_pressure": "Strong buying pressure in order book.",
+        "momentum_favors_bulls": "Momentum favors bulls.",
+        "short_squeeze_prob": "Short squeeze probability at {0:.0f}%.",
+        "heavy_selling_pressure": "Heavy selling pressure detected.",
+        "momentum_favors_bears": "Momentum favors bears.",
+        "long_squeeze_prob": "Long squeeze probability at {0:.0f}%.",
+        "market_indecision": "Market indecision. Wait for clearer signals.",
+        "analyzing_conditions": "Analyzing market conditions...",
+        
+        # Open Interest
+        "oi_increasing": "Increasing OI with rising positions. New money entering the market. If price rising = bullish continuation.",
+        "oi_decreasing": "Decreasing OI indicates positions being closed. Potential trend exhaustion or profit-taking.",
+        "oi_stable": "Stable OI shows market consolidation. Watch for breakout with volume.",
+        
+        # Funding Rate
+        "more_longs_liquidated": "More longs liquidated ({0:.1f}%). Bearish pressure. Shorts paying longs.",
+        "more_shorts_liquidated": "More shorts liquidated ({0:.1f}%). Bullish pressure. Longs paying shorts.",
+        "balanced_liquidations": "Balanced liquidations. Neutral funding environment.",
+        "api_unavailable": "API temporarily unavailable. Showing estimated data.",
+        
+        # S/R Levels
+        "price_rejected_at": "Price rejected at ${0:,.0f} on {1} occasions.",
+        "high_rejection_prob": "High probability of rejection if tested again.",
+        "likely_selling_pressure": "Likely to see selling pressure here.",
+        "may_break_momentum": "May break on strong momentum.",
+        "buyers_stepped_in": "Buyers stepped in at ${0:,.0f} on {1} occasions.",
+        "strong_demand_zone": "Strong demand zone - high probability of bounce.",
+        "likely_buying_interest": "Likely to see buying interest here.",
+        "may_break_selling": "May break on heavy selling pressure.",
+        
+        # Order Book
+        "buy_orders_across": "${0:,.0f} ({1:.2f} BTC) in buy orders across {2} exchanges.",
+        "sell_orders_across": "${0:,.0f} ({1:.2f} BTC) in sell orders across {2} exchanges.",
+        "major_support_wall": "Major support wall - unlikely to break easily.",
+        "moderate_buying": "Moderate buying interest at this level.",
+        "major_resistance_wall": "Major resistance wall - expect strong selling here.",
+        "moderate_selling": "Moderate selling pressure at this level.",
+        
+        # Liquidity Direction
+        "more_liq_above": "More liquidity above current price (${0:,.0f} sell orders vs ${1:,.0f} buy orders). Price tends to seek liquidity - expect move upward to hunt stops.",
+        "more_liq_below": "More liquidity below current price (${0:,.0f} buy orders vs ${1:,.0f} sell orders). Price tends to seek liquidity - expect move downward to hunt stops.",
+        "balanced_liquidity": "Balanced liquidity distribution. No clear direction - market may consolidate until imbalance develops.",
+        
+        # Liquidity Ladder
+        "upper_ladder_stronger": "Upper liquidity ladder is stronger (${0:.1f}M above vs ${1:.1f}M below). Price likely to sweep ${2:,.0f} before potential reversal.",
+        "lower_ladder_stronger": "Lower liquidity ladder is stronger (${0:.1f}M below vs ${1:.1f}M above). Price likely to sweep ${2:,.0f} before potential reversal.",
+        "balanced_distribution": "Balanced liquidity distribution. No clear sweep direction - watch for breakout catalyst.",
+        "no_clear_sweep": "Liquidity levels present but no clear sweep setup. Monitor for accumulation/distribution.",
+        "insufficient_data": "Insufficient liquidity data for path analysis.",
+        
+        # Whale Activity
+        "large_buy_pressure": "Large buy pressure detected: volume spike combined with heavy bid-side order book.",
+        "whale_buying_squeeze": "Whale buying pressure: short squeeze in progress with heavy short liquidations.",
+        "buy_pressure_detected": "Buy pressure detected: {0}",
+        "moderate_whale_buying": "Moderate whale buying activity detected across exchanges.",
+        "large_sell_pressure": "Large sell pressure detected: volume spike combined with heavy ask-side order book.",
+        "whale_selling_cascade": "Whale selling pressure: long liquidation cascade with heavy long liquidations.",
+        "sell_pressure_detected": "Sell pressure detected: {0}",
+        "moderate_whale_selling": "Moderate whale selling activity detected across exchanges.",
+        "no_whale_bias": "No clear whale directional bias. Activity is balanced or insufficient for signal.",
+        
+        # Trade Signal Reasoning
+        "market_bias_is": "Market Bias is {0} with {1:.0f}% confidence",
+        "liquidity_points": "Liquidity points {0} toward ${1:,.0f}",
+        "exchange_consensus_bullish": "Multi-exchange consensus is bullish ({0})",
+        "exchange_consensus_bearish": "Multi-exchange consensus is bearish ({0})",
+        "funding_sentiment": "Funding rate sentiment is {0}",
+        "oi_increasing_bullish": "Open Interest increasing with bullish trend (new longs entering)",
+        "oi_increasing_bearish": "Open Interest increasing with bearish trend (new shorts entering)",
+        "oi_decreasing_profit": "OI decreasing - possible profit taking / exhaustion",
+        "oi_decreasing_covering": "OI decreasing - shorts may be covering",
+        "pattern_detected": "{0} pattern detected ({1}, {2:.0f}% conf)",
+        "whale_favors_longs": "Whale activity favors longs ({0} long vs {1} short signals)",
+        "whale_favors_shorts": "Whale activity favors shorts ({0} short vs {1} long signals)",
+        "whale_engine_buy": "Whale Engine detects BUY pressure ({0:.0f}% strength): {1}",
+        "whale_engine_sell": "Whale Engine detects SELL pressure ({0:.0f}% strength): {1}",
+        "volume_spike": "Volume spike detected: {0:.1f}x average",
+        "long_liquidation_cascade": "Long liquidation cascade in progress",
+        "short_squeeze_progress": "Short squeeze in progress",
+        "orderbook_aggressive_buy": "Order book shows aggressive buying",
+        "orderbook_aggressive_sell": "Order book shows aggressive selling",
+        "ladder_more_above": "Liquidity Ladder: More liquidity above - path analysis suggests upward sweep toward ${0:,.0f}",
+        "ladder_favors_upside": "Liquidity Ladder: Path favors upside",
+        "ladder_more_below": "Liquidity Ladder: More liquidity below - path analysis suggests downward sweep toward ${0:,.0f}",
+        "ladder_favors_downside": "Liquidity Ladder: Path favors downside",
+        "sweep_expected_down": "Sweep expected: Price may dip to ${0:,.0f} before moving up",
+        "possible_dip": "Potential dip before move up",
+        "sweep_expected_up": "Sweep expected: Price may spike to ${0:,.0f} before moving down",
+        "possible_spike": "Potential spike before move down",
+        "high_trap_risk": "High trap risk - potential fake breakout / liquidity grab",
+        "longs_overcrowded": "Longs overcrowded - long squeeze risk / potential short opportunity",
+        "shorts_overcrowded": "Shorts overcrowded - short squeeze risk / potential long opportunity",
+        
+        # Invalidation
+        "true_invalidation_below": "True invalidation below ${0:,.0f} (beyond sweep zone). Obvious stops at ${1:,.0f} may get swept first.",
+        "stop_beyond_sweep_below": "Stop placed at ${0:,.0f}, beyond likely sweep zone of ${1:,.0f}",
+        "true_invalidation_above": "True invalidation above ${0:,.0f} (beyond sweep zone). Obvious stops at ${1:,.0f} may get swept first.",
+        "stop_beyond_sweep_above": "Stop placed at ${0:,.0f}, beyond likely sweep zone of ${1:,.0f}",
+        "mixed_signals": "Mixed signals - wait for clearer setup",
+        
+        # Signal States
+        "no_trade_insufficient": "NO TRADE - INSUFFICIENT MOVE",
+        "move_below_threshold": "Estimated move ({0:.2f}%) is below minimum threshold ({1}%)",
+        "move_too_small": "Move too small: {0:.2f}% < {1}% minimum",
+        "mixed_signals_no_setup": "MIXED SIGNALS - NO CLEAR TRADE SETUP",
+        "factors_not_aligned": "The intelligence factors are not aligned:",
+        "wait_clearer_bias": "Wait for clearer directional bias before entering a position.",
+        "sweep_reversal_setup": "SWEEP & REVERSAL SETUP",
+        "continuation_setup": "CONTINUATION SETUP",
+        "large_move_potential": "Large move potential: {0:.2f}%",
+        "decent_move_potential": "Decent move potential: {0:.2f}%",
+        "small_move": "Small move: {0:.2f}% (minimum is {1}%)",
+        "key_factors": "Key factors supporting this trade:",
+        "liquidity_stop_placement": "Liquidity & Stop Placement:",
+        "obvious_stop_zone": "Obvious stop hunt zone: ${0:,.0f} (below first support)",
+        "obvious_stop_zone_above": "Obvious stop hunt zone: ${0:,.0f} (above first resistance)",
+        "safe_invalidation": "Safe invalidation: ${0:,.0f} (beyond sweep)",
+        "stop_placed_at": "Stop placed at ${0:,.0f} to avoid stop hunts",
+        "sweep_analysis": "Sweep Analysis:",
+        "liquidity_path": "Liquidity Path:",
+        "whale_activity_section": "Whale Activity:",
+        "risk_warnings": "Risk Warnings:",
+        "rr_below_ideal": "Risk/Reward ({0:.1f}:1) below ideal 1.5:1",
+        
+        # Sweep Analysis
+        "approaching_support": "Price approaching ${0:,.0f} support. Likely liquidity sweep below ${1:,.0f} before bullish reversal. Wait for reclaim of ${2:,.0f} to confirm long entry.",
+        "approaching_resistance": "Price approaching ${0:,.0f} resistance. Likely liquidity sweep above ${1:,.0f} before bearish reversal. Wait for rejection of ${2:,.0f} to confirm short entry.",
+        
+        # Confirmation System
+        "setup_in_confirmation": "SETUP IN CONFIRMATION - {0}",
+        "setup_detected_waiting": "Setup detected, waiting for confirmation ({0}/2 consecutive signals).",
+        "awaiting_sweep": "Sweep expected before entry. Wait for sweep completion and rejection/reclaim confirmation.",
+        "operational_signal": "OPERATIONAL SIGNAL - {0}",
+        "confirmation_complete": "Confirmation complete after {0} consecutive signals.",
+        "confidence_trend": "Confidence: {0}",
+        "no_contradictions": "No contradictions detected.",
+        "consecutive_signals": "Consecutive signals: {0}/2",
+        "contradictions": "Contradictions: {0}",
+        "confidence_declining": "Confidence declining",
+        "awaiting_sweep_confirm": "Awaiting sweep + rejection confirmation",
+        "high_volatility_wait": "High volatility - wait for stabilization",
+        "in_confirmation": "Confirming...",
+        
+        # Signal History
+        "setup_detected_reason": "Setup {0} detected - awaiting confirmation",
+        "signal_confirmed": "Signal {0} CONFIRMED - operational",
+        "setup_invalidated": "Setup {0} invalidated before confirmation",
+        "signal_invalidated": "Signal {0} invalidated - conditions changed",
+        "periodic_update": "Periodic operational signal update",
+    },
+    "de": {
+        # Market Bias
+        "strong_buying_pressure": "Starker Kaufdruck im Orderbuch.",
+        "momentum_favors_bulls": "Momentum begünstigt Bullen.",
+        "short_squeeze_prob": "Short Squeeze Wahrscheinlichkeit bei {0:.0f}%.",
+        "heavy_selling_pressure": "Starker Verkaufsdruck erkannt.",
+        "momentum_favors_bears": "Momentum begünstigt Bären.",
+        "long_squeeze_prob": "Long Squeeze Wahrscheinlichkeit bei {0:.0f}%.",
+        "market_indecision": "Marktunentschlossenheit. Auf klarere Signale warten.",
+        "analyzing_conditions": "Marktbedingungen werden analysiert...",
+        
+        # Open Interest
+        "oi_increasing": "Steigendes OI mit neuen Positionen. Neues Kapital tritt in den Markt ein. Bei steigendem Preis = bullische Fortsetzung.",
+        "oi_decreasing": "Sinkendes OI zeigt Schließung von Positionen. Mögliche Trenderschöpfung oder Gewinnmitnahmen.",
+        "oi_stable": "Stabiles OI zeigt Marktkonsolidierung. Auf Ausbruch mit Volumen achten.",
+        
+        # Funding Rate
+        "more_longs_liquidated": "Mehr Longs liquidiert ({0:.1f}%). Bärischer Druck. Shorts zahlen Longs.",
+        "more_shorts_liquidated": "Mehr Shorts liquidiert ({0:.1f}%). Bullischer Druck. Longs zahlen Shorts.",
+        "balanced_liquidations": "Ausgeglichene Liquidationen. Neutrales Funding-Umfeld.",
+        "api_unavailable": "API vorübergehend nicht verfügbar. Geschätzte Daten.",
+        
+        # S/R Levels
+        "price_rejected_at": "Preis bei ${0:,.0f} {1} mal abgelehnt.",
+        "high_rejection_prob": "Hohe Wahrscheinlichkeit einer Ablehnung bei erneutem Test.",
+        "likely_selling_pressure": "Wahrscheinlich Verkaufsdruck hier.",
+        "may_break_momentum": "Könnte bei starkem Momentum durchbrechen.",
+        "buyers_stepped_in": "Käufer haben bei ${0:,.0f} {1} mal eingegriffen.",
+        "strong_demand_zone": "Starke Nachfragezone - hohe Wahrscheinlichkeit eines Rebounds.",
+        "likely_buying_interest": "Wahrscheinlich Kaufinteresse hier.",
+        "may_break_selling": "Könnte bei starkem Verkaufsdruck durchbrechen.",
+        
+        # Order Book
+        "buy_orders_across": "${0:,.0f} ({1:.2f} BTC) an Kauforders auf {2} Börsen.",
+        "sell_orders_across": "${0:,.0f} ({1:.2f} BTC) an Verkaufsorders auf {2} Börsen.",
+        "major_support_wall": "Große Unterstützungsmauer - schwer zu durchbrechen.",
+        "moderate_buying": "Moderates Kaufinteresse auf diesem Niveau.",
+        "major_resistance_wall": "Große Widerstandsmauer - starker Verkauf erwartet.",
+        "moderate_selling": "Moderater Verkaufsdruck auf diesem Niveau.",
+        
+        # Liquidity Direction
+        "more_liq_above": "Mehr Liquidität über dem aktuellen Preis (${0:,.0f} Verkaufsorders vs ${1:,.0f} Kauforders). Preis neigt dazu, Liquidität zu suchen - Aufwärtsbewegung für Stop-Jagd erwartet.",
+        "more_liq_below": "Mehr Liquidität unter dem aktuellen Preis (${0:,.0f} Kauforders vs ${1:,.0f} Verkaufsorders). Preis neigt dazu, Liquidität zu suchen - Abwärtsbewegung für Stop-Jagd erwartet.",
+        "balanced_liquidity": "Ausgeglichene Liquiditätsverteilung. Keine klare Richtung - Markt könnte konsolidieren.",
+        
+        # Liquidity Ladder
+        "upper_ladder_stronger": "Obere Liquiditätsleiter stärker (${0:.1f}M oben vs ${1:.1f}M unten). Preis wird wahrscheinlich ${2:,.0f} sweepen vor möglicher Umkehr.",
+        "lower_ladder_stronger": "Untere Liquiditätsleiter stärker (${0:.1f}M unten vs ${1:.1f}M oben). Preis wird wahrscheinlich ${2:,.0f} sweepen vor möglicher Umkehr.",
+        "balanced_distribution": "Ausgeglichene Liquiditätsverteilung. Keine klare Sweep-Richtung - auf Ausbruchskatalysator achten.",
+        "no_clear_sweep": "Liquiditätsniveaus vorhanden, aber kein klares Sweep-Setup. Akkumulation/Distribution beobachten.",
+        "insufficient_data": "Unzureichende Liquiditätsdaten für Pfadanalyse.",
+        
+        # Whale Activity
+        "large_buy_pressure": "Großer Kaufdruck erkannt: Volumenspike kombiniert mit starkem Bid-seitigem Orderbuch.",
+        "whale_buying_squeeze": "Wal-Kaufdruck: Short Squeeze im Gange mit starken Short-Liquidationen.",
+        "buy_pressure_detected": "Kaufdruck erkannt: {0}",
+        "moderate_whale_buying": "Moderate Wal-Kaufaktivität über Börsen erkannt.",
+        "large_sell_pressure": "Großer Verkaufsdruck erkannt: Volumenspike kombiniert mit starkem Ask-seitigem Orderbuch.",
+        "whale_selling_cascade": "Wal-Verkaufsdruck: Long-Liquidationskaskade im Gange.",
+        "sell_pressure_detected": "Verkaufsdruck erkannt: {0}",
+        "moderate_whale_selling": "Moderate Wal-Verkaufsaktivität über Börsen erkannt.",
+        "no_whale_bias": "Keine klare Wal-Richtungstendenz. Aktivität ausgeglichen oder unzureichend für Signal.",
+        
+        # Trade Signal Reasoning
+        "market_bias_is": "Markt-Bias ist {0} mit {1:.0f}% Konfidenz",
+        "liquidity_points": "Liquidität zeigt {0} Richtung ${1:,.0f}",
+        "exchange_consensus_bullish": "Multi-Börsen-Konsens ist bullisch ({0})",
+        "exchange_consensus_bearish": "Multi-Börsen-Konsens ist bärisch ({0})",
+        "funding_sentiment": "Funding Rate Sentiment ist {0}",
+        "oi_increasing_bullish": "Open Interest steigt mit bullischem Trend (neue Longs)",
+        "oi_increasing_bearish": "Open Interest steigt mit bärischem Trend (neue Shorts)",
+        "oi_decreasing_profit": "OI sinkt - mögliche Gewinnmitnahmen / Erschöpfung",
+        "oi_decreasing_covering": "OI sinkt - Shorts könnten covern",
+        "pattern_detected": "{0} Muster erkannt ({1}, {2:.0f}% Konf)",
+        "whale_favors_longs": "Wal-Aktivität favorisiert Longs ({0} Long vs {1} Short)",
+        "whale_favors_shorts": "Wal-Aktivität favorisiert Shorts ({0} Short vs {1} Long)",
+        "whale_engine_buy": "Whale Engine erkennt KAUF-Druck ({0:.0f}% Stärke): {1}",
+        "whale_engine_sell": "Whale Engine erkennt VERKAUF-Druck ({0:.0f}% Stärke): {1}",
+        "volume_spike": "Volumenspike erkannt: {0:.1f}x Durchschnitt",
+        "long_liquidation_cascade": "Long-Liquidationskaskade im Gange",
+        "short_squeeze_progress": "Short Squeeze im Gange",
+        "orderbook_aggressive_buy": "Orderbuch zeigt aggressiven Kauf",
+        "orderbook_aggressive_sell": "Orderbuch zeigt aggressiven Verkauf",
+        "ladder_more_above": "Liquiditätsleiter: Mehr Liquidität oben - Pfadanalyse deutet auf Aufwärts-Sweep Richtung ${0:,.0f}",
+        "ladder_favors_upside": "Liquiditätsleiter: Pfad favorisiert Aufwärts",
+        "ladder_more_below": "Liquiditätsleiter: Mehr Liquidität unten - Pfadanalyse deutet auf Abwärts-Sweep Richtung ${0:,.0f}",
+        "ladder_favors_downside": "Liquiditätsleiter: Pfad favorisiert Abwärts",
+        "sweep_expected_down": "Sweep erwartet: Preis könnte auf ${0:,.0f} fallen vor Aufwärtsbewegung",
+        "possible_dip": "Möglicher Rückgang vor Aufwärtsbewegung",
+        "sweep_expected_up": "Sweep erwartet: Preis könnte auf ${0:,.0f} steigen vor Abwärtsbewegung",
+        "possible_spike": "Möglicher Spike vor Abwärtsbewegung",
+        "high_trap_risk": "Hohes Fallenrisiko - möglicher falscher Ausbruch / Liquiditätsjagd",
+        "longs_overcrowded": "Longs überfüllt - Long Squeeze Risiko / potenzielle Short-Gelegenheit",
+        "shorts_overcrowded": "Shorts überfüllt - Short Squeeze Risiko / potenzielle Long-Gelegenheit",
+        
+        # Invalidation
+        "true_invalidation_below": "Echte Invalidierung unter ${0:,.0f} (jenseits der Sweep-Zone). Offensichtliche Stops bei ${1:,.0f} könnten zuerst gejagt werden.",
+        "stop_beyond_sweep_below": "Stop bei ${0:,.0f} platziert, jenseits wahrscheinlicher Sweep-Zone von ${1:,.0f}",
+        "true_invalidation_above": "Echte Invalidierung über ${0:,.0f} (jenseits der Sweep-Zone). Offensichtliche Stops bei ${1:,.0f} könnten zuerst gejagt werden.",
+        "stop_beyond_sweep_above": "Stop bei ${0:,.0f} platziert, jenseits wahrscheinlicher Sweep-Zone von ${1:,.0f}",
+        "mixed_signals": "Gemischte Signale - auf klareres Setup warten",
+        
+        # Signal States
+        "no_trade_insufficient": "KEIN TRADE - UNZUREICHENDE BEWEGUNG",
+        "move_below_threshold": "Geschätzte Bewegung ({0:.2f}%) unter Mindestschwelle ({1}%)",
+        "move_too_small": "Bewegung zu klein: {0:.2f}% < {1}% Minimum",
+        "mixed_signals_no_setup": "GEMISCHTE SIGNALE - KEIN KLARES TRADE-SETUP",
+        "factors_not_aligned": "Die Intelligence-Faktoren sind nicht ausgerichtet:",
+        "wait_clearer_bias": "Auf klarere Richtungstendenz warten vor Positionseröffnung.",
+        "sweep_reversal_setup": "SWEEP & UMKEHR SETUP",
+        "continuation_setup": "FORTSETZUNGS-SETUP",
+        "large_move_potential": "Großes Bewegungspotenzial: {0:.2f}%",
+        "decent_move_potential": "Anständiges Bewegungspotenzial: {0:.2f}%",
+        "small_move": "Kleine Bewegung: {0:.2f}% (Minimum ist {1}%)",
+        "key_factors": "Schlüsselfaktoren für diesen Trade:",
+        "liquidity_stop_placement": "Liquidität & Stop-Platzierung:",
+        "obvious_stop_zone": "Offensichtliche Stop-Jagd-Zone: ${0:,.0f} (unter erster Unterstützung)",
+        "obvious_stop_zone_above": "Offensichtliche Stop-Jagd-Zone: ${0:,.0f} (über erstem Widerstand)",
+        "safe_invalidation": "Sichere Invalidierung: ${0:,.0f} (jenseits Sweep)",
+        "stop_placed_at": "Stop bei ${0:,.0f} platziert zur Vermeidung von Stop-Jagden",
+        "sweep_analysis": "Sweep-Analyse:",
+        "liquidity_path": "Liquiditätspfad:",
+        "whale_activity_section": "Wal-Aktivität:",
+        "risk_warnings": "Risikowarnungen:",
+        "rr_below_ideal": "Risk/Reward ({0:.1f}:1) unter idealem 1.5:1",
+        
+        # Sweep Analysis
+        "approaching_support": "Preis nähert sich ${0:,.0f} Unterstützung. Wahrscheinlicher Liquiditäts-Sweep unter ${1:,.0f} vor bullischer Umkehr. Auf Rückeroberung von ${2:,.0f} warten für Long-Einstieg.",
+        "approaching_resistance": "Preis nähert sich ${0:,.0f} Widerstand. Wahrscheinlicher Liquiditäts-Sweep über ${1:,.0f} vor bärischer Umkehr. Auf Ablehnung von ${2:,.0f} warten für Short-Einstieg.",
+        
+        # Confirmation System
+        "setup_in_confirmation": "SETUP IN BESTÄTIGUNG - {0}",
+        "setup_detected_waiting": "Setup erkannt, warte auf Bestätigung ({0}/2 aufeinanderfolgende Signale).",
+        "awaiting_sweep": "Sweep vor Einstieg erwartet. Auf Sweep-Abschluss und Ablehnung/Rückeroberung warten.",
+        "operational_signal": "OPERATIVES SIGNAL - {0}",
+        "confirmation_complete": "Bestätigung abgeschlossen nach {0} aufeinanderfolgenden Signalen.",
+        "confidence_trend": "Konfidenz: {0}",
+        "no_contradictions": "Keine Widersprüche erkannt.",
+        "consecutive_signals": "Aufeinanderfolgende Signale: {0}/2",
+        "contradictions": "Widersprüche: {0}",
+        "confidence_declining": "Konfidenz sinkt",
+        "awaiting_sweep_confirm": "Warte auf Sweep + Ablehnungsbestätigung",
+        "high_volatility_wait": "Hohe Volatilität - auf Stabilisierung warten",
+        "in_confirmation": "Bestätigung...",
+        
+        # Signal History
+        "setup_detected_reason": "Setup {0} erkannt - warte auf Bestätigung",
+        "signal_confirmed": "Signal {0} BESTÄTIGT - operativ",
+        "setup_invalidated": "Setup {0} vor Bestätigung invalidiert",
+        "signal_invalidated": "Signal {0} invalidiert - Bedingungen geändert",
+        "periodic_update": "Periodisches operatives Signal-Update",
+    },
+    "pl": {
+        # Market Bias
+        "strong_buying_pressure": "Silna presja kupna w książce zleceń.",
+        "momentum_favors_bulls": "Momentum sprzyja bykom.",
+        "short_squeeze_prob": "Prawdopodobieństwo short squeeze: {0:.0f}%.",
+        "heavy_selling_pressure": "Wykryto silną presję sprzedaży.",
+        "momentum_favors_bears": "Momentum sprzyja niedźwiedziom.",
+        "long_squeeze_prob": "Prawdopodobieństwo long squeeze: {0:.0f}%.",
+        "market_indecision": "Niezdecydowanie rynku. Poczekaj na wyraźniejsze sygnały.",
+        "analyzing_conditions": "Analizowanie warunków rynkowych...",
+        
+        # Open Interest
+        "oi_increasing": "Rosnące OI z nowymi pozycjami. Nowy kapitał wchodzi na rynek. Przy rosnącej cenie = kontynuacja wzrostowa.",
+        "oi_decreasing": "Spadające OI wskazuje na zamykanie pozycji. Możliwe wyczerpanie trendu lub realizacja zysków.",
+        "oi_stable": "Stabilne OI pokazuje konsolidację rynku. Obserwuj wybicie z wolumenem.",
+        
+        # Funding Rate
+        "more_longs_liquidated": "Więcej zlikwidowanych longów ({0:.1f}%). Presja spadkowa. Shorty płacą longom.",
+        "more_shorts_liquidated": "Więcej zlikwidowanych shortów ({0:.1f}%). Presja wzrostowa. Longi płacą shortom.",
+        "balanced_liquidations": "Zrównoważone likwidacje. Neutralne środowisko funding.",
+        "api_unavailable": "API tymczasowo niedostępne. Szacunkowe dane.",
+        
+        # S/R Levels
+        "price_rejected_at": "Cena odrzucona przy ${0:,.0f} {1} razy.",
+        "high_rejection_prob": "Wysokie prawdopodobieństwo odrzucenia przy ponownym teście.",
+        "likely_selling_pressure": "Prawdopodobna presja sprzedaży tutaj.",
+        "may_break_momentum": "Może przebić przy silnym momentum.",
+        "buyers_stepped_in": "Kupujący wkroczyli przy ${0:,.0f} {1} razy.",
+        "strong_demand_zone": "Silna strefa popytu - wysokie prawdopodobieństwo odbicia.",
+        "likely_buying_interest": "Prawdopodobne zainteresowanie kupnem tutaj.",
+        "may_break_selling": "Może przebić przy silnej presji sprzedaży.",
+        
+        # Order Book
+        "buy_orders_across": "${0:,.0f} ({1:.2f} BTC) w zleceniach kupna na {2} giełdach.",
+        "sell_orders_across": "${0:,.0f} ({1:.2f} BTC) w zleceniach sprzedaży na {2} giełdach.",
+        "major_support_wall": "Główna ściana wsparcia - trudna do przebicia.",
+        "moderate_buying": "Umiarkowane zainteresowanie kupnem na tym poziomie.",
+        "major_resistance_wall": "Główna ściana oporu - oczekuj silnej sprzedaży.",
+        "moderate_selling": "Umiarkowana presja sprzedaży na tym poziomie.",
+        
+        # Liquidity Direction
+        "more_liq_above": "Więcej płynności powyżej obecnej ceny (${0:,.0f} zlec. sprzedaży vs ${1:,.0f} zlec. kupna). Cena szuka płynności - oczekuj ruchu w górę.",
+        "more_liq_below": "Więcej płynności poniżej obecnej ceny (${0:,.0f} zlec. kupna vs ${1:,.0f} zlec. sprzedaży). Cena szuka płynności - oczekuj ruchu w dół.",
+        "balanced_liquidity": "Zrównoważony rozkład płynności. Brak wyraźnego kierunku - rynek może konsolidować.",
+        
+        # Liquidity Ladder
+        "upper_ladder_stronger": "Górna drabina płynności silniejsza (${0:.1f}M powyżej vs ${1:.1f}M poniżej). Cena prawdopodobnie zamecie ${2:,.0f} przed odwróceniem.",
+        "lower_ladder_stronger": "Dolna drabina płynności silniejsza (${0:.1f}M poniżej vs ${1:.1f}M powyżej). Cena prawdopodobnie zamecie ${2:,.0f} przed odwróceniem.",
+        "balanced_distribution": "Zrównoważony rozkład płynności. Brak wyraźnego kierunku sweep - obserwuj katalizator wybicia.",
+        "no_clear_sweep": "Poziomy płynności obecne, ale brak wyraźnego setup sweep. Monitoruj akumulację/dystrybucję.",
+        "insufficient_data": "Niewystarczające dane płynności do analizy ścieżki.",
+        
+        # Whale Activity
+        "large_buy_pressure": "Wykryto dużą presję kupna: skok wolumenu połączony z silną stroną bid książki zleceń.",
+        "whale_buying_squeeze": "Presja kupna wielorybów: short squeeze w toku z silnymi likwidacjami shortów.",
+        "buy_pressure_detected": "Wykryto presję kupna: {0}",
+        "moderate_whale_buying": "Umiarkowana aktywność kupna wielorybów wykryta na giełdach.",
+        "large_sell_pressure": "Wykryto dużą presję sprzedaży: skok wolumenu połączony z silną stroną ask książki zleceń.",
+        "whale_selling_cascade": "Presja sprzedaży wielorybów: kaskada likwidacji longów w toku.",
+        "sell_pressure_detected": "Wykryto presję sprzedaży: {0}",
+        "moderate_whale_selling": "Umiarkowana aktywność sprzedaży wielorybów wykryta na giełdach.",
+        "no_whale_bias": "Brak wyraźnego kierunku wielorybów. Aktywność zrównoważona lub niewystarczająca do sygnału.",
+        
+        # Trade Signal Reasoning
+        "market_bias_is": "Bias Rynku to {0} z {1:.0f}% pewnością",
+        "liquidity_points": "Płynność wskazuje {0} w kierunku ${1:,.0f}",
+        "exchange_consensus_bullish": "Konsensus wielu giełd jest byczy ({0})",
+        "exchange_consensus_bearish": "Konsensus wielu giełd jest niedźwiedzi ({0})",
+        "funding_sentiment": "Sentyment funding rate to {0}",
+        "oi_increasing_bullish": "Open Interest rośnie z trendem byczym (nowe longi)",
+        "oi_increasing_bearish": "Open Interest rośnie z trendem niedźwiedzim (nowe shorty)",
+        "oi_decreasing_profit": "OI spada - możliwa realizacja zysków / wyczerpanie",
+        "oi_decreasing_covering": "OI spada - shorty mogą się pokrywać",
+        "pattern_detected": "Wykryto wzór {0} ({1}, {2:.0f}% pewn)",
+        "whale_favors_longs": "Aktywność wielorybów sprzyja longom ({0} long vs {1} short)",
+        "whale_favors_shorts": "Aktywność wielorybów sprzyja shortom ({0} short vs {1} long)",
+        "whale_engine_buy": "Whale Engine wykrywa presję KUPNA ({0:.0f}% siły): {1}",
+        "whale_engine_sell": "Whale Engine wykrywa presję SPRZEDAŻY ({0:.0f}% siły): {1}",
+        "volume_spike": "Wykryto skok wolumenu: {0:.1f}x średniej",
+        "long_liquidation_cascade": "Kaskada likwidacji longów w toku",
+        "short_squeeze_progress": "Short squeeze w toku",
+        "orderbook_aggressive_buy": "Książka zleceń pokazuje agresywne kupno",
+        "orderbook_aggressive_sell": "Książka zleceń pokazuje agresywną sprzedaż",
+        "ladder_more_above": "Drabina Płynności: Więcej płynności powyżej - analiza ścieżki sugeruje sweep w górę do ${0:,.0f}",
+        "ladder_favors_upside": "Drabina Płynności: Ścieżka sprzyja wzrostom",
+        "ladder_more_below": "Drabina Płynności: Więcej płynności poniżej - analiza ścieżki sugeruje sweep w dół do ${0:,.0f}",
+        "ladder_favors_downside": "Drabina Płynności: Ścieżka sprzyja spadkom",
+        "sweep_expected_down": "Oczekiwany sweep: Cena może spaść do ${0:,.0f} przed wzrostem",
+        "possible_dip": "Możliwy spadek przed wzrostem",
+        "sweep_expected_up": "Oczekiwany sweep: Cena może wzrosnąć do ${0:,.0f} przed spadkiem",
+        "possible_spike": "Możliwy skok przed spadkiem",
+        "high_trap_risk": "Wysokie ryzyko pułapki - możliwe fałszywe wybicie / polowanie na płynność",
+        "longs_overcrowded": "Longi przepełnione - ryzyko long squeeze / potencjalna okazja na short",
+        "shorts_overcrowded": "Shorty przepełnione - ryzyko short squeeze / potencjalna okazja na long",
+        
+        # Invalidation
+        "true_invalidation_below": "Prawdziwa inwalidacja poniżej ${0:,.0f} (poza strefą sweep). Oczywiste stopy przy ${1:,.0f} mogą zostać zamiecione jako pierwsze.",
+        "stop_beyond_sweep_below": "Stop umieszczony przy ${0:,.0f}, poza prawdopodobną strefą sweep ${1:,.0f}",
+        "true_invalidation_above": "Prawdziwa inwalidacja powyżej ${0:,.0f} (poza strefą sweep). Oczywiste stopy przy ${1:,.0f} mogą zostać zamiecione jako pierwsze.",
+        "stop_beyond_sweep_above": "Stop umieszczony przy ${0:,.0f}, poza prawdopodobną strefą sweep ${1:,.0f}",
+        "mixed_signals": "Mieszane sygnały - poczekaj na wyraźniejszy setup",
+        
+        # Signal States
+        "no_trade_insufficient": "BRAK HANDLU - NIEWYSTARCZAJĄCY RUCH",
+        "move_below_threshold": "Szacowany ruch ({0:.2f}%) poniżej minimalnego progu ({1}%)",
+        "move_too_small": "Ruch za mały: {0:.2f}% < {1}% minimum",
+        "mixed_signals_no_setup": "MIESZANE SYGNAŁY - BRAK WYRAŹNEGO SETUP",
+        "factors_not_aligned": "Czynniki intelligence nie są wyrównane:",
+        "wait_clearer_bias": "Poczekaj na wyraźniejszy kierunek przed wejściem w pozycję.",
+        "sweep_reversal_setup": "SETUP SWEEP I ODWRÓCENIE",
+        "continuation_setup": "SETUP KONTYNUACJI",
+        "large_move_potential": "Duży potencjał ruchu: {0:.2f}%",
+        "decent_move_potential": "Przyzwoity potencjał ruchu: {0:.2f}%",
+        "small_move": "Mały ruch: {0:.2f}% (minimum to {1}%)",
+        "key_factors": "Kluczowe czynniki wspierające ten trade:",
+        "liquidity_stop_placement": "Płynność i Umiejscowienie Stop:",
+        "obvious_stop_zone": "Oczywista strefa polowania na stopy: ${0:,.0f} (poniżej pierwszego wsparcia)",
+        "obvious_stop_zone_above": "Oczywista strefa polowania na stopy: ${0:,.0f} (powyżej pierwszego oporu)",
+        "safe_invalidation": "Bezpieczna inwalidacja: ${0:,.0f} (poza sweep)",
+        "stop_placed_at": "Stop umieszczony przy ${0:,.0f} aby uniknąć polowania na stopy",
+        "sweep_analysis": "Analiza Sweep:",
+        "liquidity_path": "Ścieżka Płynności:",
+        "whale_activity_section": "Aktywność Wielorybów:",
+        "risk_warnings": "Ostrzeżenia o Ryzyku:",
+        "rr_below_ideal": "Risk/Reward ({0:.1f}:1) poniżej idealnego 1.5:1",
+        
+        # Sweep Analysis
+        "approaching_support": "Cena zbliża się do wsparcia ${0:,.0f}. Prawdopodobny sweep płynności poniżej ${1:,.0f} przed byczym odwróceniem. Poczekaj na odzyskanie ${2:,.0f} dla potwierdzenia long.",
+        "approaching_resistance": "Cena zbliża się do oporu ${0:,.0f}. Prawdopodobny sweep płynności powyżej ${1:,.0f} przed niedźwiedzim odwróceniem. Poczekaj na odrzucenie ${2:,.0f} dla potwierdzenia short.",
+        
+        # Confirmation System
+        "setup_in_confirmation": "SETUP W POTWIERDZENIU - {0}",
+        "setup_detected_waiting": "Setup wykryty, oczekiwanie na potwierdzenie ({0}/2 kolejnych sygnałów).",
+        "awaiting_sweep": "Oczekiwany sweep przed wejściem. Poczekaj na zakończenie sweep i potwierdzenie odrzucenia/odzyskania.",
+        "operational_signal": "SYGNAŁ OPERACYJNY - {0}",
+        "confirmation_complete": "Potwierdzenie zakończone po {0} kolejnych sygnałach.",
+        "confidence_trend": "Pewność: {0}",
+        "no_contradictions": "Brak wykrytych sprzeczności.",
+        "consecutive_signals": "Kolejne sygnały: {0}/2",
+        "contradictions": "Sprzeczności: {0}",
+        "confidence_declining": "Pewność spada",
+        "awaiting_sweep_confirm": "Oczekiwanie na sweep + potwierdzenie odrzucenia",
+        "high_volatility_wait": "Wysoka zmienność - poczekaj na stabilizację",
+        "in_confirmation": "Potwierdzanie...",
+        
+        # Signal History
+        "setup_detected_reason": "Setup {0} wykryty - oczekiwanie na potwierdzenie",
+        "signal_confirmed": "Sygnał {0} POTWIERDZONY - operacyjny",
+        "setup_invalidated": "Setup {0} unieważniony przed potwierdzeniem",
+        "signal_invalidated": "Sygnał {0} unieważniony - warunki się zmieniły",
+        "periodic_update": "Okresowa aktualizacja sygnału operacyjnego",
+    }
+}
+
+def get_translation(key: str, lang: str = "it", *args) -> str:
+    """Get translated string with optional format arguments"""
+    translations = BACKEND_TRANSLATIONS.get(lang, BACKEND_TRANSLATIONS["it"])
+    text = translations.get(key, BACKEND_TRANSLATIONS["it"].get(key, key))
+    if args:
+        try:
+            return text.format(*args)
+        except:
+            return text
+    return text
+
 # ============== SIGNAL CONFIRMATION SYSTEM ==============
 # Signal states
 SIGNAL_STATE_NO_TRADE = "NO_TRADE"
@@ -3674,7 +4298,7 @@ async def get_exchange_comparison():
     }
 
 @api_router.get("/trade-signal")
-async def get_trade_signal():
+async def get_trade_signal(lang: str = Query(default="it", description="Language: it, en, de, pl")):
     """
     Get final actionable trading signal synthesizing all intelligence.
     
@@ -3690,7 +4314,13 @@ async def get_trade_signal():
     
     Returns a clear LONG, SHORT, or NO TRADE recommendation with
     entry zones, targets, stop loss, and detailed reasoning.
+    
+    Supports: it (Italian), en (English), de (German), pl (Polish)
     """
+    # Validate language
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
     # Fetch all required data in parallel
     # NOTE: Using 4H (240min) candles as the core operational timeframe for trading intelligence
     ticker_task = fetch_kraken_ticker()
@@ -3711,15 +4341,15 @@ async def get_trade_signal():
             entry_zone_low=0,
             entry_zone_high=0,
             stop_loss=0,
-            invalidation_reason="Market data unavailable",
+            invalidation_reason=get_translation("api_unavailable", lang),
             target_1=0,
             target_2=0,
             risk_reward_ratio=0,
-            reasoning="Unable to generate signal - market data unavailable",
+            reasoning=get_translation("api_unavailable", lang),
             factors={},
             timestamp=datetime.now(timezone.utc),
             valid_for="N/A",
-            warnings=["Market data unavailable"]
+            warnings=[get_translation("api_unavailable", lang)]
         )
     
     # Generate all intelligence components
