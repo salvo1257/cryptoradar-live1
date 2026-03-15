@@ -238,9 +238,17 @@ export function TradeSignalCard({ compact = false }) {
             {language === 'it' ? 'SWEEP E INVERSIONE' : 'SWEEP & REVERSAL'}
           </span>
         );
+      case 'trend_continuation':
+        return (
+          <span className="flex items-center gap-1 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-mono">
+            <TrendingUp className="w-3 h-3" />
+            {language === 'it' ? 'CONTINUAZIONE TREND' : 'TREND CONTINUATION'}
+          </span>
+        );
       case 'continuation':
         return (
-          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-mono">
+          <span className="flex items-center gap-1 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-mono">
+            <TrendingUp className="w-3 h-3" />
             {language === 'it' ? 'CONTINUAZIONE' : 'CONTINUATION'}
           </span>
         );

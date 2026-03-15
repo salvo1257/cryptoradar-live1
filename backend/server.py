@@ -5874,6 +5874,197 @@ def calculate_signal_timing(
     }
 
 
+# ============== SIGNAL ENGINE VERSION ==============
+# v1 = Original sweep reversal only (STABLE)
+# v2 = Sweep reversal + Trend continuation (DEV)
+SIGNAL_ENGINE_VERSION = os.environ.get("SIGNAL_ENGINE_VERSION", "v2")  # Default to v2 for dev
+
+
+def detect_trend_continuation_setup(
+    current_price: float,
+    market_bias: MarketBias,
+    market_energy: MarketEnergy,
+    liquidity_magnet: dict,
+    whale_activity: WhaleActivity,
+    sr_levels: List[SupportResistanceLevel],
+    candles: List[dict] = None
+) -> dict:
+    """
+    Detect TREND CONTINUATION setup conditions (CryptoRadar v2).
+    
+    This detects valid continuation setups where price is trending
+    and conditions favor continuation rather than reversal.
+    
+    LONG CONTINUATION conditions:
+    - Market Bias: BULLISH (score > 55)
+    - Market Energy: MEDIUM or HIGH (>= 40)
+    - Liquidity Magnet: UP direction
+    - Whale Activity: BULLISH or NEUTRAL
+    - Price breaks/reclaims resistance
+    
+    SHORT CONTINUATION conditions:
+    - Market Bias: BEARISH (score < 45)
+    - Market Energy: MEDIUM or HIGH (>= 40)
+    - Liquidity Magnet: DOWN direction
+    - Whale Activity: BEARISH or NEUTRAL
+    - Price breaks/loses support
+    
+    Returns:
+        dict with is_valid, direction, confidence, reasoning
+    """
+    result = {
+        "is_valid": False,
+        "direction": None,
+        "confidence": 0,
+        "reasoning": [],
+        "conditions_met": {},
+        "setup_type": "trend_continuation"
+    }
+    
+    # Extract values safely
+    bias = market_bias.bias if market_bias else "NEUTRAL"
+    bias_confidence = market_bias.confidence if market_bias else 50
+    
+    energy_score = 0
+    energy_state = "unknown"
+    if market_energy:
+        energy_score = getattr(market_energy, 'energy_score', 0) or 0
+        energy_state = getattr(market_energy, 'compression_level', 'unknown') or 'unknown'
+    
+    liq_direction = "BALANCED"
+    liq_score = 50
+    if liquidity_magnet:
+        liq_direction = liquidity_magnet.get("target_direction", "BALANCED")
+        liq_score = liquidity_magnet.get("attraction_score", 50)
+    
+    whale_dir = "NEUTRAL"
+    whale_confidence = 0
+    if whale_activity:
+        whale_dir = getattr(whale_activity, 'direction', 'NEUTRAL') or 'NEUTRAL'
+        whale_confidence = getattr(whale_activity, 'confidence', 0) or 0
+    
+    # Organize S/R levels
+    supports = sorted([l for l in sr_levels if l.level_type == "support"], 
+                     key=lambda x: abs(x.distance_percent))
+    resistances = sorted([l for l in sr_levels if l.level_type == "resistance"], 
+                        key=lambda x: abs(x.distance_percent))
+    
+    # ============ CHECK LONG CONTINUATION ============
+    long_conditions = {
+        "market_bias_bullish": bias == "BULLISH" and bias_confidence > 55,
+        "energy_sufficient": energy_score >= 40 or energy_state.lower() in ['expansion', 'moderate', 'high'],
+        "liquidity_up": liq_direction == "UP" and liq_score > 50,
+        "whale_not_bearish": whale_dir in ["BULLISH", "NEUTRAL", "ACCUMULATION"],
+        "near_breakout": len(resistances) > 0 and abs(resistances[0].distance_percent) < 1.0
+    }
+    
+    long_score = sum(1 for v in long_conditions.values() if v)
+    long_valid = long_score >= 4  # Need 4 out of 5 conditions
+    
+    # ============ CHECK SHORT CONTINUATION ============
+    short_conditions = {
+        "market_bias_bearish": bias == "BEARISH" and bias_confidence > 55,
+        "energy_sufficient": energy_score >= 40 or energy_state.lower() in ['expansion', 'moderate', 'high'],
+        "liquidity_down": liq_direction == "DOWN" and liq_score > 50,
+        "whale_not_bullish": whale_dir in ["BEARISH", "NEUTRAL", "DISTRIBUTION"],
+        "near_breakdown": len(supports) > 0 and abs(supports[0].distance_percent) < 1.0
+    }
+    
+    short_score = sum(1 for v in short_conditions.values() if v)
+    short_valid = short_score >= 4  # Need 4 out of 5 conditions
+    
+    # ============ DETERMINE DIRECTION ============
+    if long_valid and (not short_valid or long_score > short_score):
+        result["is_valid"] = True
+        result["direction"] = "LONG"
+        result["conditions_met"] = long_conditions
+        
+        # Calculate confidence for LONG continuation
+        base_conf = 40
+        base_conf += min(15, (bias_confidence - 50) * 0.3) if bias == "BULLISH" else 0
+        base_conf += min(15, energy_score * 0.15) if energy_score > 0 else 0
+        base_conf += min(10, (liq_score - 50) * 0.2) if liq_direction == "UP" else 0
+        base_conf += 10 if whale_dir == "BULLISH" else 5 if whale_dir == "NEUTRAL" else 0
+        base_conf += 5 if long_conditions["near_breakout"] else 0
+        
+        result["confidence"] = min(85, base_conf)
+        result["reasoning"] = [
+            f"Market bias BULLISH ({bias_confidence:.0f}%)",
+            f"Market energy: {energy_score:.0f} ({energy_state})",
+            f"Liquidity magnet pointing UP ({liq_score:.0f})",
+            f"Whale activity: {whale_dir}",
+            "Near resistance breakout zone" if long_conditions["near_breakout"] else "Away from key levels"
+        ]
+        
+    elif short_valid:
+        result["is_valid"] = True
+        result["direction"] = "SHORT"
+        result["conditions_met"] = short_conditions
+        
+        # Calculate confidence for SHORT continuation
+        base_conf = 40
+        base_conf += min(15, (50 - bias_confidence) * 0.3) if bias == "BEARISH" else 0
+        base_conf += min(15, energy_score * 0.15) if energy_score > 0 else 0
+        base_conf += min(10, (liq_score - 50) * 0.2) if liq_direction == "DOWN" else 0
+        base_conf += 10 if whale_dir == "BEARISH" else 5 if whale_dir == "NEUTRAL" else 0
+        base_conf += 5 if short_conditions["near_breakdown"] else 0
+        
+        result["confidence"] = min(85, base_conf)
+        result["reasoning"] = [
+            f"Market bias BEARISH ({bias_confidence:.0f}%)",
+            f"Market energy: {energy_score:.0f} ({energy_state})",
+            f"Liquidity magnet pointing DOWN ({liq_score:.0f})",
+            f"Whale activity: {whale_dir}",
+            "Near support breakdown zone" if short_conditions["near_breakdown"] else "Away from key levels"
+        ]
+    
+    return result
+
+
+def detect_market_regime(candles: List[dict], lookback: int = 20) -> str:
+    """
+    Detect if market is TRENDING or RANGING.
+    
+    Uses:
+    - Price vs moving averages
+    - Higher highs / lower lows pattern
+    - Volatility expansion/contraction
+    
+    Returns: "TRENDING_UP", "TRENDING_DOWN", or "RANGING"
+    """
+    if not candles or len(candles) < lookback:
+        return "RANGING"
+    
+    recent = candles[-lookback:]
+    closes = [c.get('close', 0) for c in recent]
+    highs = [c.get('high', 0) for c in recent[-10:]]
+    lows = [c.get('low', 0) for c in recent[-10:]]
+    
+    if not all(closes):
+        return "RANGING"
+    
+    # Simple moving average
+    sma_20 = sum(closes) / len(closes)
+    sma_10 = sum(closes[-10:]) / 10 if len(closes) >= 10 else sma_20
+    
+    current_price = closes[-1]
+    
+    # Check for trending conditions
+    above_ma = current_price > sma_20 and current_price > sma_10
+    below_ma = current_price < sma_20 and current_price < sma_10
+    
+    # Check higher highs / lower lows
+    higher_highs_count = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i-1])
+    lower_lows_count = sum(1 for i in range(1, len(lows)) if lows[i] < lows[i-1])
+    
+    if above_ma and higher_highs_count >= 5:
+        return "TRENDING_UP"
+    elif below_ma and lower_lows_count >= 5:
+        return "TRENDING_DOWN"
+    
+    return "RANGING"
+
+
 def generate_trade_signal(
     current_price: float,
     market_bias: MarketBias,
@@ -6235,60 +6426,167 @@ def generate_trade_signal(
     
     # ================== DETERMINE DIRECTION ==================
     
+    # First, check for sweep reversal setup (v1 logic)
+    sweep_direction = None
     if score >= 4:
-        direction = "LONG"
+        sweep_direction = "LONG"
     elif score <= -4:
-        direction = "SHORT"
+        sweep_direction = "SHORT"
+    
+    # v2: Also check for trend continuation setup
+    continuation_setup = None
+    if SIGNAL_ENGINE_VERSION == "v2":
+        # Prepare liquidity magnet data for continuation detection
+        liq_magnet_data = None
+        if liquidity_ladder:
+            liq_magnet_data = {
+                "target_direction": liquidity_ladder.more_attractive_side.upper() if liquidity_ladder.more_attractive_side else "BALANCED",
+                "attraction_score": 60 if liquidity_ladder.more_attractive_side else 50
+            }
+        
+        # Detect trend continuation setup
+        continuation_setup = detect_trend_continuation_setup(
+            current_price=current_price,
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liq_magnet_data,
+            whale_activity=whale_activity,
+            sr_levels=sr_levels
+        )
+        
+        # Log continuation detection for debugging
+        if continuation_setup.get("is_valid"):
+            logger.info(f"[v2] Trend Continuation detected: {continuation_setup.get('direction')} @ {continuation_setup.get('confidence'):.0f}%")
+    
+    # ================== SELECT BEST SETUP ==================
+    # Priority logic when both setups are valid:
+    # 1. If only one setup is valid, use it
+    # 2. If both valid, compare confidence and market regime
+    # 3. Prefer the setup with higher confidence
+    
+    direction = "NO TRADE"
+    
+    if sweep_direction and not (continuation_setup and continuation_setup.get("is_valid")):
+        # Only sweep reversal is valid
+        direction = sweep_direction
+        setup_type = "sweep_reversal" if sweep_detected else "standard"
+        
+    elif not sweep_direction and continuation_setup and continuation_setup.get("is_valid"):
+        # Only trend continuation is valid
+        direction = continuation_setup["direction"]
+        setup_type = "trend_continuation"
+        # Add continuation reasoning to the signal
+        reasoning_parts.extend(continuation_setup.get("reasoning", []))
+        
+    elif sweep_direction and continuation_setup and continuation_setup.get("is_valid"):
+        # Both setups are valid - choose the better one
+        # Calculate sweep reversal confidence for comparison
+        sweep_raw_conf = (abs(score) / 12) * 100
+        cont_conf = continuation_setup.get("confidence", 0)
+        
+        # Prefer trend continuation if it has higher confidence (with 5% buffer)
+        if cont_conf > sweep_raw_conf + 5:
+            direction = continuation_setup["direction"]
+            setup_type = "trend_continuation"
+            reasoning_parts.extend(continuation_setup.get("reasoning", []))
+            reasoning_parts.append(f"[v2] Continuation setup chosen over sweep reversal ({cont_conf:.0f}% vs {sweep_raw_conf:.0f}%)")
+        else:
+            direction = sweep_direction
+            setup_type = "sweep_reversal" if sweep_detected else "standard"
+            reasoning_parts.append(f"[v2] Sweep reversal chosen over continuation ({sweep_raw_conf:.0f}% vs {cont_conf:.0f}%)")
     else:
+        # No valid setup
         direction = "NO TRADE"
+        setup_type = "no_setup"
     
     # ================== CALCULATE TRADE PARAMETERS ==================
     
     if direction == "LONG":
-        # Entry zone: current price to nearest support
-        entry_zone_low = supports[0].price if supports else current_price * 0.995
-        entry_zone_high = current_price
-        
-        # SMART STOP LOSS: Beyond the liquidity sweep zone, not at obvious level
-        # Obvious stop = just below first support
-        # Smart stop = below second support OR below sweep zone
-        if len(supports) > 1:
-            # Use second support as true invalidation
-            stop_loss = safe_long_invalidation
-            invalidation_reason = get_translation("true_invalidation_below", lang, stop_loss, obvious_long_stop)
+        if setup_type == "trend_continuation":
+            # TREND CONTINUATION LONG: Tighter entry zone, ATR-based targets
+            entry_zone_low = current_price * 0.998   # Tighter entry
+            entry_zone_high = current_price * 1.002
+            
+            # Stop below recent swing low or nearest support
+            stop_loss = supports[0].price * 0.995 if supports else current_price * 0.985
+            invalidation_reason = get_translation("continuation_stop", lang) if 'continuation_stop' in BACKEND_TRANSLATIONS.get(lang, {}) else f"Stop below swing low: ${stop_loss:,.0f}"
+            
+            # Targets: Next resistance levels or percentage-based
+            target_1 = resistances[0].price if resistances else current_price * 1.015
+            target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.025
+            
+            # Ensure targets are above entry
+            if target_1 <= current_price:
+                target_1 = current_price * 1.015
+            if target_2 <= target_1:
+                target_2 = target_1 * 1.01
+            
+            estimated_move = ((target_1 - current_price) / current_price) * 100
+            liquidity_sweep_zone = None  # No sweep expected in continuation
+            safe_invalidation = stop_loss
+            
         else:
-            stop_loss = long_sweep_zone * 0.995  # Below sweep zone
-            invalidation_reason = get_translation("stop_beyond_sweep_below", lang, stop_loss, long_sweep_zone)
-        
-        # Targets
-        target_1 = resistances[0].price if resistances else current_price * 1.02
-        target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.04
-        
-        estimated_move = ((target_1 - current_price) / current_price) * 100
-        
-        # Sweep zone info for LONG
-        liquidity_sweep_zone = long_sweep_zone
-        safe_invalidation = stop_loss
+            # SWEEP REVERSAL LONG (original v1 logic)
+            entry_zone_low = supports[0].price if supports else current_price * 0.995
+            entry_zone_high = current_price
+            
+            # SMART STOP LOSS: Beyond the liquidity sweep zone, not at obvious level
+            if len(supports) > 1:
+                stop_loss = safe_long_invalidation
+                invalidation_reason = get_translation("true_invalidation_below", lang, stop_loss, obvious_long_stop)
+            else:
+                stop_loss = long_sweep_zone * 0.995
+                invalidation_reason = get_translation("stop_beyond_sweep_below", lang, stop_loss, long_sweep_zone)
+            
+            target_1 = resistances[0].price if resistances else current_price * 1.02
+            target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.04
+            
+            estimated_move = ((target_1 - current_price) / current_price) * 100
+            liquidity_sweep_zone = long_sweep_zone
+            safe_invalidation = stop_loss
         
     elif direction == "SHORT":
-        entry_zone_low = current_price
-        entry_zone_high = resistances[0].price if resistances else current_price * 1.005
-        
-        # SMART STOP LOSS for SHORT
-        if len(resistances) > 1:
-            stop_loss = safe_short_invalidation
-            invalidation_reason = get_translation("true_invalidation_above", lang, stop_loss, obvious_short_stop)
+        if setup_type == "trend_continuation":
+            # TREND CONTINUATION SHORT: Tighter entry zone, ATR-based targets
+            entry_zone_low = current_price * 0.998
+            entry_zone_high = current_price * 1.002
+            
+            # Stop above recent swing high or nearest resistance
+            stop_loss = resistances[0].price * 1.005 if resistances else current_price * 1.015
+            invalidation_reason = get_translation("continuation_stop", lang) if 'continuation_stop' in BACKEND_TRANSLATIONS.get(lang, {}) else f"Stop above swing high: ${stop_loss:,.0f}"
+            
+            # Targets: Next support levels or percentage-based
+            target_1 = supports[0].price if supports else current_price * 0.985
+            target_2 = supports[1].price if len(supports) > 1 else current_price * 0.975
+            
+            # Ensure targets are below entry
+            if target_1 >= current_price:
+                target_1 = current_price * 0.985
+            if target_2 >= target_1:
+                target_2 = target_1 * 0.99
+            
+            estimated_move = ((target_1 - current_price) / current_price) * 100
+            liquidity_sweep_zone = None
+            safe_invalidation = stop_loss
+            
         else:
-            stop_loss = short_sweep_zone * 1.005
-            invalidation_reason = get_translation("stop_beyond_sweep_above", lang, stop_loss, short_sweep_zone)
-        
-        target_1 = supports[0].price if supports else current_price * 0.98
-        target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
-        
-        estimated_move = ((target_1 - current_price) / current_price) * 100
-        
-        liquidity_sweep_zone = short_sweep_zone
-        safe_invalidation = stop_loss
+            # SWEEP REVERSAL SHORT (original v1 logic)
+            entry_zone_low = current_price
+            entry_zone_high = resistances[0].price if resistances else current_price * 1.005
+            
+            if len(resistances) > 1:
+                stop_loss = safe_short_invalidation
+                invalidation_reason = get_translation("true_invalidation_above", lang, stop_loss, obvious_short_stop)
+            else:
+                stop_loss = short_sweep_zone * 1.005
+                invalidation_reason = get_translation("stop_beyond_sweep_above", lang, stop_loss, short_sweep_zone)
+            
+            target_1 = supports[0].price if supports else current_price * 0.98
+            target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
+            
+            estimated_move = ((target_1 - current_price) / current_price) * 100
+            liquidity_sweep_zone = short_sweep_zone
+            safe_invalidation = stop_loss
         
     else:  # NO TRADE
         entry_zone_low = current_price * 0.99
