@@ -8622,6 +8622,391 @@ async def get_signal_statistics():
         return {"error": str(e)}
 
 
+@api_router.get("/signal-history/reliability-analytics")
+async def get_reliability_analytics():
+    """
+    Comprehensive Signal Reliability Analytics / Heatmap data.
+    
+    Analyzes historical signal outcomes to identify which signal combinations
+    perform best. This is purely analytical - does not change signal logic.
+    
+    Dimensions analyzed:
+    - Setup type (sweep_reversal, standard, etc.)
+    - Direction (LONG vs SHORT)
+    - Confidence ranges (0-50%, 50-60%, 60-70%, 70-80%, 80-100%)
+    - Market energy levels (compression, expansion, neutral)
+    - Liquidity magnet direction (UP, DOWN, BALANCED)
+    - Day of week (weekday vs weekend)
+    
+    Metrics per dimension:
+    - Total signals
+    - Win rate, Partial win rate, Loss rate, Expired rate
+    - Average PnL
+    - Profit factor (gross profits / gross losses)
+    """
+    try:
+        # Only analyze signals with definitive outcomes and targets
+        base_match = {
+            "outcome": {"$in": ["WIN", "LOSS", "PARTIAL_WIN", "EXPIRED"]},
+            "direction": {"$in": ["LONG", "SHORT"]},
+            "target_1": {"$gt": 0}
+        }
+        
+        def calc_rates_and_pf(signals):
+            """Calculate win/loss rates and profit factor from signal list"""
+            total = len(signals)
+            if total == 0:
+                return None
+            
+            wins = sum(1 for s in signals if s.get("outcome") == "WIN")
+            partial = sum(1 for s in signals if s.get("outcome") == "PARTIAL_WIN")
+            losses = sum(1 for s in signals if s.get("outcome") == "LOSS")
+            expired = sum(1 for s in signals if s.get("outcome") == "EXPIRED")
+            
+            # PnL calculations
+            pnls = [s.get("pnl_percent", 0) or 0 for s in signals]
+            avg_pnl = sum(pnls) / len(pnls) if pnls else 0
+            
+            gross_profit = sum(p for p in pnls if p > 0)
+            gross_loss = abs(sum(p for p in pnls if p < 0))
+            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (999 if gross_profit > 0 else 0)
+            
+            # Confidence
+            confidences = [s.get("confidence", 0) or 0 for s in signals]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+            
+            return {
+                "total": total,
+                "wins": wins,
+                "partial_wins": partial,
+                "losses": losses,
+                "expired": expired,
+                "win_rate": round((wins / total) * 100, 1) if total > 0 else 0,
+                "partial_rate": round((partial / total) * 100, 1) if total > 0 else 0,
+                "loss_rate": round((losses / total) * 100, 1) if total > 0 else 0,
+                "expired_rate": round((expired / total) * 100, 1) if total > 0 else 0,
+                "combined_win_rate": round(((wins + partial) / total) * 100, 1) if total > 0 else 0,
+                "avg_pnl": round(avg_pnl, 2),
+                "profit_factor": round(profit_factor, 2) if profit_factor < 100 else "∞",
+                "avg_confidence": round(avg_confidence, 1)
+            }
+        
+        # Fetch all relevant signals
+        all_signals = await signal_history_collection.find(
+            base_match,
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # ===== BY DIRECTION =====
+        by_direction = {}
+        for direction in ["LONG", "SHORT"]:
+            filtered = [s for s in all_signals if s.get("direction") == direction]
+            stats = calc_rates_and_pf(filtered)
+            if stats:
+                by_direction[direction] = stats
+        
+        # ===== BY SETUP TYPE =====
+        by_setup = {}
+        setup_types = set(s.get("setup_type", "unknown") for s in all_signals)
+        for setup in setup_types:
+            filtered = [s for s in all_signals if s.get("setup_type") == setup]
+            stats = calc_rates_and_pf(filtered)
+            if stats and stats["total"] >= 2:  # Only show setups with 2+ signals
+                by_setup[setup or "unknown"] = stats
+        
+        # ===== BY CONFIDENCE RANGE =====
+        by_confidence = {}
+        confidence_ranges = [
+            ("0-50%", 0, 50),
+            ("50-60%", 50, 60),
+            ("60-70%", 60, 70),
+            ("70-80%", 70, 80),
+            ("80-100%", 80, 100)
+        ]
+        for label, low, high in confidence_ranges:
+            filtered = [s for s in all_signals if low <= (s.get("confidence") or 0) < high]
+            stats = calc_rates_and_pf(filtered)
+            if stats and stats["total"] >= 1:
+                by_confidence[label] = stats
+        
+        # ===== BY MARKET ENERGY (from stored data) =====
+        by_energy = {}
+        # Check if signals have market_energy data stored
+        energy_levels = ["low", "moderate", "high", "compression", "expansion"]
+        for energy in energy_levels:
+            filtered = [s for s in all_signals 
+                       if energy.lower() in str(s.get("market_energy_level", "")).lower()
+                       or energy.lower() in str(s.get("compression_level", "")).lower()]
+            stats = calc_rates_and_pf(filtered)
+            if stats and stats["total"] >= 2:
+                by_energy[energy.capitalize()] = stats
+        
+        # ===== BY LIQUIDITY MAGNET DIRECTION =====
+        by_liquidity = {}
+        for liq_dir in ["UP", "DOWN", "BALANCED"]:
+            filtered = [s for s in all_signals 
+                       if str(s.get("liquidity_direction", "")).upper() == liq_dir
+                       or str(s.get("liquidity_magnet_direction", "")).upper() == liq_dir]
+            stats = calc_rates_and_pf(filtered)
+            if stats and stats["total"] >= 2:
+                by_liquidity[liq_dir] = stats
+        
+        # ===== BY WEEKDAY VS WEEKEND =====
+        by_day_type = {}
+        weekday_signals = []
+        weekend_signals = []
+        for s in all_signals:
+            ts = s.get("timestamp")
+            if ts:
+                # Handle both datetime and string timestamps
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    except:
+                        continue
+                day_of_week = ts.weekday()  # 0=Monday, 6=Sunday
+                if day_of_week < 5:  # Monday-Friday
+                    weekday_signals.append(s)
+                else:  # Saturday-Sunday
+                    weekend_signals.append(s)
+        
+        weekday_stats = calc_rates_and_pf(weekday_signals)
+        weekend_stats = calc_rates_and_pf(weekend_signals)
+        if weekday_stats:
+            by_day_type["Weekday (Mon-Fri)"] = weekday_stats
+        if weekend_stats:
+            by_day_type["Weekend (Sat-Sun)"] = weekend_stats
+        
+        # ===== BY DIRECTION + SETUP COMBO =====
+        by_combo = {}
+        for direction in ["LONG", "SHORT"]:
+            for setup in setup_types:
+                if not setup:
+                    continue
+                combo_key = f"{direction}_{setup}"
+                filtered = [s for s in all_signals 
+                           if s.get("direction") == direction 
+                           and s.get("setup_type") == setup]
+                stats = calc_rates_and_pf(filtered)
+                if stats and stats["total"] >= 2:
+                    by_combo[combo_key] = stats
+        
+        # ===== HEATMAP DATA (Direction x Confidence) =====
+        heatmap_data = []
+        for direction in ["LONG", "SHORT"]:
+            for label, low, high in confidence_ranges:
+                filtered = [s for s in all_signals 
+                           if s.get("direction") == direction
+                           and low <= (s.get("confidence") or 0) < high]
+                stats = calc_rates_and_pf(filtered)
+                if stats:
+                    heatmap_data.append({
+                        "direction": direction,
+                        "confidence_range": label,
+                        "total": stats["total"],
+                        "combined_win_rate": stats["combined_win_rate"],
+                        "avg_pnl": stats["avg_pnl"],
+                        "profit_factor": stats["profit_factor"],
+                        "reliability_score": calculate_reliability_score(stats)
+                    })
+        
+        # ===== TOP PERFORMERS & WORST PERFORMERS =====
+        all_combos = []
+        for key, stats in by_combo.items():
+            all_combos.append({
+                "combo": key,
+                **stats,
+                "reliability_score": calculate_reliability_score(stats)
+            })
+        
+        # Sort by reliability score
+        all_combos_sorted = sorted(all_combos, key=lambda x: x.get("reliability_score", 0), reverse=True)
+        top_performers = all_combos_sorted[:5] if len(all_combos_sorted) >= 5 else all_combos_sorted
+        worst_performers = all_combos_sorted[-5:] if len(all_combos_sorted) >= 5 else []
+        
+        # ===== OVERALL SUMMARY =====
+        overall_stats = calc_rates_and_pf(all_signals)
+        
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "total_signals_analyzed": len(all_signals),
+            
+            "overall": overall_stats,
+            
+            "by_direction": by_direction,
+            "by_setup_type": by_setup,
+            "by_confidence_range": by_confidence,
+            "by_market_energy": by_energy,
+            "by_liquidity_direction": by_liquidity,
+            "by_day_type": by_day_type,
+            "by_direction_setup_combo": by_combo,
+            
+            "heatmap": heatmap_data,
+            
+            "top_performers": top_performers,
+            "worst_performers": worst_performers,
+            
+            "recommendations": generate_reliability_recommendations(
+                by_direction, by_setup, by_confidence, by_day_type, overall_stats
+            )
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating reliability analytics: {e}")
+        return {"error": str(e)}
+
+
+def calculate_reliability_score(stats: dict) -> float:
+    """
+    Calculate a reliability score (0-100) for a signal combination.
+    
+    Factors:
+    - Win rate (40% weight)
+    - Profit factor (30% weight)
+    - Sample size penalty for small samples (20% weight)
+    - Average PnL direction (10% weight)
+    """
+    if not stats or stats.get("total", 0) == 0:
+        return 0
+    
+    # Win rate component (0-40)
+    win_rate = stats.get("combined_win_rate", 0)
+    win_score = min(win_rate * 0.4, 40)
+    
+    # Profit factor component (0-30)
+    pf = stats.get("profit_factor", 0)
+    if isinstance(pf, str):  # Handle "∞"
+        pf = 10
+    pf_score = min((pf / 3) * 30, 30)  # PF of 3 = max score
+    
+    # Sample size component (0-20)
+    total = stats.get("total", 0)
+    if total >= 20:
+        sample_score = 20
+    elif total >= 10:
+        sample_score = 15
+    elif total >= 5:
+        sample_score = 10
+    else:
+        sample_score = total * 2  # Penalty for small samples
+    
+    # PnL direction component (0-10)
+    avg_pnl = stats.get("avg_pnl", 0)
+    if avg_pnl > 0:
+        pnl_score = min(avg_pnl * 2, 10)
+    else:
+        pnl_score = max(avg_pnl, -10)  # Negative score for losses
+    
+    return round(win_score + pf_score + sample_score + pnl_score, 1)
+
+
+def generate_reliability_recommendations(by_direction, by_setup, by_confidence, by_day_type, overall) -> list:
+    """
+    Generate actionable recommendations based on reliability analysis.
+    """
+    recommendations = []
+    
+    # Check direction performance
+    if by_direction:
+        long_wr = by_direction.get("LONG", {}).get("combined_win_rate", 0)
+        short_wr = by_direction.get("SHORT", {}).get("combined_win_rate", 0)
+        long_total = by_direction.get("LONG", {}).get("total", 0)
+        short_total = by_direction.get("SHORT", {}).get("total", 0)
+        
+        if long_wr > short_wr + 20 and long_total >= 5:
+            recommendations.append({
+                "type": "direction",
+                "priority": "HIGH",
+                "message": f"LONG signals significantly outperform SHORT ({long_wr:.0f}% vs {short_wr:.0f}%). Consider prioritizing LONG setups.",
+                "action": "PREFER_LONG"
+            })
+        elif short_wr > long_wr + 20 and short_total >= 5:
+            recommendations.append({
+                "type": "direction",
+                "priority": "HIGH",
+                "message": f"SHORT signals outperform LONG ({short_wr:.0f}% vs {long_wr:.0f}%). Consider prioritizing SHORT setups.",
+                "action": "PREFER_SHORT"
+            })
+    
+    # Check confidence performance
+    if by_confidence:
+        best_conf_range = None
+        best_conf_wr = 0
+        for range_label, stats in by_confidence.items():
+            if stats.get("total", 0) >= 5 and stats.get("combined_win_rate", 0) > best_conf_wr:
+                best_conf_wr = stats.get("combined_win_rate", 0)
+                best_conf_range = range_label
+        
+        if best_conf_range and best_conf_wr > 30:
+            recommendations.append({
+                "type": "confidence",
+                "priority": "MEDIUM",
+                "message": f"Confidence range {best_conf_range} has the best win rate ({best_conf_wr:.0f}%).",
+                "action": f"FILTER_CONFIDENCE_{best_conf_range}"
+            })
+    
+    # Check weekday vs weekend
+    if by_day_type:
+        weekday_wr = by_day_type.get("Weekday (Mon-Fri)", {}).get("combined_win_rate", 0)
+        weekend_wr = by_day_type.get("Weekend (Sat-Sun)", {}).get("combined_win_rate", 0)
+        weekend_expired = by_day_type.get("Weekend (Sat-Sun)", {}).get("expired_rate", 0)
+        
+        if weekend_expired > 60:
+            recommendations.append({
+                "type": "timing",
+                "priority": "HIGH",
+                "message": f"Weekend signals have {weekend_expired:.0f}% expiry rate. Consider reducing activity on weekends.",
+                "action": "REDUCE_WEEKEND_TRADING"
+            })
+        
+        if weekday_wr > weekend_wr + 15:
+            recommendations.append({
+                "type": "timing",
+                "priority": "MEDIUM",
+                "message": f"Weekday win rate ({weekday_wr:.0f}%) is higher than weekend ({weekend_wr:.0f}%).",
+                "action": "PREFER_WEEKDAY"
+            })
+    
+    # Check setup types
+    if by_setup:
+        for setup, stats in by_setup.items():
+            if stats.get("total", 0) >= 5:
+                if stats.get("loss_rate", 0) > 50:
+                    recommendations.append({
+                        "type": "setup",
+                        "priority": "HIGH",
+                        "message": f"Setup '{setup}' has {stats.get('loss_rate', 0):.0f}% loss rate. Consider filtering out.",
+                        "action": f"FILTER_SETUP_{setup}"
+                    })
+                elif stats.get("combined_win_rate", 0) > 50:
+                    recommendations.append({
+                        "type": "setup",
+                        "priority": "LOW",
+                        "message": f"Setup '{setup}' performing well with {stats.get('combined_win_rate', 0):.0f}% win rate.",
+                        "action": f"KEEP_SETUP_{setup}"
+                    })
+    
+    # Overall assessment
+    if overall:
+        overall_wr = overall.get("combined_win_rate", 0)
+        if overall_wr < 30:
+            recommendations.append({
+                "type": "overall",
+                "priority": "HIGH",
+                "message": f"Overall win rate is low ({overall_wr:.0f}%). System needs significant optimization.",
+                "action": "REVIEW_STRATEGY"
+            })
+        elif overall_wr > 50:
+            recommendations.append({
+                "type": "overall",
+                "priority": "INFO",
+                "message": f"System performing above baseline ({overall_wr:.0f}% win rate). Continue monitoring.",
+                "action": "MAINTAIN_STRATEGY"
+            })
+    
+    return recommendations
+
+
 @api_router.put("/signal-history/{signal_id}/outcome")
 async def update_signal_outcome(
     signal_id: str,

@@ -13,7 +13,8 @@ import {
   StickyNote,
   Settings,
   BookOpen,
-  X
+  X,
+  BarChart3
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { cn } from '../lib/utils';
@@ -28,6 +29,7 @@ const navItems = [
   { path: '/news', icon: Newspaper, label: 'news' },
   { path: '/alerts', icon: Bell, label: 'alerts' },
   { path: '/alert-history', icon: History, label: 'alertHistory' },
+  { path: '/reliability', icon: BarChart3, label: 'reliabilityAnalytics' },
   { path: '/notes', icon: StickyNote, label: 'notes' },
   { path: '/manual', icon: BookOpen, label: 'manual' },
   { path: '/settings', icon: Settings, label: 'settings' },

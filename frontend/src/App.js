@@ -19,6 +19,7 @@ import {
   SettingsPage,
 } from "./components/pages";
 import ManualPage from "./components/pages/ManualPage";
+import ReliabilityAnalyticsPage from "./components/pages/ReliabilityAnalyticsPage";
 
 function AppLayout({ children }) {
   return (
@@ -49,6 +50,7 @@ function App() {
             <Route path="/news" element={<NewsPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/alert-history" element={<AlertHistoryPage />} />
+            <Route path="/reliability" element={<ReliabilityAnalyticsPage />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/manual" element={<ManualPage />} />
