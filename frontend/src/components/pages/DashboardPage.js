@@ -11,7 +11,8 @@ import {
   FundingRateCard,
   TradeSignalCard,
   MarketEnergyCard,
-  LiquidityMagnetCard
+  LiquidityMagnetCard,
+  PriceMeasurementTool
 } from '../cards';
 
 export function DashboardPage() {
@@ -66,6 +67,11 @@ export function DashboardPage() {
         <OrderBookCard />
         <LiquidityCard compact />
         <SupportResistanceCard compact />
+      </div>
+
+      {/* Tools Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <PriceMeasurementTool />
       </div>
     </div>
   );

@@ -153,7 +153,9 @@ export function AlertHistoryPage() {
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
+    // Format in Europe/Rome timezone
+    return date.toLocaleString(language === 'it' ? 'it-IT' : 'en-GB', {
+      timeZone: 'Europe/Rome',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

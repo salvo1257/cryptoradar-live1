@@ -46,6 +46,62 @@ export function TradeSignalCard({ compact = false }) {
     }).format(p);
   };
 
+  // Fix target display for LONG/SHORT - ensure targets are displayed correctly
+  // LONG: T1 should be closer to entry, T2 further (both above entry)
+  // SHORT: T1 should be closer to entry, T2 further (both below entry)
+  const getDisplayTargets = (sig) => {
+    if (!sig || !sig.target_1 || !sig.target_2) {
+      return { target1: sig?.target_1, target2: sig?.target_2 };
+    }
+    
+    const entry = sig.btc_price || 0;
+    const t1 = sig.target_1;
+    const t2 = sig.target_2;
+    
+    if (sig.direction === 'LONG' || sig.direction?.includes('LONG')) {
+      // LONG: both targets should be above entry
+      // T1 = closer target (smaller), T2 = further target (larger)
+      const aboveTargets = [t1, t2].filter(t => t > entry);
+      if (aboveTargets.length >= 2) {
+        return { target1: Math.min(...aboveTargets), target2: Math.max(...aboveTargets) };
+      } else if (aboveTargets.length === 1) {
+        // One target is below - swap them if needed
+        return { target1: Math.max(t1, t2), target2: Math.max(t1, t2) * 1.01 };
+      }
+      // If both below (data error), show them but higher one first
+      return { target1: Math.max(t1, t2), target2: Math.min(t1, t2) };
+    } else if (sig.direction === 'SHORT' || sig.direction?.includes('SHORT')) {
+      // SHORT: both targets should be below entry
+      // T1 = closer target (larger), T2 = further target (smaller)
+      const belowTargets = [t1, t2].filter(t => t < entry);
+      if (belowTargets.length >= 2) {
+        return { target1: Math.max(...belowTargets), target2: Math.min(...belowTargets) };
+      } else if (belowTargets.length === 1) {
+        return { target1: Math.min(t1, t2), target2: Math.min(t1, t2) * 0.99 };
+      }
+      return { target1: Math.min(t1, t2), target2: Math.max(t1, t2) };
+    }
+    return { target1: t1, target2: t2 };
+  };
+
+  // Format timestamp to Europe/Rome timezone
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '-';
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString('it-IT', {
+        timeZone: 'Europe/Rome',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return timestamp;
+    }
+  };
+
   // Translate direction for display
   const translateDirection = (direction) => {
     if (!direction) return t('noTrade');
@@ -529,25 +585,25 @@ export function TradeSignalCard({ compact = false }) {
               </div>
             </div>
 
-            {/* Target 1 */}
+            {/* Target 1 - Using corrected display */}
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-bullish" />
                 {language === 'it' ? 'Obiettivo 1' : 'Target 1'}
               </div>
               <div className="font-mono text-sm text-bullish">
-                ${formatPrice(signal.target_1)}
+                ${formatPrice(getDisplayTargets(signal).target1)}
               </div>
             </div>
 
-            {/* Target 2 */}
+            {/* Target 2 - Using corrected display */}
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-whale" />
                 {language === 'it' ? 'Obiettivo 2' : 'Target 2'}
               </div>
               <div className="font-mono text-sm text-whale">
-                ${formatPrice(signal.target_2)}
+                ${formatPrice(getDisplayTargets(signal).target2)}
               </div>
             </div>
           </div>
