@@ -17,7 +17,8 @@ import {
   ChevronRight,
   Zap,
   Clock,
-  DollarSign
+  DollarSign,
+  ListChecks
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
@@ -377,7 +378,100 @@ Le API di news crypto richiedono chiavi a pagamento. Invece di mostrare news obs
     },
     downloadPdf: "Scarica PDF",
     systemManual: "Manuale Sistema",
-    tradingManual: "Guida Trading"
+    tradingManual: "Guida Trading",
+    operationalRules: {
+      title: "Regole Operative",
+      subtitle: "5 regole pratiche per usare CryptoRadar in modo efficace",
+      rules: [
+        {
+          number: 1,
+          title: "Evita il Trading nel Weekend",
+          icon: "calendar",
+          content: `**Regola:** Evita il trading nel weekend quando possibile.
+
+**Perché:** I dati recenti mostrano un alto tasso di segnali scaduti (expired) e una qualità dei segnali più debole durante il fine settimana.
+
+**Evidenza dai dati:**
+- Win rate weekend: ~0%
+- Expired rate weekend: ~100%
+- Win rate weekday: ~50%
+
+**Azione pratica:** Se vedi un segnale OPERATIVO durante il sabato o la domenica, valuta se aspettare lunedì prima di agire. La volatilità ridotta nel weekend spesso non permette ai segnali di raggiungere i target.`
+        },
+        {
+          number: 2,
+          title: "Preferisci i Setup LONG",
+          icon: "trending-up",
+          content: `**Regola:** Preferisci i setup LONG rispetto agli SHORT, almeno per ora.
+
+**Perché:** I dati attuali di affidabilità mostrano una performance significativamente migliore per i segnali LONG.
+
+**Evidenza dai dati:**
+- LONG win rate: ~80%
+- SHORT win rate: ~4%
+- LONG profit factor: >1
+- SHORT profit factor: ~0
+
+**Azione pratica:** Quando vedi un segnale SHORT, consideralo con maggiore cautela. Potresti ridurre la size o aspettare ulteriori conferme. I segnali LONG, invece, hanno storicamente performato molto meglio.
+
+**Nota:** Questa preferenza potrebbe cambiare quando raccoglieremo più dati in condizioni di mercato diverse.`
+        },
+        {
+          number: 3,
+          title: "Solo Segnali OPERATIVI",
+          icon: "check-circle",
+          content: `**Regola:** Entra nei trade SOLO quando lo stato del segnale è OPERATIVO.
+
+**Perché:** Gli stati "NO TRADE" e "IN CONFERMA" indicano che il sistema non ha ancora validato completamente il setup.
+
+**Stati del segnale:**
+- **NO TRADE**: Nessun setup valido - NON tradare
+- **IN CONFERMA**: Setup potenziale ma non confermato - ASPETTA
+- **OPERATIVO**: Setup confermato e pronto - OK per entrare
+
+**Azione pratica:** Prima di ogni trade, verifica che il badge del segnale mostri "OPERATIVO" (verde). Se vedi "IN CONFERMA" (giallo), aspetta che diventi operativo. Entrare anticipatamente aumenta il rischio di falsi segnali.`
+        },
+        {
+          number: 4,
+          title: "Controlla Urgenza e Validità",
+          icon: "clock",
+          content: `**Regola:** Controlla sempre signal_urgency e valid_for_minutes prima di agire. Non inseguire segnali scaduti o in ritardo.
+
+**Perché:** Ogni segnale ha una finestra di validità. Entrare troppo tardi riduce significativamente le probabilità di successo.
+
+**Indicatori da controllare:**
+- **Urgenza**: LOW / MEDIUM / HIGH
+- **Valido per**: XX minuti rimanenti
+- **Timestamp**: Quando è stato generato
+
+**Azione pratica:** 
+- Se l'urgenza è HIGH e rimangono pochi minuti, agisci rapidamente o lascia perdere
+- Se il segnale è già "vecchio" di ore, probabilmente il prezzo si è già mosso
+- Non "inseguire" un trade se il prezzo è già lontano dalla zona di ingresso suggerita`
+        },
+        {
+          number: 5,
+          title: "Usa la Heatmap come Filtro",
+          icon: "bar-chart",
+          content: `**Regola:** Usa la reliability heatmap (Analisi Affidabilità) come filtro decisionale. Se un tipo di segnale ha performance storiche deboli, trattalo con cautela extra.
+
+**Perché:** Non tutti i segnali sono uguali. La heatmap mostra quali combinazioni (direzione + confidenza) hanno funzionato storicamente.
+
+**Come usarla:**
+1. Vai su "Analisi Affidabilità" nel menu
+2. Controlla la heatmap Direzione × Confidenza
+3. Verifica il colore della cella corrispondente al tuo segnale
+
+**Interpretazione colori:**
+- 🟢 Verde (60%+): Combinazione affidabile - procedi
+- 🟡 Giallo (40-60%): Cautela - riduci size
+- 🟠 Arancione (20-40%): Alto rischio - considera di saltare
+- 🔴 Rosso (<20%): Evita questa combinazione
+
+**Azione pratica:** Prima di ogni trade, fai un rapido check sulla heatmap. Se la combinazione del tuo segnale è rossa o arancione, potresti voler aspettare un'opportunità migliore.`
+        }
+      ]
+    }
   },
   en: {
     title: "CryptoRadar Manual",
@@ -487,7 +581,100 @@ The system predicts if there will be a "sweep" (quick move to liquidate position
     },
     downloadPdf: "Download PDF",
     systemManual: "System Manual",
-    tradingManual: "Trading Guide"
+    tradingManual: "Trading Guide",
+    operationalRules: {
+      title: "Operational Rules",
+      subtitle: "5 practical rules for using CryptoRadar effectively",
+      rules: [
+        {
+          number: 1,
+          title: "Avoid Weekend Trading",
+          icon: "calendar",
+          content: `**Rule:** Avoid trading on weekends when possible.
+
+**Why:** Recent data shows high expired rates and weaker signal quality during weekends.
+
+**Evidence from data:**
+- Weekend win rate: ~0%
+- Weekend expired rate: ~100%
+- Weekday win rate: ~50%
+
+**Practical action:** If you see an OPERATIONAL signal during Saturday or Sunday, consider waiting until Monday before acting. Reduced weekend volatility often prevents signals from reaching targets.`
+        },
+        {
+          number: 2,
+          title: "Prefer LONG Setups",
+          icon: "trending-up",
+          content: `**Rule:** Prefer LONG setups over SHORT setups, for now.
+
+**Why:** Current reliability data shows significantly better performance for LONG signals.
+
+**Evidence from data:**
+- LONG win rate: ~80%
+- SHORT win rate: ~4%
+- LONG profit factor: >1
+- SHORT profit factor: ~0
+
+**Practical action:** When you see a SHORT signal, treat it with extra caution. You might reduce size or wait for additional confirmations. LONG signals have historically performed much better.
+
+**Note:** This preference may change as we collect more data in different market conditions.`
+        },
+        {
+          number: 3,
+          title: "Only OPERATIONAL Signals",
+          icon: "check-circle",
+          content: `**Rule:** Only enter trades when signal status is OPERATIONAL.
+
+**Why:** "NO TRADE" and "IN CONFIRMATION" states indicate the system hasn't fully validated the setup yet.
+
+**Signal states:**
+- **NO TRADE**: No valid setup - DO NOT trade
+- **IN CONFIRMATION**: Potential setup but not confirmed - WAIT
+- **OPERATIONAL**: Confirmed setup ready - OK to enter
+
+**Practical action:** Before every trade, verify the signal badge shows "OPERATIONAL" (green). If you see "IN CONFIRMATION" (yellow), wait for it to become operational. Entering early increases false signal risk.`
+        },
+        {
+          number: 4,
+          title: "Check Urgency and Validity",
+          icon: "clock",
+          content: `**Rule:** Always check signal_urgency and valid_for_minutes before acting. Don't chase expired or late signals.
+
+**Why:** Every signal has a validity window. Entering too late significantly reduces success probability.
+
+**Indicators to check:**
+- **Urgency**: LOW / MEDIUM / HIGH
+- **Valid for**: XX minutes remaining
+- **Timestamp**: When it was generated
+
+**Practical action:** 
+- If urgency is HIGH and few minutes remain, act quickly or skip
+- If signal is already "old" by hours, price has likely moved already
+- Don't "chase" a trade if price is far from the suggested entry zone`
+        },
+        {
+          number: 5,
+          title: "Use Heatmap as Filter",
+          icon: "bar-chart",
+          content: `**Rule:** Use the reliability heatmap (Reliability Analytics) as a decision filter. If a signal type has weak historical performance, treat it with extra caution.
+
+**Why:** Not all signals are equal. The heatmap shows which combinations (direction + confidence) have worked historically.
+
+**How to use it:**
+1. Go to "Reliability Analytics" in the menu
+2. Check the Direction × Confidence heatmap
+3. Verify the color of the cell matching your signal
+
+**Color interpretation:**
+- 🟢 Green (60%+): Reliable combination - proceed
+- 🟡 Yellow (40-60%): Caution - reduce size
+- 🟠 Orange (20-40%): High risk - consider skipping
+- 🔴 Red (<20%): Avoid this combination
+
+**Practical action:** Before every trade, do a quick heatmap check. If your signal's combination is red or orange, you might want to wait for a better opportunity.`
+        }
+      ]
+    }
   },
   de: {
     title: "CryptoRadar Handbuch",
@@ -670,11 +857,11 @@ function ManualPage() {
       </div>
       
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-crypto-border pb-2">
+      <div className="flex gap-2 border-b border-crypto-border pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('system')}
           className={cn(
-            "px-4 py-2 rounded-t-sm transition-colors",
+            "px-4 py-2 rounded-t-sm transition-colors whitespace-nowrap",
             activeTab === 'system' 
               ? "bg-crypto-card border-b-2 border-crypto-accent text-white" 
               : "text-zinc-400 hover:text-white"
@@ -685,7 +872,7 @@ function ManualPage() {
         <button
           onClick={() => setActiveTab('trading')}
           className={cn(
-            "px-4 py-2 rounded-t-sm transition-colors",
+            "px-4 py-2 rounded-t-sm transition-colors whitespace-nowrap",
             activeTab === 'trading' 
               ? "bg-crypto-card border-b-2 border-crypto-accent text-white" 
               : "text-zinc-400 hover:text-white"
@@ -693,6 +880,20 @@ function ManualPage() {
         >
           {content.tradingManual}
         </button>
+        {content.operationalRules && (
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={cn(
+              "px-4 py-2 rounded-t-sm transition-colors whitespace-nowrap flex items-center gap-2",
+              activeTab === 'rules' 
+                ? "bg-crypto-accent text-black font-semibold" 
+                : "text-zinc-400 hover:text-white"
+            )}
+          >
+            <ListChecks className="w-4 h-4" />
+            {content.operationalRules.title}
+          </button>
+        )}
       </div>
       
       {/* Content */}
@@ -727,6 +928,69 @@ function ManualPage() {
               {renderMarkdown(section.content)}
             </CollapsibleSection>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'rules' && content.operationalRules && (
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="p-4 bg-crypto-accent/10 border border-crypto-accent/30 rounded-sm">
+            <div className="flex items-center gap-3 mb-2">
+              <ListChecks className="w-6 h-6 text-crypto-accent" />
+              <h3 className="font-heading font-bold text-lg text-crypto-accent">{content.operationalRules.title}</h3>
+            </div>
+            <p className="text-sm text-zinc-400">{content.operationalRules.subtitle}</p>
+          </div>
+
+          {/* Rules */}
+          {content.operationalRules.rules.map((rule, idx) => {
+            const iconMap = {
+              'calendar': Clock,
+              'trending-up': TrendingUp,
+              'check-circle': CheckCircle,
+              'clock': Clock,
+              'bar-chart': BarChart3
+            };
+            const IconComponent = iconMap[rule.icon] || CheckCircle;
+            
+            return (
+              <div 
+                key={idx}
+                className="bg-crypto-card/60 border border-crypto-border rounded-sm overflow-hidden"
+              >
+                {/* Rule Header */}
+                <div className="flex items-center gap-4 p-4 bg-crypto-surface/30 border-b border-crypto-border">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-crypto-accent text-black font-bold text-lg">
+                    {rule.number}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <IconComponent className="w-5 h-5 text-crypto-accent" />
+                    <h4 className="font-heading font-semibold text-lg">{rule.title}</h4>
+                  </div>
+                </div>
+                
+                {/* Rule Content */}
+                <div className="p-4">
+                  {renderMarkdown(rule.content)}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Footer Note */}
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-sm">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-zinc-300">
+                <strong className="text-yellow-500">
+                  {language === 'it' ? 'Nota Importante' : 'Important Note'}:
+                </strong>{' '}
+                {language === 'it' 
+                  ? 'Queste regole sono basate sui dati storici raccolti finora. Man mano che raccoglieremo più dati in diverse condizioni di mercato, le raccomandazioni potrebbero essere aggiornate. Consulta regolarmente la sezione "Analisi Affidabilità" per i dati più recenti.'
+                  : 'These rules are based on historical data collected so far. As we collect more data in different market conditions, recommendations may be updated. Regularly check the "Reliability Analytics" section for the latest data.'}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
