@@ -23,6 +23,7 @@ export function AlertHistoryPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [directionFilter, setDirectionFilter] = useState('all');
   const [outcomeFilter, setOutcomeFilter] = useState('all');
+  const [versionFilter, setVersionFilter] = useState('all');
   const [recording, setRecording] = useState(false);
   const [checkingOutcomes, setCheckingOutcomes] = useState(false);
   const [showPerformance, setShowPerformance] = useState(true);
@@ -34,6 +35,9 @@ export function AlertHistoryPage() {
       if (outcomeFilter !== 'all') {
         filterParam += `&outcome=${outcomeFilter}`;
       }
+      if (versionFilter !== 'all') {
+        filterParam += `&engine_version=${versionFilter}`;
+      }
       const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`);
       const data = await response.json();
       setSignals(data.signals || []);
@@ -44,7 +48,7 @@ export function AlertHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, directionFilter, outcomeFilter]);
+  }, [page, directionFilter, outcomeFilter, versionFilter]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -427,6 +431,16 @@ export function AlertHistoryPage() {
               <SelectItem value="PENDING">PENDING</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={versionFilter} onValueChange={(val) => { setVersionFilter(val); setPage(1); }}>
+            <SelectTrigger className="w-[100px] bg-crypto-surface border-crypto-border" data-testid="version-filter">
+              <SelectValue placeholder="Engine" />
+            </SelectTrigger>
+            <SelectContent className="bg-crypto-surface border-crypto-border">
+              <SelectItem value="all">{language === 'it' ? 'Tutti' : 'All'}</SelectItem>
+              <SelectItem value="v1">V1</SelectItem>
+              <SelectItem value="v2">V2</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
           <span>{totalCount} {language === 'it' ? 'segnali' : 'signals'}</span>
@@ -504,6 +518,17 @@ export function AlertHistoryPage() {
                           {/* Candles Analyzed indicator */}
                           {signal.candles_analyzed > 0 && (
                             <span className="text-[9px] text-zinc-600">({signal.candles_analyzed} candles)</span>
+                          )}
+                          {/* Engine Version Badge */}
+                          {signal.signal_engine_version && (
+                            <Badge className={cn(
+                              "font-mono text-[9px]",
+                              signal.signal_engine_version === "v2" 
+                                ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" 
+                                : "bg-zinc-600/20 text-zinc-400 border border-zinc-500/30"
+                            )}>
+                              {signal.signal_engine_version.toUpperCase()}
+                            </Badge>
                           )}
                           <span className="text-xs text-zinc-500">{signal.setup_type}</span>
                         </div>

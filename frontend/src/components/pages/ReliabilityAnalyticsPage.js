@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, RefreshCw, TrendingUp, TrendingDown, Target, 
   AlertTriangle, CheckCircle, XCircle, Clock, Info, Award,
-  Calendar, Zap, Droplets, ArrowUpRight, ArrowDownRight
+  Calendar, Zap, Droplets, ArrowUpRight, ArrowDownRight, GitCompare
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
@@ -96,6 +96,7 @@ export function ReliabilityAnalyticsPage() {
 
   const tabs = [
     { id: 'overview', label: language === 'it' ? 'Panoramica' : 'Overview', icon: BarChart3 },
+    { id: 'v1v2', label: 'v1 vs v2', icon: GitCompare },
     { id: 'heatmap', label: 'Heatmap', icon: Zap },
     { id: 'breakdown', label: language === 'it' ? 'Dettagli' : 'Breakdown', icon: Target },
     { id: 'recommendations', label: language === 'it' ? 'Raccomandazioni' : 'Recommendations', icon: Award }
@@ -307,6 +308,281 @@ export function ReliabilityAnalyticsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V1 vs V2 Comparison Tab */}
+      {activeTab === 'v1v2' && (
+        <div className="space-y-4">
+          {/* Engine Version Comparison Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* V1 Card */}
+            <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Badge className="bg-zinc-600/20 text-zinc-400 border border-zinc-500/30 font-mono">V1</Badge>
+                <h3 className="text-sm font-semibold">{language === 'it' ? 'Sweep Reversal Only' : 'Sweep Reversal Only'}</h3>
+              </div>
+              {analytics.by_engine_version?.v1 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Segnali' : 'Signals'}</div>
+                      <div className="text-2xl font-mono font-bold">{analytics.by_engine_version.v1.total}</div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">Win Rate</div>
+                      <div className={cn("text-2xl font-mono font-bold", getWinRateColor(analytics.by_engine_version.v1.combined_win_rate))}>
+                        {analytics.by_engine_version.v1.combined_win_rate}%
+                      </div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'PnL Medio' : 'Avg PnL'}</div>
+                      <div className={cn("text-xl font-mono font-bold", analytics.by_engine_version.v1.avg_pnl >= 0 ? "text-bullish" : "text-bearish")}>
+                        {analytics.by_engine_version.v1.avg_pnl >= 0 ? '+' : ''}{analytics.by_engine_version.v1.avg_pnl}%
+                      </div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">Profit Factor</div>
+                      <div className={cn("text-xl font-mono font-bold", analytics.by_engine_version.v1.profit_factor >= 1 ? "text-bullish" : "text-bearish")}>
+                        {analytics.by_engine_version.v1.profit_factor}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 text-[10px] text-center">
+                    <div className="bg-bullish/20 p-2 rounded-sm">
+                      <div className="text-bullish font-bold">{analytics.by_engine_version.v1.wins}</div>
+                      <div className="text-zinc-500">WIN</div>
+                    </div>
+                    <div className="bg-green-500/20 p-2 rounded-sm">
+                      <div className="text-green-400 font-bold">{analytics.by_engine_version.v1.partial_wins}</div>
+                      <div className="text-zinc-500">PARTIAL</div>
+                    </div>
+                    <div className="bg-bearish/20 p-2 rounded-sm">
+                      <div className="text-bearish font-bold">{analytics.by_engine_version.v1.losses}</div>
+                      <div className="text-zinc-500">LOSS</div>
+                    </div>
+                    <div className="bg-yellow-500/20 p-2 rounded-sm">
+                      <div className="text-yellow-400 font-bold">{analytics.by_engine_version.v1.expired}</div>
+                      <div className="text-zinc-500">EXPIRED</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-zinc-500">
+                  <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">{language === 'it' ? 'Nessun dato V1' : 'No V1 data yet'}</p>
+                </div>
+              )}
+            </div>
+            
+            {/* V2 Card */}
+            <div className="bg-crypto-card/60 border border-purple-500/30 rounded-sm p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Badge className="bg-purple-500/20 text-purple-400 border border-purple-500/30 font-mono">V2</Badge>
+                <h3 className="text-sm font-semibold">{language === 'it' ? 'Sweep + Continuation' : 'Sweep + Continuation'}</h3>
+                <Badge className="text-[9px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                  {language === 'it' ? 'IN SVILUPPO' : 'DEVELOPMENT'}
+                </Badge>
+              </div>
+              {analytics.by_engine_version?.v2 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Segnali' : 'Signals'}</div>
+                      <div className="text-2xl font-mono font-bold">{analytics.by_engine_version.v2.total}</div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">Win Rate</div>
+                      <div className={cn("text-2xl font-mono font-bold", getWinRateColor(analytics.by_engine_version.v2.combined_win_rate))}>
+                        {analytics.by_engine_version.v2.combined_win_rate}%
+                      </div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'PnL Medio' : 'Avg PnL'}</div>
+                      <div className={cn("text-xl font-mono font-bold", analytics.by_engine_version.v2.avg_pnl >= 0 ? "text-bullish" : "text-bearish")}>
+                        {analytics.by_engine_version.v2.avg_pnl >= 0 ? '+' : ''}{analytics.by_engine_version.v2.avg_pnl}%
+                      </div>
+                    </div>
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-1">Profit Factor</div>
+                      <div className={cn("text-xl font-mono font-bold", analytics.by_engine_version.v2.profit_factor >= 1 ? "text-bullish" : "text-bearish")}>
+                        {analytics.by_engine_version.v2.profit_factor}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 text-[10px] text-center">
+                    <div className="bg-bullish/20 p-2 rounded-sm">
+                      <div className="text-bullish font-bold">{analytics.by_engine_version.v2.wins}</div>
+                      <div className="text-zinc-500">WIN</div>
+                    </div>
+                    <div className="bg-green-500/20 p-2 rounded-sm">
+                      <div className="text-green-400 font-bold">{analytics.by_engine_version.v2.partial_wins}</div>
+                      <div className="text-zinc-500">PARTIAL</div>
+                    </div>
+                    <div className="bg-bearish/20 p-2 rounded-sm">
+                      <div className="text-bearish font-bold">{analytics.by_engine_version.v2.losses}</div>
+                      <div className="text-zinc-500">LOSS</div>
+                    </div>
+                    <div className="bg-yellow-500/20 p-2 rounded-sm">
+                      <div className="text-yellow-400 font-bold">{analytics.by_engine_version.v2.expired}</div>
+                      <div className="text-zinc-500">EXPIRED</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-zinc-500">
+                  <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">{language === 'it' ? 'Nessun dato V2 ancora' : 'No V2 data yet'}</p>
+                  <p className="text-xs mt-1">{language === 'it' ? 'I nuovi segnali verranno tracciati automaticamente' : 'New signals will be tracked automatically'}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Version + Setup Type Breakdown */}
+          <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+              <Target className="w-4 h-4 text-crypto-accent" />
+              {language === 'it' ? 'Performance per Versione + Setup' : 'Performance by Version + Setup'}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {analytics.by_version_setup && Object.entries(analytics.by_version_setup).map(([key, stats]) => {
+                const [version, ...setupParts] = key.split('_');
+                const setup = setupParts.join('_');
+                const isV2 = version === 'v2';
+                const isContinuation = setup === 'trend_continuation';
+                
+                return (
+                  <div 
+                    key={key} 
+                    className={cn(
+                      "p-3 rounded-sm border",
+                      isContinuation ? "bg-cyan-500/10 border-cyan-500/30" : "bg-crypto-surface/50 border-crypto-border"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className={cn(
+                        "font-mono text-[10px]",
+                        isV2 ? "bg-purple-500/20 text-purple-400" : "bg-zinc-600/20 text-zinc-400"
+                      )}>
+                        {version.toUpperCase()}
+                      </Badge>
+                      <span className={cn(
+                        "text-xs",
+                        isContinuation ? "text-cyan-400 font-semibold" : "text-zinc-400"
+                      )}>
+                        {setup.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 ml-auto">({stats.total})</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <div className="text-zinc-500">Win Rate</div>
+                        <div className={cn("font-mono font-bold", getWinRateColor(stats.combined_win_rate))}>
+                          {stats.combined_win_rate}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-zinc-500">PnL</div>
+                        <div className={cn("font-mono font-bold", stats.avg_pnl >= 0 ? "text-bullish" : "text-bearish")}>
+                          {stats.avg_pnl >= 0 ? '+' : ''}{stats.avg_pnl}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-zinc-500">PF</div>
+                        <div className="font-mono font-bold text-white">{stats.profit_factor}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {(!analytics.by_version_setup || Object.keys(analytics.by_version_setup).length === 0) && (
+                <div className="col-span-3 text-center py-4 text-zinc-500">
+                  <p className="text-sm">{language === 'it' ? 'Dati insufficienti per confronto' : 'Insufficient data for comparison'}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Version + Direction Breakdown */}
+          <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-crypto-accent" />
+              {language === 'it' ? 'Performance per Versione + Direzione' : 'Performance by Version + Direction'}
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {analytics.by_version_direction && Object.entries(analytics.by_version_direction).map(([key, stats]) => {
+                const [version, direction] = key.split('_');
+                const isV2 = version === 'v2';
+                const isLong = direction === 'LONG';
+                
+                return (
+                  <div 
+                    key={key} 
+                    className={cn(
+                      "p-3 rounded-sm border",
+                      isLong ? "bg-bullish/5 border-bullish/20" : "bg-bearish/5 border-bearish/20"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className={cn(
+                        "font-mono text-[10px]",
+                        isV2 ? "bg-purple-500/20 text-purple-400" : "bg-zinc-600/20 text-zinc-400"
+                      )}>
+                        {version.toUpperCase()}
+                      </Badge>
+                      <Badge className={cn(
+                        "font-mono text-[10px]",
+                        isLong ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
+                      )}>
+                        {direction}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500">{language === 'it' ? 'Segnali' : 'Signals'}:</span>
+                        <span className="font-mono">{stats.total}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500">Win Rate:</span>
+                        <span className={cn("font-mono font-bold", getWinRateColor(stats.combined_win_rate))}>
+                          {stats.combined_win_rate}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500">PnL:</span>
+                        <span className={cn("font-mono", stats.avg_pnl >= 0 ? "text-bullish" : "text-bearish")}>
+                          {stats.avg_pnl >= 0 ? '+' : ''}{stats.avg_pnl}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {(!analytics.by_version_direction || Object.keys(analytics.by_version_direction).length === 0) && (
+                <div className="col-span-4 text-center py-4 text-zinc-500">
+                  <p className="text-sm">{language === 'it' ? 'Dati insufficienti' : 'Insufficient data'}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Data Collection Info */}
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-sm p-4">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-semibold text-blue-400 mb-1">
+                  {language === 'it' ? 'Raccolta Dati in Corso' : 'Data Collection in Progress'}
+                </h4>
+                <p className="text-xs text-zinc-400">
+                  {language === 'it' 
+                    ? 'I segnali storici esistenti sono classificati come V1. I nuovi segnali generati saranno tracciati come V2 e includeranno il tipo di setup (sweep_reversal o trend_continuation). Più dati vengono raccolti, più accurate saranno le statistiche di confronto.'
+                    : 'Existing historical signals are classified as V1. New signals generated will be tracked as V2 and will include the setup type (sweep_reversal or trend_continuation). The more data collected, the more accurate the comparison statistics will be.'}
+                </p>
+              </div>
             </div>
           </div>
         </div>

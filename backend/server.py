@@ -244,7 +244,8 @@ class TradeSignal(BaseModel):
     valid_for: str  # e.g., "4H", "1D"
     warnings: List[str]  # Risk warnings
     # Advanced BTC trading logic
-    setup_type: str = "standard"  # "standard", "sweep_reversal", "continuation"
+    setup_type: str = "standard"  # "standard", "sweep_reversal", "trend_continuation", "no_setup"
+    signal_engine_version: str = "v2"  # "v1" (sweep only) or "v2" (sweep + continuation)
     liquidity_sweep_zone: Optional[float] = None  # Where liquidity sweep likely to occur
     safe_invalidation: Optional[float] = None  # True invalidation beyond sweep zone
     sweep_detected: bool = False  # Whether a liquidity sweep pattern is detected
@@ -285,7 +286,8 @@ class SignalHistoryEntry(BaseModel):
     target_1: float
     target_2: float
     risk_reward_ratio: float
-    setup_type: str
+    setup_type: str  # "sweep_reversal", "trend_continuation", "standard", "no_setup"
+    signal_engine_version: str = "v1"  # "v1" (sweep only) or "v2" (sweep + continuation)
     timeframe: str = "4H"
     btc_price: float
     market_bias: str
@@ -6890,6 +6892,7 @@ def generate_trade_signal(
         valid_for="4H",
         warnings=warnings,
         setup_type=setup_type,
+        signal_engine_version="v2",  # Current engine version
         liquidity_sweep_zone=round(liquidity_sweep_zone, 2) if liquidity_sweep_zone else None,
         safe_invalidation=round(safe_invalidation, 2) if safe_invalidation else None,
         sweep_detected=sweep_detected,
@@ -7910,6 +7913,7 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
                 "target_2": new_signal.target_2,
                 "risk_reward_ratio": new_signal.risk_reward_ratio,
                 "setup_type": new_signal.setup_type,
+                "signal_engine_version": getattr(new_signal, 'signal_engine_version', 'v2'),
                 "btc_price": current_price,
                 "market_bias": market_bias.bias if market_bias else None,
                 "whale_direction": whale_activity.direction if whale_activity else None,
@@ -7947,6 +7951,7 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
                         "signal_urgency": getattr(new_signal, 'signal_urgency', 'LOW'),
                         "valid_for_minutes": getattr(new_signal, 'valid_for_minutes', 90),
                         "setup_type": new_signal.setup_type,
+                        "signal_engine_version": getattr(new_signal, 'signal_engine_version', 'v2'),
                         "reasoning": new_signal.reasoning[:200] if new_signal.reasoning else "",
                         "signal_state": "OPERATIONAL"
                     }
@@ -8246,6 +8251,7 @@ async def record_signal():
                 "target_2": signal.target_2,
                 "risk_reward_ratio": signal.risk_reward_ratio,
                 "setup_type": signal.setup_type,
+                "signal_engine_version": getattr(signal, 'signal_engine_version', 'v2'),
                 "timeframe": "4H",
                 "btc_price": current_price,
                 "market_bias": market_bias.bias,
@@ -8289,7 +8295,9 @@ async def record_signal():
 async def get_signal_history(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    direction: Optional[str] = Query(default=None, description="Filter by direction: LONG, SHORT, NO TRADE")
+    direction: Optional[str] = Query(default=None, description="Filter by direction: LONG, SHORT, NO TRADE"),
+    outcome: Optional[str] = Query(default=None, description="Filter by outcome: WIN, LOSS, PARTIAL_WIN, EXPIRED, PENDING"),
+    engine_version: Optional[str] = Query(default=None, description="Filter by engine version: v1, v2")
 ):
     """
     Get signal history with pagination.
@@ -8299,6 +8307,10 @@ async def get_signal_history(
         query = {}
         if direction:
             query["direction"] = direction.upper()
+        if outcome:
+            query["outcome"] = outcome.upper()
+        if engine_version:
+            query["signal_engine_version"] = engine_version.lower()
         
         # Get total count
         total_count = await signal_history_collection.count_documents(query)
@@ -9089,6 +9101,40 @@ async def get_reliability_analytics():
                 if stats and stats["total"] >= 2:
                     by_combo[combo_key] = stats
         
+        # ===== BY ENGINE VERSION (v1 vs v2) =====
+        by_engine_version = {}
+        for version in ["v1", "v2"]:
+            filtered = [s for s in all_signals if s.get("signal_engine_version", "v1") == version]
+            stats = calc_rates_and_pf(filtered)
+            if stats and stats["total"] >= 1:
+                by_engine_version[version] = stats
+        
+        # ===== BY ENGINE VERSION + SETUP TYPE =====
+        by_version_setup = {}
+        for version in ["v1", "v2"]:
+            for setup in setup_types:
+                if not setup:
+                    continue
+                combo_key = f"{version}_{setup}"
+                filtered = [s for s in all_signals 
+                           if s.get("signal_engine_version", "v1") == version
+                           and s.get("setup_type") == setup]
+                stats = calc_rates_and_pf(filtered)
+                if stats and stats["total"] >= 1:
+                    by_version_setup[combo_key] = stats
+        
+        # ===== BY ENGINE VERSION + DIRECTION =====
+        by_version_direction = {}
+        for version in ["v1", "v2"]:
+            for direction in ["LONG", "SHORT"]:
+                combo_key = f"{version}_{direction}"
+                filtered = [s for s in all_signals 
+                           if s.get("signal_engine_version", "v1") == version
+                           and s.get("direction") == direction]
+                stats = calc_rates_and_pf(filtered)
+                if stats and stats["total"] >= 1:
+                    by_version_direction[combo_key] = stats
+        
         # ===== HEATMAP DATA (Direction x Confidence) =====
         heatmap_data = []
         for direction in ["LONG", "SHORT"]:
@@ -9138,6 +9184,11 @@ async def get_reliability_analytics():
             "by_liquidity_direction": by_liquidity,
             "by_day_type": by_day_type,
             "by_direction_setup_combo": by_combo,
+            
+            # V1 vs V2 Comparison
+            "by_engine_version": by_engine_version,
+            "by_version_setup": by_version_setup,
+            "by_version_direction": by_version_direction,
             
             "heatmap": heatmap_data,
             
@@ -9303,6 +9354,29 @@ def generate_reliability_recommendations(by_direction, by_setup, by_confidence, 
             })
     
     return recommendations
+
+
+@api_router.post("/signal-history/migrate-to-v1")
+async def migrate_signals_to_v1():
+    """
+    One-time migration endpoint to tag all existing signals without 
+    signal_engine_version as v1 (legacy sweep-only logic).
+    """
+    try:
+        # Find all signals without signal_engine_version
+        result = await signal_history_collection.update_many(
+            {"signal_engine_version": {"$exists": False}},
+            {"$set": {"signal_engine_version": "v1"}}
+        )
+        
+        return {
+            "success": True,
+            "migrated_count": result.modified_count,
+            "message": f"Migrated {result.modified_count} signals to v1"
+        }
+    except Exception as e:
+        logger.error(f"Error migrating signals to v1: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @api_router.put("/signal-history/{signal_id}/outcome")

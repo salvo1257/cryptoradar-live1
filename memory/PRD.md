@@ -1,12 +1,72 @@
-# CryptoRadar v2.5 - Product Requirements Document
-**Last Updated:** 2025-12-14
+# CryptoRadar v2.6 - Product Requirements Document
+**Last Updated:** 2025-12-15
 
-## DEPLOYMENT READINESS: VERIFIED (2025-12-14)
+## DEPLOYMENT READINESS: VERIFIED (2025-12-15)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Background Scheduler: Active (outcome check every 1 hour)
 - Dynamic Signal Timing: Active
 - Telegram Notifications: Available (user configurable)
 - Outcome Engine: OHLC-based (accurate historical analysis)
+- **Signal Engine Version Tracking: Active (v1 vs v2 comparison)**
+
+---
+
+## 🆕 v2.6 SIGNAL ENGINE VERSION TRACKING ✅ (2025-12-15)
+
+**COMPARE V1 (SWEEP ONLY) VS V2 (SWEEP + CONTINUATION) PERFORMANCE:**
+
+### Why Added:
+- User wants to scientifically validate whether the new Trend Continuation logic improves overall signal quality
+- Need to compare v1 (legacy sweep_reversal only) vs v2 (sweep + trend_continuation)
+
+### Implementation:
+
+#### 1. New Database Field:
+| Field | Type | Values |
+|-------|------|--------|
+| `signal_engine_version` | string | "v1" or "v2" |
+
+#### 2. Migration Endpoint:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/signal-history/migrate-to-v1` | POST | Tag all existing signals without version as v1 |
+
+**Migration Result:** 103 historical signals tagged as v1
+
+#### 3. Enhanced Signal History:
+- New filter dropdown: **Engine Version** (All / V1 / V2)
+- **V1 Badge** (gray) and **V2 Badge** (purple) displayed on each signal
+
+#### 4. Enhanced Reliability Analytics:
+**New Tab: "v1 vs v2"** with:
+- Side-by-side V1 and V2 cards showing:
+  - Total signals
+  - Win Rate
+  - Avg PnL
+  - Profit Factor
+  - WIN/PARTIAL/LOSS/EXPIRED breakdown
+- **Performance per Version + Setup** table
+- **Performance per Version + Direction** table
+- Data collection status message
+
+#### 5. New API Response Fields:
+| Field | Description |
+|-------|-------------|
+| `by_engine_version` | Stats grouped by v1/v2 |
+| `by_version_setup` | Stats grouped by version + setup_type |
+| `by_version_direction` | Stats grouped by version + direction |
+
+### Current Data (2025-12-15):
+| Version | Signals | Win Rate | Avg PnL | Profit Factor |
+|---------|---------|----------|---------|---------------|
+| V1 | 31 | 16.1% | -0.23% | 0.32 |
+| V2 | 0 | - | - | - |
+
+**Note:** All new signals generated will be tracked as v2. As data accumulates, performance comparison will become statistically significant.
+
+### Signal Engine Logic:
+- **V1 (Frozen):** Only `sweep_reversal` detection
+- **V2 (Active):** `sweep_reversal` + `trend_continuation` detection, with intelligent setup selection
 
 ---
 
