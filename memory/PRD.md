@@ -1,13 +1,63 @@
-# CryptoRadar v2.6 - Product Requirements Document
-**Last Updated:** 2025-12-15
+# CryptoRadar v2.7 - Product Requirements Document
+**Last Updated:** 2025-12-16
 
-## DEPLOYMENT READINESS: VERIFIED (2025-12-15)
+## DEPLOYMENT READINESS: VERIFIED (2025-12-16)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Background Scheduler: Active (outcome check every 1 hour)
 - Dynamic Signal Timing: Active
 - Telegram Notifications: Available (user configurable)
 - Outcome Engine: OHLC-based (accurate historical analysis)
-- **Signal Engine Version Tracking: Active (v1 vs v2 comparison)**
+- Signal Engine Version Tracking: Active (v1 vs v2 comparison)
+- **4H Timeframe Calibration: Active (realistic targets/R:R)**
+
+---
+
+## 🆕 v2.7 4H TIMEFRAME CALIBRATION ✅ (2025-12-16)
+
+**CALIBRATED SIGNAL ENGINE FOR REALISTIC 4H TRADING:**
+
+### Why Added:
+- BTC on 4H timeframe moves in smaller ranges compared to daily charts
+- Previous targets (2-4%) were unrealistic for 4H signals
+- Need better move/R:R filtering to improve signal quality
+
+### 4H Move Ranges Defined:
+| Move Type | Range | Action |
+|-----------|-------|--------|
+| Very Small | < 0.4% | NO TRADE / Confirmation mode |
+| Normal Tradable | 0.5% – 1.2% | Standard signal |
+| Strong 4H | 1.2% – 2.5% | Extended targets allowed |
+| Exceptional | > 2.5% | Rare, cap expectations |
+
+### 4H Target Calibration:
+| Target | Normal Conditions | Strong Conditions |
+|--------|-------------------|-------------------|
+| **T1** | 0.5% – 0.9% | 1.2% |
+| **T2** | 1.0% – 1.8% | 2.5% |
+
+**Strong conditions** = High market energy OR Strong liquidity magnet OR Trend continuation setup
+
+### 4H Risk/Reward Requirements:
+| R:R Level | Value | Action |
+|-----------|-------|--------|
+| Minimum | < 1.0 | NO TRADE (rejected) |
+| Acceptable | 1.0 – 1.2 | Warning added |
+| Good | 1.2 – 1.5 | No warning |
+| Ideal | >= 1.5 | Optimal |
+
+### Implementation Details:
+- `MINIMUM_MOVE_PERCENT = 0.40` (was 0.50)
+- `MIN_RISK_REWARD = 1.0` (new filter)
+- `is_strong_market_condition()` helper function added
+- Targets capped to nearest S/R levels when closer
+- Move quality classification: weak/normal/strong/exceptional
+
+### What Changed:
+- ✅ Expected move now realistic for 4H (0.5-1.2% typical)
+- ✅ Targets T1/T2 calibrated for 4H ranges
+- ✅ R:R minimum filter prevents bad risk setups
+- ✅ Strong conditions allow extended targets
+- ❌ Core signal logic UNCHANGED (sweep/continuation detection)
 
 ---
 

@@ -6109,11 +6109,62 @@ def generate_trade_signal(
     Signal thresholds:
     - LONG: score >= 4
     - SHORT: score <= -4
-    - NO TRADE: -3 to +3 (or move < 0.50%)
+    - NO TRADE: -3 to +3 (or move < 0.40%)
     """
     
-    MINIMUM_MOVE_PERCENT = 0.50  # Minimum move required for a valid signal
+    # ================== 4H TIMEFRAME CALIBRATION ==================
+    # BTC 4H realistic move ranges:
+    # - Very small move: < 0.4% (weak signal)
+    # - Normal tradable move: 0.5% – 1.2%
+    # - Strong 4H move: 1.2% – 2.5%
+    # - Exceptional: > 2.5% (rare, don't assume as default)
+    
+    MINIMUM_MOVE_PERCENT = 0.40  # Below this = NO TRADE or IN CONFIRMATION
+    NORMAL_MOVE_MIN = 0.50      # Minimum for normal tradable signal
+    NORMAL_MOVE_MAX = 1.20      # Maximum for typical 4H move
+    STRONG_MOVE_THRESHOLD = 1.20  # Above this = strong move
+    EXCEPTIONAL_MOVE_THRESHOLD = 2.50  # Above this = exceptional (cap targets)
+    
+    # 4H Target ranges (percentage from entry)
+    TARGET_1_MIN = 0.50  # Minimum T1: 0.5%
+    TARGET_1_MAX = 0.90  # Maximum T1: 0.9% (normal conditions)
+    TARGET_1_STRONG = 1.20  # T1 for strong conditions
+    TARGET_2_MIN = 1.00  # Minimum T2: 1.0%
+    TARGET_2_MAX = 1.80  # Maximum T2: 1.8% (normal conditions)
+    TARGET_2_STRONG = 2.50  # T2 for exceptional conditions
+    
+    # Risk/Reward requirements for 4H
+    MIN_RISK_REWARD = 1.0  # Absolute minimum R:R to consider trade
+    GOOD_RISK_REWARD = 1.2  # Good R:R threshold
+    IDEAL_RISK_REWARD = 1.5  # Ideal R:R threshold
+    
     LIQUIDITY_SWEEP_BUFFER = 0.003  # 0.3% beyond obvious levels for stop placement
+    
+    # Helper function to check for strong market conditions (extended targets allowed)
+    def is_strong_market_condition(market_energy_obj, liquidity_ladder_obj, setup_type_str):
+        """
+        Returns True if market conditions justify extended targets.
+        Strong conditions:
+        - Market energy is HIGH
+        - Liquidity magnet is STRONG
+        - Trend continuation setup detected
+        """
+        is_high_energy = False
+        is_strong_magnet = False
+        is_continuation = setup_type_str == "trend_continuation"
+        
+        if market_energy_obj:
+            is_high_energy = (
+                market_energy_obj.compression_level == "HIGH" or 
+                market_energy_obj.energy_score >= 70 or
+                market_energy_obj.breakout_probability == "HIGH"
+            )
+        
+        if liquidity_ladder_obj:
+            magnet_score = getattr(liquidity_ladder_obj, 'magnet_score', 0) or 0
+            is_strong_magnet = magnet_score >= 70
+        
+        return is_high_energy or is_strong_magnet or is_continuation
     
     score = 0
     factors = {}
@@ -6502,10 +6553,14 @@ def generate_trade_signal(
         setup_type = "no_setup"
     
     # ================== CALCULATE TRADE PARAMETERS ==================
+    # 4H CALIBRATED TARGETS AND STOPS
+    
+    # Check if we have strong market conditions for extended targets
+    strong_conditions = is_strong_market_condition(market_energy, liquidity_ladder, setup_type)
     
     if direction == "LONG":
         if setup_type == "trend_continuation":
-            # TREND CONTINUATION LONG: Tighter entry zone, ATR-based targets
+            # TREND CONTINUATION LONG: Tighter entry zone
             entry_zone_low = current_price * 0.998   # Tighter entry
             entry_zone_high = current_price * 1.002
             
@@ -6513,22 +6568,37 @@ def generate_trade_signal(
             stop_loss = supports[0].price * 0.995 if supports else current_price * 0.985
             invalidation_reason = get_translation("continuation_stop", lang) if 'continuation_stop' in BACKEND_TRANSLATIONS.get(lang, {}) else f"Stop below swing low: ${stop_loss:,.0f}"
             
-            # Targets: Next resistance levels or percentage-based
-            target_1 = resistances[0].price if resistances else current_price * 1.015
-            target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.025
+            # 4H CALIBRATED TARGETS for continuation (allowed extended due to trend)
+            if strong_conditions:
+                # Strong conditions: use extended targets
+                t1_pct = TARGET_1_STRONG / 100  # 1.2%
+                t2_pct = TARGET_2_STRONG / 100  # 2.5%
+            else:
+                # Normal conditions: conservative targets
+                t1_pct = TARGET_1_MAX / 100  # 0.9%
+                t2_pct = TARGET_2_MAX / 100  # 1.8%
+            
+            target_1 = current_price * (1 + t1_pct)
+            target_2 = current_price * (1 + t2_pct)
+            
+            # Cap targets to S/R levels if they are closer
+            if resistances and resistances[0].price < target_1:
+                target_1 = resistances[0].price
+            if len(resistances) > 1 and resistances[1].price < target_2:
+                target_2 = resistances[1].price
             
             # Ensure targets are above entry
             if target_1 <= current_price:
-                target_1 = current_price * 1.015
+                target_1 = current_price * (1 + TARGET_1_MIN / 100)
             if target_2 <= target_1:
-                target_2 = target_1 * 1.01
+                target_2 = target_1 * 1.005
             
             estimated_move = ((target_1 - current_price) / current_price) * 100
             liquidity_sweep_zone = None  # No sweep expected in continuation
             safe_invalidation = stop_loss
             
         else:
-            # SWEEP REVERSAL LONG (original v1 logic)
+            # SWEEP REVERSAL LONG (original v1 logic with 4H calibration)
             entry_zone_low = supports[0].price if supports else current_price * 0.995
             entry_zone_high = current_price
             
@@ -6540,8 +6610,30 @@ def generate_trade_signal(
                 stop_loss = long_sweep_zone * 0.995
                 invalidation_reason = get_translation("stop_beyond_sweep_below", lang, stop_loss, long_sweep_zone)
             
-            target_1 = resistances[0].price if resistances else current_price * 1.02
-            target_2 = resistances[1].price if len(resistances) > 1 else current_price * 1.04
+            # 4H CALIBRATED TARGETS for sweep reversal
+            if strong_conditions:
+                # Strong conditions: use extended targets
+                t1_pct = TARGET_1_STRONG / 100  # 1.2%
+                t2_pct = TARGET_2_STRONG / 100  # 2.5%
+            else:
+                # Normal 4H conditions: realistic targets
+                t1_pct = (TARGET_1_MIN + TARGET_1_MAX) / 2 / 100  # ~0.7%
+                t2_pct = (TARGET_2_MIN + TARGET_2_MAX) / 2 / 100  # ~1.4%
+            
+            target_1 = current_price * (1 + t1_pct)
+            target_2 = current_price * (1 + t2_pct)
+            
+            # Cap targets to S/R levels if they are closer
+            if resistances and resistances[0].price < target_1:
+                target_1 = resistances[0].price
+            if len(resistances) > 1 and resistances[1].price < target_2:
+                target_2 = resistances[1].price
+            
+            # Ensure minimum target distance
+            if target_1 <= current_price:
+                target_1 = current_price * (1 + TARGET_1_MIN / 100)
+            if target_2 <= target_1:
+                target_2 = target_1 * 1.005
             
             estimated_move = ((target_1 - current_price) / current_price) * 100
             liquidity_sweep_zone = long_sweep_zone
@@ -6549,7 +6641,7 @@ def generate_trade_signal(
         
     elif direction == "SHORT":
         if setup_type == "trend_continuation":
-            # TREND CONTINUATION SHORT: Tighter entry zone, ATR-based targets
+            # TREND CONTINUATION SHORT: Tighter entry zone
             entry_zone_low = current_price * 0.998
             entry_zone_high = current_price * 1.002
             
@@ -6557,22 +6649,37 @@ def generate_trade_signal(
             stop_loss = resistances[0].price * 1.005 if resistances else current_price * 1.015
             invalidation_reason = get_translation("continuation_stop", lang) if 'continuation_stop' in BACKEND_TRANSLATIONS.get(lang, {}) else f"Stop above swing high: ${stop_loss:,.0f}"
             
-            # Targets: Next support levels or percentage-based
-            target_1 = supports[0].price if supports else current_price * 0.985
-            target_2 = supports[1].price if len(supports) > 1 else current_price * 0.975
+            # 4H CALIBRATED TARGETS for continuation (allowed extended due to trend)
+            if strong_conditions:
+                # Strong conditions: use extended targets
+                t1_pct = TARGET_1_STRONG / 100  # 1.2%
+                t2_pct = TARGET_2_STRONG / 100  # 2.5%
+            else:
+                # Normal conditions: conservative targets
+                t1_pct = TARGET_1_MAX / 100  # 0.9%
+                t2_pct = TARGET_2_MAX / 100  # 1.8%
+            
+            target_1 = current_price * (1 - t1_pct)
+            target_2 = current_price * (1 - t2_pct)
+            
+            # Cap targets to S/R levels if they are closer
+            if supports and supports[0].price > target_1:
+                target_1 = supports[0].price
+            if len(supports) > 1 and supports[1].price > target_2:
+                target_2 = supports[1].price
             
             # Ensure targets are below entry
             if target_1 >= current_price:
-                target_1 = current_price * 0.985
+                target_1 = current_price * (1 - TARGET_1_MIN / 100)
             if target_2 >= target_1:
-                target_2 = target_1 * 0.99
+                target_2 = target_1 * 0.995
             
-            estimated_move = ((target_1 - current_price) / current_price) * 100
+            estimated_move = ((target_1 - current_price) / current_price) * 100  # Will be negative for SHORT
             liquidity_sweep_zone = None
             safe_invalidation = stop_loss
             
         else:
-            # SWEEP REVERSAL SHORT (original v1 logic)
+            # SWEEP REVERSAL SHORT (original v1 logic with 4H calibration)
             entry_zone_low = current_price
             entry_zone_high = resistances[0].price if resistances else current_price * 1.005
             
@@ -6583,10 +6690,32 @@ def generate_trade_signal(
                 stop_loss = short_sweep_zone * 1.005
                 invalidation_reason = get_translation("stop_beyond_sweep_above", lang, stop_loss, short_sweep_zone)
             
-            target_1 = supports[0].price if supports else current_price * 0.98
-            target_2 = supports[1].price if len(supports) > 1 else current_price * 0.96
+            # 4H CALIBRATED TARGETS for sweep reversal
+            if strong_conditions:
+                # Strong conditions: use extended targets
+                t1_pct = TARGET_1_STRONG / 100  # 1.2%
+                t2_pct = TARGET_2_STRONG / 100  # 2.5%
+            else:
+                # Normal 4H conditions: realistic targets
+                t1_pct = (TARGET_1_MIN + TARGET_1_MAX) / 2 / 100  # ~0.7%
+                t2_pct = (TARGET_2_MIN + TARGET_2_MAX) / 2 / 100  # ~1.4%
             
-            estimated_move = ((target_1 - current_price) / current_price) * 100
+            target_1 = current_price * (1 - t1_pct)
+            target_2 = current_price * (1 - t2_pct)
+            
+            # Cap targets to S/R levels if they are closer
+            if supports and supports[0].price > target_1:
+                target_1 = supports[0].price
+            if len(supports) > 1 and supports[1].price > target_2:
+                target_2 = supports[1].price
+            
+            # Ensure minimum target distance
+            if target_1 >= current_price:
+                target_1 = current_price * (1 - TARGET_1_MIN / 100)
+            if target_2 >= target_1:
+                target_2 = target_1 * 0.995
+            
+            estimated_move = ((target_1 - current_price) / current_price) * 100  # Will be negative for SHORT
             liquidity_sweep_zone = short_sweep_zone
             safe_invalidation = stop_loss
         
@@ -6601,25 +6730,59 @@ def generate_trade_signal(
         liquidity_sweep_zone = None
         safe_invalidation = None
     
-    # ================== MINIMUM MOVE FILTER ==================
+    # ================== 4H MINIMUM MOVE FILTER ==================
+    # Reject signals with move < 0.4% (very weak for 4H timeframe)
     
     no_trade_reason = None
-    if direction != "NO TRADE":
-        if abs(estimated_move) < MINIMUM_MOVE_PERCENT:
-            no_trade_reason = get_translation("move_below_threshold", lang, abs(estimated_move), MINIMUM_MOVE_PERCENT)
-            direction = "NO TRADE"
-            warnings.append("⚠️ " + get_translation("move_too_small", lang, abs(estimated_move), MINIMUM_MOVE_PERCENT))
+    move_quality = "normal"  # "weak", "normal", "strong", "exceptional"
     
-    # ================== CALCULATE RISK/REWARD ==================
+    if direction != "NO TRADE":
+        abs_move = abs(estimated_move)
+        
+        if abs_move < MINIMUM_MOVE_PERCENT:
+            # Move too small - reject signal
+            no_trade_reason = get_translation("move_below_threshold", lang, abs_move, MINIMUM_MOVE_PERCENT)
+            direction = "NO TRADE"
+            setup_type = "no_setup"
+            warnings.append("⚠️ " + get_translation("move_too_small", lang, abs_move, MINIMUM_MOVE_PERCENT))
+            move_quality = "weak"
+        elif abs_move < NORMAL_MOVE_MIN:
+            # Move weak but acceptable - add warning, keep in confirmation
+            warnings.append(f"⚠️ Movimento atteso basso ({abs_move:.2f}%) - richiede conferma extra")
+            move_quality = "weak"
+        elif abs_move <= NORMAL_MOVE_MAX:
+            # Normal 4H move - ideal
+            move_quality = "normal"
+        elif abs_move <= EXCEPTIONAL_MOVE_THRESHOLD:
+            # Strong move - good setup
+            move_quality = "strong"
+        else:
+            # Exceptional move - cap expectations
+            warnings.append(f"⚠️ Movimento atteso molto alto ({abs_move:.2f}%) - target potrebbero essere ottimistici")
+            move_quality = "exceptional"
+    
+    # ================== 4H RISK/REWARD FILTER ==================
+    # Minimum R:R = 1.0, Good = 1.2, Ideal = 1.5
     
     if direction != "NO TRADE" and stop_loss > 0:
         risk = abs(current_price - stop_loss)
         reward = abs(target_1 - current_price)
         risk_reward_ratio = reward / risk if risk > 0 else 0
         
-        # Check if R:R is acceptable (at least 1.5:1)
-        if risk_reward_ratio < 1.5:
-            warnings.append("⚠️ " + get_translation("rr_below_ideal", lang, risk_reward_ratio))
+        # 4H R:R filtering
+        if risk_reward_ratio < MIN_RISK_REWARD:
+            # R:R too low - reject signal
+            warnings.append(f"⚠️ R:R insufficiente ({risk_reward_ratio:.2f}) - minimo richiesto {MIN_RISK_REWARD}")
+            direction = "NO TRADE"
+            setup_type = "no_setup"
+            no_trade_reason = f"Risk/Reward ratio ({risk_reward_ratio:.2f}) sotto il minimo ({MIN_RISK_REWARD})"
+        elif risk_reward_ratio < GOOD_RISK_REWARD:
+            # R:R acceptable but not ideal
+            warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
+        elif risk_reward_ratio < IDEAL_RISK_REWARD:
+            # Good R:R
+            pass  # No warning needed
+        # Excellent R:R - no warning
     else:
         risk_reward_ratio = 0
     
