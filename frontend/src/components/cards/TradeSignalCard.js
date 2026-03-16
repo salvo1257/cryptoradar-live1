@@ -161,6 +161,36 @@ export function TradeSignalCard({ compact = false }) {
     }
   };
 
+  // Get quality level configuration
+  const getQualityConfig = (qualityLevel, qualityScore) => {
+    switch (qualityLevel) {
+      case 'EXCELLENT':
+        return {
+          color: 'text-emerald-400',
+          bgClass: 'bg-emerald-500/20 border-emerald-500/40',
+          label: language === 'it' ? 'ECCELLENTE' : 'EXCELLENT'
+        };
+      case 'GOOD':
+        return {
+          color: 'text-blue-400',
+          bgClass: 'bg-blue-500/20 border-blue-500/40',
+          label: language === 'it' ? 'BUONA' : 'GOOD'
+        };
+      case 'WEAK':
+        return {
+          color: 'text-yellow-400',
+          bgClass: 'bg-yellow-500/20 border-yellow-500/40',
+          label: language === 'it' ? 'DEBOLE' : 'WEAK'
+        };
+      default:
+        return {
+          color: 'text-red-400',
+          bgClass: 'bg-red-500/20 border-red-500/40',
+          label: language === 'it' ? 'SCARSA' : 'POOR'
+        };
+    }
+  };
+
   const getDirectionConfig = (direction) => {
     const cleanDir = getCleanDirection(direction);
     switch (cleanDir) {
@@ -378,6 +408,51 @@ export function TradeSignalCard({ compact = false }) {
               <span className="text-xs text-bullish">✓ {language === 'it' ? 'Movimento operabile' : 'Tradeable move'}</span>
             ) : (
               <span className="text-xs text-bearish">✗ Below 0.50% minimum</span>
+            )}
+          </div>
+        )}
+
+        {/* Quality Gate Score - NEW v2.7 */}
+        {signal.quality_score !== undefined && (
+          <div className={cn(
+            "mb-4 p-3 rounded-sm border",
+            getQualityConfig(signal.quality_level, signal.quality_score).bgClass
+          )}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className={cn("w-4 h-4", getQualityConfig(signal.quality_level).color)} />
+                <span className="text-xs text-zinc-400">
+                  {language === 'it' ? 'Quality Gate' : 'Quality Gate'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn("text-sm font-mono font-bold", getQualityConfig(signal.quality_level).color)}>
+                  {signal.quality_score}/100
+                </span>
+                <Badge className={cn(
+                  "text-[10px] font-mono",
+                  getQualityConfig(signal.quality_level).bgClass,
+                  getQualityConfig(signal.quality_level).color
+                )}>
+                  {getQualityConfig(signal.quality_level).label}
+                </Badge>
+                {signal.quality_gate_passed && (
+                  <span className="text-emerald-400 text-xs">✓</span>
+                )}
+              </div>
+            </div>
+            {!signal.quality_gate_passed && signal.quality_level !== 'EXCELLENT' && (
+              <div className="mt-2 text-[10px] text-zinc-500">
+                {signal.quality_level === 'POOR' && (
+                  <span>{language === 'it' ? 'Qualità insufficiente per operare' : 'Quality too low for trading'}</span>
+                )}
+                {signal.quality_level === 'WEAK' && (
+                  <span>{language === 'it' ? 'Richiede conferma aggiuntiva' : 'Requires additional confirmation'}</span>
+                )}
+                {signal.quality_level === 'GOOD' && (
+                  <span>{language === 'it' ? 'Procedere con cautela' : 'Proceed with caution'}</span>
+                )}
+              </div>
             )}
           </div>
         )}

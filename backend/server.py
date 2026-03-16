@@ -271,6 +271,11 @@ class TradeSignal(BaseModel):
     urgency_reason: str = ""  # Explanation of urgency level
     entry_distance_percent: float = 0.0  # Current price distance from entry zone
     time_sensitivity: str = "NORMAL"  # "URGENT", "NORMAL", "RELAXED"
+    
+    # NEW v2.7: Trade Quality Gate
+    quality_score: int = 0  # 0-100 quality score
+    quality_level: str = "POOR"  # "EXCELLENT", "GOOD", "WEAK", "POOR"
+    quality_gate_passed: bool = False  # Whether signal passed all quality checks
 
 
 class SignalHistoryEntry(BaseModel):
@@ -6166,6 +6171,176 @@ def generate_trade_signal(
         
         return is_high_energy or is_strong_magnet or is_continuation
     
+    # ================== TRADE QUALITY VALIDATION FUNCTIONS ==================
+    
+    def validate_directional_consistency(direction, entry_low, entry_high, stop, t1, t2, current_price):
+        """
+        Validates that trade parameters are consistent with direction.
+        Returns (is_valid, issues_list)
+        """
+        issues = []
+        
+        if direction == "LONG":
+            # LONG: targets above entry, stop below entry
+            if t1 <= entry_high and t1 > 0:
+                issues.append(f"T1 (${t1:,.0f}) deve essere > entry_high (${entry_high:,.0f})")
+            if t2 <= t1 and t2 > 0:
+                issues.append(f"T2 (${t2:,.0f}) deve essere > T1 (${t1:,.0f})")
+            if stop >= entry_low and stop > 0:
+                issues.append(f"Stop (${stop:,.0f}) deve essere < entry_low (${entry_low:,.0f})")
+            if t1 <= current_price and t1 > 0:
+                issues.append(f"T1 (${t1:,.0f}) deve essere > prezzo attuale (${current_price:,.0f})")
+                
+        elif direction == "SHORT":
+            # SHORT: targets below entry, stop above entry
+            if t1 >= entry_low and t1 > 0:
+                issues.append(f"T1 (${t1:,.0f}) deve essere < entry_low (${entry_low:,.0f})")
+            if t2 >= t1 and t2 > 0:
+                issues.append(f"T2 (${t2:,.0f}) deve essere < T1 (${t1:,.0f})")
+            if stop <= entry_high and stop > 0:
+                issues.append(f"Stop (${stop:,.0f}) deve essere > entry_high (${entry_high:,.0f})")
+            if t1 >= current_price and t1 > 0:
+                issues.append(f"T1 (${t1:,.0f}) deve essere < prezzo attuale (${current_price:,.0f})")
+        
+        return len(issues) == 0, issues
+    
+    def validate_sweep_direction_alignment(sweep_expectation, signal_direction, sweep_detected):
+        """
+        Validates that sweep expectation aligns with signal direction.
+        - Sweep below first → should support later LONG reversal (not immediate LONG)
+        - Sweep above first → should support later SHORT reversal (not immediate SHORT)
+        Returns (is_aligned, reason)
+        """
+        if not sweep_expectation or sweep_expectation == "N/A" or not sweep_detected:
+            return True, "No sweep alignment check needed"
+        
+        sweep_below = "below" in str(sweep_expectation).lower()
+        sweep_above = "above" in str(sweep_expectation).lower()
+        
+        # If sweep below is expected first, immediate LONG is risky (price may dip first)
+        if sweep_below and signal_direction == "LONG":
+            return False, "Sweep below atteso prima - LONG immediato rischioso, attendere sweep"
+        
+        # If sweep above is expected first, immediate SHORT is risky (price may spike first)
+        if sweep_above and signal_direction == "SHORT":
+            return False, "Sweep above atteso prima - SHORT immediato rischioso, attendere sweep"
+        
+        return True, "Sweep alignment OK"
+    
+    def calculate_trade_quality_score(
+        direction, rr_ratio, move_percent, 
+        whale_confirms, liquidity_path_aligned,
+        trap_risk, factors_aligned, total_factors,
+        sweep_aligned, directional_consistent
+    ):
+        """
+        Calculates overall trade quality score (0-100).
+        Returns (quality_score, quality_level, issues_list)
+        
+        Quality levels:
+        - EXCELLENT: >= 80 (green light)
+        - GOOD: 60-79 (proceed with caution)
+        - WEAK: 40-59 (confirmation only)
+        - POOR: < 40 (NO TRADE)
+        """
+        score = 0
+        issues = []
+        
+        # Directional consistency (CRITICAL - 25 points)
+        if directional_consistent:
+            score += 25
+        else:
+            issues.append("Inconsistenza direzionale nei parametri")
+        
+        # Risk/Reward (20 points)
+        if rr_ratio >= 1.5:
+            score += 20
+        elif rr_ratio >= 1.2:
+            score += 15
+        elif rr_ratio >= 1.0:
+            score += 10
+            issues.append(f"R:R basso ({rr_ratio:.2f})")
+        else:
+            issues.append(f"R:R insufficiente ({rr_ratio:.2f})")
+        
+        # Expected move (15 points)
+        abs_move = abs(move_percent)
+        if abs_move >= 0.5:
+            score += 15
+        elif abs_move >= 0.4:
+            score += 10
+            issues.append(f"Movimento atteso debole ({abs_move:.2f}%)")
+        else:
+            issues.append(f"Movimento troppo piccolo ({abs_move:.2f}%)")
+        
+        # Whale confirmation (10 points)
+        if whale_confirms:
+            score += 10
+        else:
+            issues.append("Whale activity non conferma direzione")
+        
+        # Liquidity path alignment (10 points)
+        if liquidity_path_aligned:
+            score += 10
+        else:
+            issues.append("Liquidità non allineata con direzione")
+        
+        # Sweep alignment (10 points)
+        if sweep_aligned:
+            score += 10
+        else:
+            issues.append("Sweep atteso non allineato con timing segnale")
+        
+        # Factor alignment (10 points)
+        if total_factors > 0:
+            alignment_ratio = factors_aligned / total_factors
+            score += int(alignment_ratio * 10)
+            if alignment_ratio < 0.5:
+                issues.append(f"Fattori non allineati ({factors_aligned}/{total_factors})")
+        
+        # Determine quality level
+        if score >= 80:
+            quality_level = "EXCELLENT"
+        elif score >= 60:
+            quality_level = "GOOD"
+        elif score >= 40:
+            quality_level = "WEAK"
+        else:
+            quality_level = "POOR"
+        
+        return score, quality_level, issues
+    
+    def apply_trade_quality_gate(
+        direction, quality_level, quality_score, issues,
+        rr_ratio, trap_risk_high, sweep_aligned
+    ):
+        """
+        Final quality gate that determines if signal should be published.
+        Returns (final_direction, final_setup_type, gate_passed, gate_reason)
+        """
+        # POOR quality = always NO TRADE
+        if quality_level == "POOR":
+            return "NO TRADE", "no_setup", False, f"Quality gate fallito (score: {quality_score}): {', '.join(issues[:2])}"
+        
+        # High trap risk = NO TRADE or confirmation
+        if trap_risk_high and quality_level != "EXCELLENT":
+            return "NO TRADE", "no_setup", False, "Alto rischio trappola con qualità non eccellente"
+        
+        # Sweep misalignment with non-excellent quality = confirmation only
+        if not sweep_aligned and quality_level in ["WEAK", "GOOD"]:
+            return direction, "setup_in_confirmation", False, "Sweep non allineato - richiede conferma"
+        
+        # WEAK quality = confirmation only
+        if quality_level == "WEAK":
+            return direction, "setup_in_confirmation", False, f"Qualità debole (score: {quality_score}) - richiede conferma"
+        
+        # R:R between 1.0 and 1.2 with only GOOD quality = confirmation
+        if rr_ratio < 1.2 and quality_level == "GOOD":
+            return direction, "setup_in_confirmation", False, f"R:R basso ({rr_ratio:.2f}) con qualità buona - richiede conferma"
+        
+        # All checks passed
+        return direction, None, True, f"Quality gate superato (score: {quality_score})"
+    
     score = 0
     factors = {}
     reasoning_parts = []
@@ -6769,22 +6944,103 @@ def generate_trade_signal(
         reward = abs(target_1 - current_price)
         risk_reward_ratio = reward / risk if risk > 0 else 0
         
-        # 4H R:R filtering
+        # 4H R:R filtering - only add warnings, quality gate handles rejection
         if risk_reward_ratio < MIN_RISK_REWARD:
-            # R:R too low - reject signal
             warnings.append(f"⚠️ R:R insufficiente ({risk_reward_ratio:.2f}) - minimo richiesto {MIN_RISK_REWARD}")
-            direction = "NO TRADE"
-            setup_type = "no_setup"
-            no_trade_reason = f"Risk/Reward ratio ({risk_reward_ratio:.2f}) sotto il minimo ({MIN_RISK_REWARD})"
         elif risk_reward_ratio < GOOD_RISK_REWARD:
-            # R:R acceptable but not ideal
             warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
-        elif risk_reward_ratio < IDEAL_RISK_REWARD:
-            # Good R:R
-            pass  # No warning needed
-        # Excellent R:R - no warning
     else:
         risk_reward_ratio = 0
+    
+    # ================== TRADE QUALITY GATE ==================
+    # Final validation before publishing signal
+    
+    quality_gate_passed = True
+    quality_gate_reason = ""
+    quality_score = 100
+    quality_level = "EXCELLENT"
+    
+    if direction != "NO TRADE":
+        # 1. Validate directional consistency
+        dir_consistent, dir_issues = validate_directional_consistency(
+            direction, entry_zone_low, entry_zone_high, stop_loss, target_1, target_2, current_price
+        )
+        
+        if not dir_consistent:
+            for issue in dir_issues:
+                warnings.append(f"⚠️ {issue}")
+            logger.warning(f"[QUALITY GATE] Directional inconsistency: {dir_issues}")
+        
+        # 2. Validate sweep-direction alignment
+        sweep_expectation = liquidity_ladder.sweep_expectation if liquidity_ladder else None
+        sweep_aligned, sweep_align_reason = validate_sweep_direction_alignment(
+            sweep_expectation, direction, sweep_detected
+        )
+        
+        if not sweep_aligned:
+            warnings.append(f"⚠️ {sweep_align_reason}")
+            logger.info(f"[QUALITY GATE] Sweep alignment issue: {sweep_align_reason}")
+        
+        # 3. Check whale confirmation
+        whale_confirms_dir = whale_confirms_direction if 'whale_confirms_direction' in dir() else False
+        
+        # 4. Check liquidity path alignment
+        liq_path_aligned = True
+        if liquidity_direction:
+            if direction == "LONG" and liquidity_direction.direction == "DOWN":
+                liq_path_aligned = False
+            elif direction == "SHORT" and liquidity_direction.direction == "UP":
+                liq_path_aligned = False
+        
+        # 5. Check trap risk
+        trap_risk_high = any("trappola" in w.lower() or "trap" in w.lower() for w in warnings)
+        
+        # 6. Calculate aligned factors
+        aligned_factors = sum(1 for f in factors.values() if isinstance(f, dict) and f.get("score", 0) * score > 0)
+        total_factors = len([f for f in factors.values() if isinstance(f, dict) and f.get("score", 0) != 0])
+        
+        # 7. Calculate quality score
+        quality_score, quality_level, quality_issues = calculate_trade_quality_score(
+            direction=direction,
+            rr_ratio=risk_reward_ratio,
+            move_percent=estimated_move,
+            whale_confirms=whale_confirms_dir,
+            liquidity_path_aligned=liq_path_aligned,
+            trap_risk=trap_risk_high,
+            factors_aligned=aligned_factors,
+            total_factors=total_factors,
+            sweep_aligned=sweep_aligned,
+            directional_consistent=dir_consistent
+        )
+        
+        # 8. Apply quality gate
+        final_direction, gate_setup_type, quality_gate_passed, quality_gate_reason = apply_trade_quality_gate(
+            direction=direction,
+            quality_level=quality_level,
+            quality_score=quality_score,
+            issues=quality_issues,
+            rr_ratio=risk_reward_ratio,
+            trap_risk_high=trap_risk_high,
+            sweep_aligned=sweep_aligned
+        )
+        
+        # Apply gate decisions
+        if not quality_gate_passed:
+            if final_direction == "NO TRADE":
+                direction = "NO TRADE"
+                setup_type = "no_setup"
+                no_trade_reason = quality_gate_reason
+            elif gate_setup_type == "setup_in_confirmation":
+                # Keep direction but mark as needing confirmation
+                setup_type = gate_setup_type
+                warnings.append(f"🔄 {quality_gate_reason}")
+            
+            logger.info(f"[QUALITY GATE] {quality_gate_reason} (score: {quality_score}, level: {quality_level})")
+        else:
+            logger.info(f"[QUALITY GATE] PASSED - score: {quality_score}, level: {quality_level}")
+        
+        # Add quality info to reasoning
+        reasoning_parts.append(f"Quality Score: {quality_score}/100 ({quality_level})")
     
     # ================== CALCULATE CONFIDENCE ==================
     
@@ -7070,7 +7326,11 @@ def generate_trade_signal(
         setup_status=timing["setup_status"],
         urgency_reason=timing["urgency_reason"],
         entry_distance_percent=timing["entry_distance_percent"],
-        time_sensitivity=timing["time_sensitivity"]
+        time_sensitivity=timing["time_sensitivity"],
+        # NEW v2.7: Trade Quality Gate
+        quality_score=quality_score,
+        quality_level=quality_level,
+        quality_gate_passed=quality_gate_passed
     )
 
 # ============== API ROUTES ==============

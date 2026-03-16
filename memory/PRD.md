@@ -1,4 +1,4 @@
-# CryptoRadar v2.7 - Product Requirements Document
+# CryptoRadar v2.8 - Product Requirements Document
 **Last Updated:** 2025-12-16
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-16)
@@ -8,7 +8,80 @@
 - Telegram Notifications: Available (user configurable)
 - Outcome Engine: OHLC-based (accurate historical analysis)
 - Signal Engine Version Tracking: Active (v1 vs v2 comparison)
-- **4H Timeframe Calibration: Active (realistic targets/R:R)**
+- 4H Timeframe Calibration: Active (realistic targets/R:R)
+- **Trade Quality Gate: Active (signal validation before publishing)**
+
+---
+
+## 🆕 v2.8 TRADE QUALITY GATE ✅ (2025-12-16)
+
+**IMPROVED SIGNAL QUALITY WITH COMPREHENSIVE VALIDATION:**
+
+### Why Added:
+- Engine sometimes decided direction too early, then tried to fit parameters around it
+- Produced inconsistent setups (T1 below entry for LONG, poor R:R, sweep misalignment)
+- Need fewer but cleaner, more coherent signals
+
+### Quality Gate Validation Steps:
+
+#### 1. Directional Consistency Check
+| Direction | Rules |
+|-----------|-------|
+| **LONG** | T1 > entry_high, T2 > T1, stop < entry_low |
+| **SHORT** | T1 < entry_low, T2 < T1, stop > entry_high |
+
+If rules not satisfied → **NO TRADE**
+
+#### 2. Sweep-Direction Alignment
+| Sweep Expected | Immediate Signal | Result |
+|----------------|------------------|--------|
+| Sweep Below First | LONG | ⚠️ Risky - wait for sweep |
+| Sweep Above First | SHORT | ⚠️ Risky - wait for sweep |
+
+#### 3. Quality Score Calculation (0-100 points)
+| Component | Max Points |
+|-----------|------------|
+| Directional Consistency | 25 |
+| Risk/Reward Ratio | 20 |
+| Expected Move | 15 |
+| Whale Confirmation | 10 |
+| Liquidity Path Alignment | 10 |
+| Sweep Alignment | 10 |
+| Factor Alignment | 10 |
+
+#### 4. Quality Levels
+| Level | Score | Action |
+|-------|-------|--------|
+| **EXCELLENT** | >= 80 | ✅ Publish signal |
+| **GOOD** | 60-79 | ✅ Publish with caution |
+| **WEAK** | 40-59 | 🔄 Confirmation only |
+| **POOR** | < 40 | ❌ NO TRADE |
+
+#### 5. Additional Filters
+- High trap risk + non-excellent quality → NO TRADE
+- R:R < 1.2 + GOOD quality → Confirmation only
+- Sweep misalignment + non-excellent → Confirmation only
+
+### New API Response Fields:
+| Field | Type | Description |
+|-------|------|-------------|
+| `quality_score` | int | 0-100 quality score |
+| `quality_level` | string | EXCELLENT/GOOD/WEAK/POOR |
+| `quality_gate_passed` | bool | Whether signal passed all checks |
+
+### UI Updates:
+- New **Quality Gate** card in TradeSignalCard showing:
+  - Score (e.g., "83/100")
+  - Level badge (EXCELLENT/GOOD/WEAK/POOR)
+  - Check mark if gate passed
+  - Warning messages for weak/poor quality
+
+### What Changed:
+- ✅ Signals now validated for directional consistency
+- ✅ Sweep logic aligned with signal direction
+- ✅ R:R filtering integrated into quality gate
+- ✅ Quality score exposed in API and UI
+- ❌ Core detection logic UNCHANGED (sweep/continuation detection)
 
 ---
 
