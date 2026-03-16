@@ -1,4 +1,4 @@
-# CryptoRadar v2.8 - Product Requirements Document
+# CryptoRadar v2.8.1 - Product Requirements Document
 **Last Updated:** 2025-12-16
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-16)
@@ -9,7 +9,52 @@
 - Outcome Engine: OHLC-based (accurate historical analysis)
 - Signal Engine Version Tracking: Active (v1 vs v2 comparison)
 - 4H Timeframe Calibration: Active (realistic targets/R:R)
-- **Trade Quality Gate: Active (signal validation before publishing)**
+- Trade Quality Gate: Active (signal validation before publishing)
+- **UI/Manual Language Check: COMPLETED (2025-12-16)**
+
+---
+
+## 🆕 v2.8.1 UI & MANUAL LANGUAGE CHECK ✅ (2025-12-16)
+
+### Pre-deployment Language & Documentation Verification
+
+#### UI Language Issues Found & Fixed:
+| Issue | Status |
+|-------|--------|
+| Warning messages hardcoded in Italian | ✅ Fixed - now multilingual (IT/EN/DE/PL) |
+| Quality Gate directional consistency errors too technical | ✅ Fixed - user-friendly messages |
+| R:R and move warnings not translated | ✅ Fixed - all languages supported |
+
+#### Manual Sections Added:
+| Section | Language | Status |
+|---------|----------|--------|
+| Calibrazione Timeframe 4H | IT | ✅ Added |
+| 4H Timeframe Calibration | EN | ✅ Added |
+| Quality Gate (Cancello Qualità) | IT | ✅ Added |
+| Quality Gate | EN | ✅ Added |
+| Come CryptoRadar Valuta un Trade | IT | ✅ Added |
+| How CryptoRadar Evaluates a Trade | EN | ✅ Added |
+
+#### Translations Added:
+| Key | IT | EN |
+|-----|-----|-----|
+| qualityGate | Cancello Qualità | Quality Gate |
+| qualityScore | Punteggio Qualità | Quality Score |
+| qualityExcellent | ECCELLENTE | EXCELLENT |
+| qualityGood | BUONA | GOOD |
+| qualityWeak | DEBOLE | WEAK |
+| qualityPoor | SCARSA | POOR |
+
+#### Warning Messages Verified:
+- ✅ "Long affollati" / "Crowded longs" - clear
+- ✅ "Alto rischio trappola" / "High trap risk" - clear
+- ✅ "Sweep atteso" / "Sweep expected" - clear
+- ✅ "R:R insufficiente" / "R:R insufficient" - clear
+- ✅ "Movimento atteso basso" / "Expected move low" - clear
+
+#### No Debug/Developer Text Found:
+- ✅ No console.log visible in UI
+- ✅ No technical error messages exposed
 
 ---
 

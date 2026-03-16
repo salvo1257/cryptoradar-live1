@@ -256,6 +256,138 @@ Le news sono generate algoritmicamente, non sono notizie reali. Servono come sin
 
 **Perché questo approccio:**
 Le API di news crypto richiedono chiavi a pagamento. Invece di mostrare news obsolete o non disponibili, il sistema genera contenuto utile basato sui dati reali che già possiede.`
+      },
+      {
+        id: "4h-calibration",
+        icon: Clock,
+        title: "Calibrazione Timeframe 4H",
+        content: `CryptoRadar è calibrato specificamente per il **timeframe 4H** (4 ore), con parametri realistici per BTC.
+
+**Range di Movimento Tipici su 4H:**
+| Tipo | Range | Significato |
+|------|-------|-------------|
+| Molto piccolo | < 0.4% | Segnale debole, NO TRADE |
+| Normale | 0.5% – 1.2% | Movimento operabile standard |
+| Forte | 1.2% – 2.5% | Movimento significativo |
+| Eccezionale | > 2.5% | Raro, non assumere come default |
+
+**Target Calibrati:**
+- **Target 1 (T1)**: 0.5% – 0.9% in condizioni normali, fino a 1.2% in condizioni forti
+- **Target 2 (T2)**: 1.0% – 1.8% in condizioni normali, fino a 2.5% in condizioni forti
+
+**Condizioni Forti** (che permettono target estesi):
+- Market Energy ALTA
+- Liquidity Magnet FORTE
+- Setup Trend Continuation
+
+**Risk/Reward Minimo:**
+- < 1.0 = NO TRADE (rifiutato automaticamente)
+- 1.0 – 1.2 = Accettabile con warning
+- 1.2 – 1.5 = Buono
+- > 1.5 = Ideale
+
+**Perché questa calibrazione:**
+I movimenti BTC su 4H sono tipicamente più contenuti rispetto al daily. Target troppo ambiziosi (es. 3-4%) raramente vengono raggiunti in una singola candela 4H, portando a segnali "expired". La calibrazione attuale riflette aspettative realistiche.`
+      },
+      {
+        id: "quality-gate",
+        icon: Shield,
+        title: "Quality Gate (Cancello Qualità)",
+        content: `Il **Quality Gate** è un sistema di validazione che verifica la coerenza del segnale PRIMA di pubblicarlo.
+
+**Perché è stato introdotto:**
+In passato, il sistema a volte decideva una direzione (LONG/SHORT) troppo presto, poi cercava di adattare i parametri a quella direzione. Questo produceva setup incoerenti.
+
+**Cosa valida il Quality Gate:**
+
+1. **Consistenza Direzionale**
+   - Per LONG: T1 > entry, T2 > T1, stop < entry
+   - Per SHORT: T1 < entry, T2 < T1, stop > entry
+   - Se non rispettato → NO TRADE
+
+2. **Allineamento Sweep-Direzione**
+   - Se sweep sotto atteso → LONG immediato rischioso
+   - Se sweep sopra atteso → SHORT immediato rischioso
+   - Misallineamento → Warning o conferma richiesta
+
+3. **Risk/Reward**
+   - R:R < 1.0 → NO TRADE
+   - R:R 1.0-1.2 con qualità non eccellente → Conferma richiesta
+
+4. **Quality Score (0-100)**
+   Composto da 7 fattori:
+   - Consistenza direzionale (25 punti)
+   - Risk/Reward (20 punti)
+   - Movimento atteso (15 punti)
+   - Conferma whale (10 punti)
+   - Allineamento liquidità (10 punti)
+   - Allineamento sweep (10 punti)
+   - Allineamento fattori (10 punti)
+
+**Livelli di Qualità:**
+| Livello | Score | Azione |
+|---------|-------|--------|
+| ECCELLENTE | ≥ 80 | ✅ Segnale pubblicato |
+| BUONA | 60-79 | ✅ Pubblicato con cautela |
+| DEBOLE | 40-59 | 🔄 Solo conferma |
+| SCARSA | < 40 | ❌ NO TRADE |
+
+**Come interpretare il Quality Gate nell'interfaccia:**
+- Badge verde "ECCELLENTE" + ✓ = segnale affidabile
+- Badge giallo "BUONA" = procedere con cautela
+- Badge arancione "DEBOLE" = attendere conferma
+- Badge rosso "SCARSA" = non operare
+
+**Risultato:**
+Meno segnali, ma più puliti e coerenti. Qualità > Quantità.`
+      },
+      {
+        id: "signal-evaluation",
+        icon: ListChecks,
+        title: "Come CryptoRadar Valuta un Trade",
+        content: `Ecco il processo completo che CryptoRadar segue per generare un segnale:
+
+**FASE 1: Raccolta Dati**
+1. Prezzo BTC da Kraken (real-time)
+2. Order book multi-exchange (Kraken, Coinbase, Bitstamp)
+3. Open Interest e Funding Rate da CoinGlass
+4. Candele storiche per pattern analysis
+
+**FASE 2: Analisi dei Fattori (9 fattori)**
+1. Market Bias (trend generale)
+2. Whale Activity (attività grandi operatori)
+3. Liquidity Direction (dove si muove la liquidità)
+4. Liquidity Ladder (scala di liquidità sopra/sotto)
+5. Open Interest trend
+6. Funding Rate sentiment
+7. Order Book imbalance
+8. Pattern detection (sweep, continuation)
+9. Market Energy (compressione/espansione)
+
+**FASE 3: Determinazione Setup**
+- **Sweep Reversal**: Prezzo vicino a livello chiave + liquidità concentrata
+- **Trend Continuation**: Trend chiaro + energia alta + conferme multiple
+- Se nessun setup valido → NO TRADE
+
+**FASE 4: Calcolo Parametri**
+- Entry zone basata su S/R e setup type
+- Stop loss oltre la sweep zone (non dove tutti mettono lo stop)
+- Target 1 e Target 2 calibrati per 4H
+- Risk/Reward calcolato
+
+**FASE 5: Quality Gate**
+- Validazione consistenza direzionale
+- Validazione allineamento sweep
+- Calcolo quality score
+- Decisione finale: TRADE o NO TRADE
+
+**FASE 6: Conferma**
+- Se quality OK → IN CONFERMA
+- Dopo 2 segnali consecutivi nella stessa direzione → OPERATIVO
+- Se condizioni cambiano → INVALIDATO
+
+**Takeaway:**
+Il sistema NON decide prima "LONG" e poi cerca giustificazioni. Analizza tutti i dati, costruisce il setup, valida la qualità, e SOLO POI assegna una direzione.`
       }
     ],
     tradingGuide: {
@@ -539,6 +671,138 @@ The system uses 4-hour (4H) candles as the main operational context. This means 
 
 **Sweep Expectation:**
 The system predicts if there will be a "sweep" (quick move to liquidate positions) before the main move.`
+      },
+      {
+        id: "4h-calibration",
+        icon: Clock,
+        title: "4H Timeframe Calibration",
+        content: `CryptoRadar is specifically calibrated for the **4H (4-hour) timeframe** with realistic BTC parameters.
+
+**Typical 4H Move Ranges:**
+| Type | Range | Meaning |
+|------|-------|---------|
+| Very Small | < 0.4% | Weak signal, NO TRADE |
+| Normal | 0.5% – 1.2% | Standard tradeable move |
+| Strong | 1.2% – 2.5% | Significant movement |
+| Exceptional | > 2.5% | Rare, don't assume as default |
+
+**Calibrated Targets:**
+- **Target 1 (T1)**: 0.5% – 0.9% normal, up to 1.2% in strong conditions
+- **Target 2 (T2)**: 1.0% – 1.8% normal, up to 2.5% in strong conditions
+
+**Strong Conditions** (allowing extended targets):
+- HIGH Market Energy
+- STRONG Liquidity Magnet
+- Trend Continuation setup
+
+**Minimum Risk/Reward:**
+- < 1.0 = NO TRADE (automatically rejected)
+- 1.0 – 1.2 = Acceptable with warning
+- 1.2 – 1.5 = Good
+- > 1.5 = Ideal
+
+**Why this calibration:**
+BTC moves on 4H are typically smaller than daily. Overly ambitious targets (e.g., 3-4%) rarely get hit in a single 4H candle, leading to "expired" signals. Current calibration reflects realistic expectations.`
+      },
+      {
+        id: "quality-gate",
+        icon: Shield,
+        title: "Quality Gate",
+        content: `The **Quality Gate** is a validation system that checks signal coherence BEFORE publishing it.
+
+**Why it was introduced:**
+Previously, the system sometimes decided a direction (LONG/SHORT) too early, then tried to fit parameters around it. This produced inconsistent setups.
+
+**What the Quality Gate validates:**
+
+1. **Directional Consistency**
+   - For LONG: T1 > entry, T2 > T1, stop < entry
+   - For SHORT: T1 < entry, T2 < T1, stop > entry
+   - If not met → NO TRADE
+
+2. **Sweep-Direction Alignment**
+   - If sweep below expected → immediate LONG is risky
+   - If sweep above expected → immediate SHORT is risky
+   - Misalignment → Warning or confirmation required
+
+3. **Risk/Reward**
+   - R:R < 1.0 → NO TRADE
+   - R:R 1.0-1.2 with non-excellent quality → Confirmation required
+
+4. **Quality Score (0-100)**
+   Composed of 7 factors:
+   - Directional consistency (25 points)
+   - Risk/Reward (20 points)
+   - Expected move (15 points)
+   - Whale confirmation (10 points)
+   - Liquidity alignment (10 points)
+   - Sweep alignment (10 points)
+   - Factor alignment (10 points)
+
+**Quality Levels:**
+| Level | Score | Action |
+|-------|-------|--------|
+| EXCELLENT | ≥ 80 | ✅ Signal published |
+| GOOD | 60-79 | ✅ Published with caution |
+| WEAK | 40-59 | 🔄 Confirmation only |
+| POOR | < 40 | ❌ NO TRADE |
+
+**How to interpret Quality Gate in the interface:**
+- Green "EXCELLENT" badge + ✓ = reliable signal
+- Yellow "GOOD" badge = proceed with caution
+- Orange "WEAK" badge = wait for confirmation
+- Red "POOR" badge = don't trade
+
+**Result:**
+Fewer signals, but cleaner and more coherent. Quality > Quantity.`
+      },
+      {
+        id: "signal-evaluation",
+        icon: ListChecks,
+        title: "How CryptoRadar Evaluates a Trade",
+        content: `Here's the complete process CryptoRadar follows to generate a signal:
+
+**PHASE 1: Data Collection**
+1. BTC price from Kraken (real-time)
+2. Multi-exchange order book (Kraken, Coinbase, Bitstamp)
+3. Open Interest and Funding Rate from CoinGlass
+4. Historical candles for pattern analysis
+
+**PHASE 2: Factor Analysis (9 factors)**
+1. Market Bias (overall trend)
+2. Whale Activity (large operator activity)
+3. Liquidity Direction (where liquidity is moving)
+4. Liquidity Ladder (liquidity scale above/below)
+5. Open Interest trend
+6. Funding Rate sentiment
+7. Order Book imbalance
+8. Pattern detection (sweep, continuation)
+9. Market Energy (compression/expansion)
+
+**PHASE 3: Setup Determination**
+- **Sweep Reversal**: Price near key level + concentrated liquidity
+- **Trend Continuation**: Clear trend + high energy + multiple confirmations
+- If no valid setup → NO TRADE
+
+**PHASE 4: Parameter Calculation**
+- Entry zone based on S/R and setup type
+- Stop loss beyond sweep zone (not where everyone puts their stop)
+- Target 1 and Target 2 calibrated for 4H
+- Risk/Reward calculated
+
+**PHASE 5: Quality Gate**
+- Directional consistency validation
+- Sweep alignment validation
+- Quality score calculation
+- Final decision: TRADE or NO TRADE
+
+**PHASE 6: Confirmation**
+- If quality OK → IN CONFIRMATION
+- After 2 consecutive signals in same direction → OPERATIONAL
+- If conditions change → INVALIDATED
+
+**Takeaway:**
+The system does NOT decide "LONG" first and then look for justifications. It analyzes all data, constructs the setup, validates quality, and ONLY THEN assigns a direction.`
       }
     ],
     tradingGuide: {

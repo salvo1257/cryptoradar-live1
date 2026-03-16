@@ -6173,34 +6173,80 @@ def generate_trade_signal(
     
     # ================== TRADE QUALITY VALIDATION FUNCTIONS ==================
     
-    def validate_directional_consistency(direction, entry_low, entry_high, stop, t1, t2, current_price):
+    def validate_directional_consistency(direction, entry_low, entry_high, stop, t1, t2, current_price, lang="it"):
         """
         Validates that trade parameters are consistent with direction.
         Returns (is_valid, issues_list)
         """
         issues = []
         
+        # User-friendly messages by language
+        msgs = {
+            "it": {
+                "t1_above_entry": "Target 1 non valido per LONG (sotto entry)",
+                "t2_above_t1": "Target 2 non valido (sotto Target 1)",
+                "stop_below_entry": "Stop loss non valido per LONG (sopra entry)",
+                "t1_above_price": "Target 1 sotto il prezzo attuale",
+                "t1_below_entry": "Target 1 non valido per SHORT (sopra entry)",
+                "t2_below_t1": "Target 2 non valido (sopra Target 1)",
+                "stop_above_entry": "Stop loss non valido per SHORT (sotto entry)",
+                "t1_below_price": "Target 1 sopra il prezzo attuale"
+            },
+            "en": {
+                "t1_above_entry": "Target 1 invalid for LONG (below entry)",
+                "t2_above_t1": "Target 2 invalid (below Target 1)",
+                "stop_below_entry": "Stop loss invalid for LONG (above entry)",
+                "t1_above_price": "Target 1 below current price",
+                "t1_below_entry": "Target 1 invalid for SHORT (above entry)",
+                "t2_below_t1": "Target 2 invalid (above Target 1)",
+                "stop_above_entry": "Stop loss invalid for SHORT (below entry)",
+                "t1_below_price": "Target 1 above current price"
+            },
+            "de": {
+                "t1_above_entry": "Target 1 ungültig für LONG (unter Entry)",
+                "t2_above_t1": "Target 2 ungültig (unter Target 1)",
+                "stop_below_entry": "Stop Loss ungültig für LONG (über Entry)",
+                "t1_above_price": "Target 1 unter aktuellem Preis",
+                "t1_below_entry": "Target 1 ungültig für SHORT (über Entry)",
+                "t2_below_t1": "Target 2 ungültig (über Target 1)",
+                "stop_above_entry": "Stop Loss ungültig für SHORT (unter Entry)",
+                "t1_below_price": "Target 1 über aktuellem Preis"
+            },
+            "pl": {
+                "t1_above_entry": "Target 1 nieprawidłowy dla LONG (poniżej entry)",
+                "t2_above_t1": "Target 2 nieprawidłowy (poniżej Target 1)",
+                "stop_below_entry": "Stop loss nieprawidłowy dla LONG (powyżej entry)",
+                "t1_above_price": "Target 1 poniżej aktualnej ceny",
+                "t1_below_entry": "Target 1 nieprawidłowy dla SHORT (powyżej entry)",
+                "t2_below_t1": "Target 2 nieprawidłowy (powyżej Target 1)",
+                "stop_above_entry": "Stop loss nieprawidłowy dla SHORT (poniżej entry)",
+                "t1_below_price": "Target 1 powyżej aktualnej ceny"
+            }
+        }
+        
+        m = msgs.get(lang, msgs["en"])
+        
         if direction == "LONG":
             # LONG: targets above entry, stop below entry
             if t1 <= entry_high and t1 > 0:
-                issues.append(f"T1 (${t1:,.0f}) deve essere > entry_high (${entry_high:,.0f})")
+                issues.append(m["t1_above_entry"])
             if t2 <= t1 and t2 > 0:
-                issues.append(f"T2 (${t2:,.0f}) deve essere > T1 (${t1:,.0f})")
+                issues.append(m["t2_above_t1"])
             if stop >= entry_low and stop > 0:
-                issues.append(f"Stop (${stop:,.0f}) deve essere < entry_low (${entry_low:,.0f})")
+                issues.append(m["stop_below_entry"])
             if t1 <= current_price and t1 > 0:
-                issues.append(f"T1 (${t1:,.0f}) deve essere > prezzo attuale (${current_price:,.0f})")
+                issues.append(m["t1_above_price"])
                 
         elif direction == "SHORT":
             # SHORT: targets below entry, stop above entry
             if t1 >= entry_low and t1 > 0:
-                issues.append(f"T1 (${t1:,.0f}) deve essere < entry_low (${entry_low:,.0f})")
+                issues.append(m["t1_below_entry"])
             if t2 >= t1 and t2 > 0:
-                issues.append(f"T2 (${t2:,.0f}) deve essere < T1 (${t1:,.0f})")
+                issues.append(m["t2_below_t1"])
             if stop <= entry_high and stop > 0:
-                issues.append(f"Stop (${stop:,.0f}) deve essere > entry_high (${entry_high:,.0f})")
+                issues.append(m["stop_above_entry"])
             if t1 >= current_price and t1 > 0:
-                issues.append(f"T1 (${t1:,.0f}) deve essere < prezzo attuale (${current_price:,.0f})")
+                issues.append(m["t1_below_price"])
         
         return len(issues) == 0, issues
     
@@ -6923,7 +6969,14 @@ def generate_trade_signal(
             move_quality = "weak"
         elif abs_move < NORMAL_MOVE_MIN:
             # Move weak but acceptable - add warning, keep in confirmation
-            warnings.append(f"⚠️ Movimento atteso basso ({abs_move:.2f}%) - richiede conferma extra")
+            if lang == 'it':
+                warnings.append(f"⚠️ Movimento atteso basso ({abs_move:.2f}%) - richiede conferma extra")
+            elif lang == 'de':
+                warnings.append(f"⚠️ Erwartete Bewegung niedrig ({abs_move:.2f}%) - erfordert extra Bestätigung")
+            elif lang == 'pl':
+                warnings.append(f"⚠️ Oczekiwany ruch niski ({abs_move:.2f}%) - wymaga dodatkowego potwierdzenia")
+            else:
+                warnings.append(f"⚠️ Expected move low ({abs_move:.2f}%) - requires extra confirmation")
             move_quality = "weak"
         elif abs_move <= NORMAL_MOVE_MAX:
             # Normal 4H move - ideal
@@ -6933,7 +6986,14 @@ def generate_trade_signal(
             move_quality = "strong"
         else:
             # Exceptional move - cap expectations
-            warnings.append(f"⚠️ Movimento atteso molto alto ({abs_move:.2f}%) - target potrebbero essere ottimistici")
+            if lang == 'it':
+                warnings.append(f"⚠️ Movimento atteso molto alto ({abs_move:.2f}%) - target potrebbero essere ottimistici")
+            elif lang == 'de':
+                warnings.append(f"⚠️ Erwartete Bewegung sehr hoch ({abs_move:.2f}%) - Ziele könnten optimistisch sein")
+            elif lang == 'pl':
+                warnings.append(f"⚠️ Oczekiwany ruch bardzo wysoki ({abs_move:.2f}%) - cele mogą być optymistyczne")
+            else:
+                warnings.append(f"⚠️ Expected move very high ({abs_move:.2f}%) - targets may be optimistic")
             move_quality = "exceptional"
     
     # ================== 4H RISK/REWARD FILTER ==================
@@ -6946,9 +7006,23 @@ def generate_trade_signal(
         
         # 4H R:R filtering - only add warnings, quality gate handles rejection
         if risk_reward_ratio < MIN_RISK_REWARD:
-            warnings.append(f"⚠️ R:R insufficiente ({risk_reward_ratio:.2f}) - minimo richiesto {MIN_RISK_REWARD}")
+            if lang == 'it':
+                warnings.append(f"⚠️ R:R insufficiente ({risk_reward_ratio:.2f}) - minimo richiesto {MIN_RISK_REWARD}")
+            elif lang == 'de':
+                warnings.append(f"⚠️ R:R unzureichend ({risk_reward_ratio:.2f}) - Minimum erforderlich {MIN_RISK_REWARD}")
+            elif lang == 'pl':
+                warnings.append(f"⚠️ R:R niewystarczający ({risk_reward_ratio:.2f}) - wymagane minimum {MIN_RISK_REWARD}")
+            else:
+                warnings.append(f"⚠️ R:R insufficient ({risk_reward_ratio:.2f}) - minimum required {MIN_RISK_REWARD}")
         elif risk_reward_ratio < GOOD_RISK_REWARD:
-            warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
+            if lang == 'it':
+                warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
+            elif lang == 'de':
+                warnings.append(f"⚠️ R:R niedrig ({risk_reward_ratio:.2f}) - ideal >= {GOOD_RISK_REWARD}")
+            elif lang == 'pl':
+                warnings.append(f"⚠️ R:R niski ({risk_reward_ratio:.2f}) - ideał >= {GOOD_RISK_REWARD}")
+            else:
+                warnings.append(f"⚠️ R:R low ({risk_reward_ratio:.2f}) - ideal >= {GOOD_RISK_REWARD}")
     else:
         risk_reward_ratio = 0
     
@@ -6963,7 +7037,7 @@ def generate_trade_signal(
     if direction != "NO TRADE":
         # 1. Validate directional consistency
         dir_consistent, dir_issues = validate_directional_consistency(
-            direction, entry_zone_low, entry_zone_high, stop_loss, target_1, target_2, current_price
+            direction, entry_zone_low, entry_zone_high, stop_loss, target_1, target_2, current_price, lang
         )
         
         if not dir_consistent:

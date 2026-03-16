@@ -71,6 +71,19 @@ export const translations = {
     whaleConfirms: "Whale Confirms Direction",
     invalidation: "Invalidation",
     
+    // Quality Gate (v2.8)
+    qualityGate: "Quality Gate",
+    qualityScore: "Quality Score",
+    qualityLevel: "Quality Level",
+    qualityExcellent: "EXCELLENT",
+    qualityGood: "GOOD",
+    qualityWeak: "WEAK",
+    qualityPoor: "POOR",
+    qualityGatePassed: "Quality Gate Passed",
+    qualityTooLow: "Quality too low for trading",
+    qualityNeedsConfirmation: "Requires additional confirmation",
+    qualityProceedCaution: "Proceed with caution",
+    
     // Liquidity
     liquidityDirection: "Liquidity Direction",
     liquidityLadder: "Liquidity Ladder",
@@ -353,6 +366,19 @@ export const translations = {
     sweepExpected: "Sweep Atteso",
     whaleConfirms: "Balene Confermano",
     invalidation: "Invalidazione",
+    
+    // Quality Gate (v2.8)
+    qualityGate: "Cancello Qualità",
+    qualityScore: "Punteggio Qualità",
+    qualityLevel: "Livello Qualità",
+    qualityExcellent: "ECCELLENTE",
+    qualityGood: "BUONA",
+    qualityWeak: "DEBOLE",
+    qualityPoor: "SCARSA",
+    qualityGatePassed: "Controllo Qualità Superato",
+    qualityTooLow: "Qualità insufficiente per operare",
+    qualityNeedsConfirmation: "Richiede conferma aggiuntiva",
+    qualityProceedCaution: "Procedere con cautela",
     
     // Liquidity
     liquidityDirection: "Direzione Liquidità",
