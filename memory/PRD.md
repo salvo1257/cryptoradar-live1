@@ -1,7 +1,7 @@
 # CryptoRadar v2.9.1 - Product Requirements Document
 **Last Updated:** 2025-12-17
 
-## ✅ DEPLOYED: CryptoRadar v2.9.1 (2025-12-17)
+## ✅ DEPLOYED: CryptoRadar v2.9.2 (2025-12-17)
 
 ### Deployment Status
 | Component | Status | Details |
@@ -10,6 +10,29 @@
 | Frontend | ✅ RUNNING | React on port 3000 |
 | MongoDB | ✅ CONNECTED | Emergent-managed |
 | API Health | ✅ HEALTHY | All endpoints responding |
+
+### v2.9.2 Changes - RELAXED THRESHOLDS
+| Parameter | Before | After | Rationale |
+|-----------|--------|-------|-----------|
+| Min Move | 0.40% | 0.25% | Allow smaller high-quality moves |
+| Min Move (High Quality) | N/A | 0.15% | Even smaller for excellent setups |
+| R:R (Quality >= 80) | 1.0 | **0.6** | Adaptive threshold |
+| R:R (Quality >= 60) | 1.0 | **0.8** | Adaptive threshold |
+| R:R (Quality < 60) | 1.0 | 1.0 | Unchanged |
+| Target T1 Min | 0.50% | 0.40% | Micro-move targets |
+| Target T2 Min | 1.00% | 0.80% | Micro-move targets |
+
+### Adaptive R:R Logic
+```
+if quality_level == "EXCELLENT": min_rr = 0.6
+elif quality_level == "GOOD":    min_rr = 0.8
+else:                            min_rr = 1.0
+```
+
+### High-Quality Override
+When all conditions align (strong bias + whale aligned + no trap risk):
+- Move threshold reduced to 0.15%
+- Smaller moves accepted with ✅ message
 
 ### Version Features
 - ✅ Market Regime Detection (TREND/RANGE/COMPRESSION/EXPANSION)

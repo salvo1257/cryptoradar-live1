@@ -6500,29 +6500,35 @@ def generate_trade_signal(
     - NO TRADE: -3 to +3 (or move < 0.40%)
     """
     
-    # ================== 4H TIMEFRAME CALIBRATION ==================
-    # BTC 4H realistic move ranges:
-    # - Very small move: < 0.4% (weak signal)
-    # - Normal tradable move: 0.5% – 1.2%
+    # ================== 4H TIMEFRAME CALIBRATION v2.9.2 ==================
+    # BTC 4H realistic move ranges (RELAXED for high-quality setups):
+    # - Very small move: < 0.25% (weak signal, but allowed if quality high)
+    # - Normal tradable move: 0.25% – 1.2%
     # - Strong 4H move: 1.2% – 2.5%
     # - Exceptional: > 2.5% (rare, don't assume as default)
     
-    MINIMUM_MOVE_PERCENT = 0.40  # Below this = NO TRADE or IN CONFIRMATION
-    NORMAL_MOVE_MIN = 0.50      # Minimum for normal tradable signal
+    MINIMUM_MOVE_PERCENT = 0.25  # Reduced from 0.40 - allow smaller high-quality moves
+    MINIMUM_MOVE_HIGH_QUALITY = 0.15  # Even lower threshold if quality >= 80
+    NORMAL_MOVE_MIN = 0.30      # Reduced from 0.50
     NORMAL_MOVE_MAX = 1.20      # Maximum for typical 4H move
     STRONG_MOVE_THRESHOLD = 1.20  # Above this = strong move
     EXCEPTIONAL_MOVE_THRESHOLD = 2.50  # Above this = exceptional (cap targets)
     
     # 4H Target ranges (percentage from entry)
-    TARGET_1_MIN = 0.50  # Minimum T1: 0.5%
+    TARGET_1_MIN = 0.40  # Reduced from 0.50 for micro-moves
     TARGET_1_MAX = 0.90  # Maximum T1: 0.9% (normal conditions)
     TARGET_1_STRONG = 1.20  # T1 for strong conditions
-    TARGET_2_MIN = 1.00  # Minimum T2: 1.0%
+    TARGET_2_MIN = 0.80  # Reduced from 1.00
     TARGET_2_MAX = 1.80  # Maximum T2: 1.8% (normal conditions)
     TARGET_2_STRONG = 2.50  # T2 for exceptional conditions
     
-    # Risk/Reward requirements for 4H
-    MIN_RISK_REWARD = 1.0  # Absolute minimum R:R to consider trade
+    # Risk/Reward requirements for 4H - ADAPTIVE based on quality
+    # Quality >= 80: Allow R:R >= 0.6
+    # Quality >= 60: Allow R:R >= 0.8
+    # Quality < 60:  Require R:R >= 1.0
+    MIN_RISK_REWARD_HIGH_QUALITY = 0.6  # If quality >= 80
+    MIN_RISK_REWARD_GOOD_QUALITY = 0.8  # If quality >= 60
+    MIN_RISK_REWARD = 1.0  # Default minimum R:R
     GOOD_RISK_REWARD = 1.2  # Good R:R threshold
     IDEAL_RISK_REWARD = 1.5  # Ideal R:R threshold
     
@@ -6681,25 +6687,35 @@ def generate_trade_signal(
         else:
             issues.append("Inconsistenza direzionale nei parametri")
         
-        # Risk/Reward (20 points)
+        # Risk/Reward (20 points) - v2.9.2: More lenient scoring
         if rr_ratio >= 1.5:
             score += 20
         elif rr_ratio >= 1.2:
-            score += 15
+            score += 18
         elif rr_ratio >= 1.0:
-            score += 10
-            issues.append(f"R:R basso ({rr_ratio:.2f})")
+            score += 15
+        elif rr_ratio >= 0.8:
+            score += 12  # Acceptable with good quality
+        elif rr_ratio >= 0.6:
+            score += 8   # Acceptable only with excellent quality
+            issues.append(f"R:R basso ({rr_ratio:.2f}) - richiede qualità alta")
         else:
-            issues.append(f"R:R insufficiente ({rr_ratio:.2f})")
+            score += 3   # Very low but don't zero out
+            issues.append(f"R:R molto basso ({rr_ratio:.2f})")
         
-        # Expected move (15 points)
+        # Expected move (15 points) - v2.9.2: More lenient for micro-moves
         abs_move = abs(move_percent)
         if abs_move >= 0.5:
             score += 15
-        elif abs_move >= 0.4:
+        elif abs_move >= 0.3:
+            score += 12
+        elif abs_move >= 0.25:
             score += 10
-            issues.append(f"Movimento atteso debole ({abs_move:.2f}%)")
+        elif abs_move >= 0.15:
+            score += 7  # Still give points for very small high-quality moves
+            issues.append(f"Movimento atteso piccolo ({abs_move:.2f}%)")
         else:
+            score += 3
             issues.append(f"Movimento troppo piccolo ({abs_move:.2f}%)")
         
         # Whale confirmation (10 points)
@@ -6745,26 +6761,43 @@ def generate_trade_signal(
     ):
         """
         Final quality gate that determines if signal should be published.
+        v2.9.2: Adaptive R:R thresholds based on quality
         Returns (final_direction, final_setup_type, gate_passed, gate_reason)
         """
+        # Determine adaptive R:R threshold based on quality
+        if quality_level == "EXCELLENT":
+            min_rr_threshold = MIN_RISK_REWARD_HIGH_QUALITY  # 0.6
+        elif quality_level == "GOOD":
+            min_rr_threshold = MIN_RISK_REWARD_GOOD_QUALITY  # 0.8
+        else:
+            min_rr_threshold = MIN_RISK_REWARD  # 1.0
+        
         # POOR quality = always NO TRADE
         if quality_level == "POOR":
             return "NO TRADE", "no_setup", False, f"Quality gate fallito (score: {quality_score}): {', '.join(issues[:2])}"
         
-        # High trap risk = NO TRADE or confirmation
+        # Check R:R against adaptive threshold
+        if rr_ratio < min_rr_threshold:
+            if quality_level == "EXCELLENT":
+                # Even excellent quality can't save very low R:R
+                return "NO TRADE", "no_setup", False, f"R:R troppo basso ({rr_ratio:.2f}) anche per qualità eccellente (min: {min_rr_threshold})"
+            else:
+                return "NO TRADE", "no_setup", False, f"R:R ({rr_ratio:.2f}) sotto soglia adattiva ({min_rr_threshold})"
+        
+        # High trap risk = only block if quality is not EXCELLENT
         if trap_risk_high and quality_level != "EXCELLENT":
             return "NO TRADE", "no_setup", False, "Alto rischio trappola con qualità non eccellente"
         
-        # Sweep misalignment with non-excellent quality = confirmation only
-        if not sweep_aligned and quality_level in ["WEAK", "GOOD"]:
+        # Sweep misalignment - only confirmation for WEAK quality
+        if not sweep_aligned and quality_level == "WEAK":
             return direction, "setup_in_confirmation", False, "Sweep non allineato - richiede conferma"
         
         # WEAK quality = confirmation only
         if quality_level == "WEAK":
             return direction, "setup_in_confirmation", False, f"Qualità debole (score: {quality_score}) - richiede conferma"
         
-        # R:R between 1.0 and 1.2 with only GOOD quality = confirmation
-        if rr_ratio < 1.2 and quality_level == "GOOD":
+        # GOOD quality with low R:R = confirmation (but not blocked)
+        if rr_ratio < 1.0 and quality_level == "GOOD":
             return direction, "setup_in_confirmation", False, f"R:R basso ({rr_ratio:.2f}) con qualità buona - richiede conferma"
         
         # All checks passed
@@ -7334,21 +7367,44 @@ def generate_trade_signal(
         liquidity_sweep_zone = None
         safe_invalidation = None
     
-    # ================== 4H MINIMUM MOVE FILTER ==================
-    # Reject signals with move < 0.4% (very weak for 4H timeframe)
+    # ================== 4H MINIMUM MOVE FILTER (v2.9.2 - RELAXED) ==================
+    # Adaptive thresholds based on setup quality
+    # High-quality setups can proceed with smaller moves
     
     no_trade_reason = None
     move_quality = "normal"  # "weak", "normal", "strong", "exceptional"
+    high_quality_override = False  # Will be set if all conditions align
     
     if direction != "NO TRADE":
         abs_move = abs(estimated_move)
         
-        if abs_move < MINIMUM_MOVE_PERCENT:
-            # Move too small - reject signal
-            no_trade_reason = get_translation("move_below_threshold", lang, abs_move, MINIMUM_MOVE_PERCENT)
+        # Check if this could be a high-quality setup (preliminary check)
+        # Full quality check happens later, but we need to know for move filtering
+        # Use market_bias directly for preliminary quality assessment
+        bias_strong_prelim = market_bias.confidence >= 60 and market_bias.bias in ["BULLISH", "BEARISH"]
+        preliminary_quality_high = (
+            bias_strong_prelim and 
+            whale_confirms_direction and 
+            (not any("trappola" in w.lower() or "trap" in w.lower() for w in warnings))
+        )
+        
+        # Determine effective minimum threshold based on quality
+        effective_min_move = MINIMUM_MOVE_HIGH_QUALITY if preliminary_quality_high else MINIMUM_MOVE_PERCENT
+        
+        if abs_move < effective_min_move:
+            # Move too small even for high-quality - reject signal
+            no_trade_reason = get_translation("move_below_threshold", lang, abs_move, effective_min_move)
             direction = "NO TRADE"
             setup_type = "no_setup"
-            warnings.append("⚠️ " + get_translation("move_too_small", lang, abs_move, MINIMUM_MOVE_PERCENT))
+            warnings.append("⚠️ " + get_translation("move_too_small", lang, abs_move, effective_min_move))
+            move_quality = "weak"
+        elif abs_move < MINIMUM_MOVE_PERCENT:
+            # Move below standard threshold but allowed due to high quality
+            high_quality_override = True
+            if lang == 'it':
+                warnings.append(f"✅ Movimento piccolo ({abs_move:.2f}%) accettato per alta qualità setup")
+            else:
+                warnings.append(f"✅ Small move ({abs_move:.2f}%) accepted due to high quality setup")
             move_quality = "weak"
         elif abs_move < NORMAL_MOVE_MIN:
             # Move weak but acceptable - add warning, keep in confirmation
@@ -7379,33 +7435,36 @@ def generate_trade_signal(
                 warnings.append(f"⚠️ Expected move very high ({abs_move:.2f}%) - targets may be optimistic")
             move_quality = "exceptional"
     
-    # ================== 4H RISK/REWARD FILTER ==================
-    # Minimum R:R = 1.0, Good = 1.2, Ideal = 1.5
+    # ================== 4H RISK/REWARD FILTER (v2.9.2 - ADAPTIVE) ==================
+    # Adaptive R:R based on quality:
+    # - Quality >= 80: Allow R:R >= 0.6
+    # - Quality >= 60: Allow R:R >= 0.8
+    # - Quality < 60:  Require R:R >= 1.0
     
     if direction != "NO TRADE" and stop_loss > 0:
         risk = abs(current_price - stop_loss)
         reward = abs(target_1 - current_price)
         risk_reward_ratio = reward / risk if risk > 0 else 0
         
-        # 4H R:R filtering - only add warnings, quality gate handles rejection
-        if risk_reward_ratio < MIN_RISK_REWARD:
+        # Note: Actual R:R enforcement happens in Quality Gate with adaptive thresholds
+        # Here we just add warnings
+        if risk_reward_ratio < MIN_RISK_REWARD_HIGH_QUALITY:
+            # Very low R:R - warn regardless of quality
             if lang == 'it':
-                warnings.append(f"⚠️ R:R insufficiente ({risk_reward_ratio:.2f}) - minimo richiesto {MIN_RISK_REWARD}")
-            elif lang == 'de':
-                warnings.append(f"⚠️ R:R unzureichend ({risk_reward_ratio:.2f}) - Minimum erforderlich {MIN_RISK_REWARD}")
-            elif lang == 'pl':
-                warnings.append(f"⚠️ R:R niewystarczający ({risk_reward_ratio:.2f}) - wymagane minimum {MIN_RISK_REWARD}")
+                warnings.append(f"⚠️ R:R molto basso ({risk_reward_ratio:.2f}) - rischio elevato")
             else:
-                warnings.append(f"⚠️ R:R insufficient ({risk_reward_ratio:.2f}) - minimum required {MIN_RISK_REWARD}")
+                warnings.append(f"⚠️ R:R very low ({risk_reward_ratio:.2f}) - high risk")
+        elif risk_reward_ratio < MIN_RISK_REWARD:
+            # Low R:R - may be acceptable if quality high
+            if lang == 'it':
+                warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - accettabile solo con alta qualità")
+            else:
+                warnings.append(f"⚠️ R:R low ({risk_reward_ratio:.2f}) - acceptable only with high quality")
         elif risk_reward_ratio < GOOD_RISK_REWARD:
             if lang == 'it':
-                warnings.append(f"⚠️ R:R basso ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
-            elif lang == 'de':
-                warnings.append(f"⚠️ R:R niedrig ({risk_reward_ratio:.2f}) - ideal >= {GOOD_RISK_REWARD}")
-            elif lang == 'pl':
-                warnings.append(f"⚠️ R:R niski ({risk_reward_ratio:.2f}) - ideał >= {GOOD_RISK_REWARD}")
+                warnings.append(f"⚠️ R:R moderato ({risk_reward_ratio:.2f}) - ideale >= {GOOD_RISK_REWARD}")
             else:
-                warnings.append(f"⚠️ R:R low ({risk_reward_ratio:.2f}) - ideal >= {GOOD_RISK_REWARD}")
+                warnings.append(f"⚠️ R:R moderate ({risk_reward_ratio:.2f}) - ideal >= {GOOD_RISK_REWARD}")
     else:
         risk_reward_ratio = 0
     
