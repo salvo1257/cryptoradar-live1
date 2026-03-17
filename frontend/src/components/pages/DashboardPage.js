@@ -14,9 +14,10 @@ import {
   LiquidityMagnetCard,
   PriceMeasurementTool
 } from '../cards';
+import MarketRegimeCard from '../cards/MarketRegimeCard';
 
 export function DashboardPage() {
-  const { isLoading } = useApp();
+  const { isLoading, language } = useApp();
 
   if (isLoading) {
     return (
@@ -62,11 +63,16 @@ export function DashboardPage() {
         <WhaleAlertCard compact />
       </div>
 
+      {/* Market Regime Analysis */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <MarketRegimeCard language={language} />
+        <SupportResistanceCard compact />
+      </div>
+
       {/* Secondary Analysis Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <OrderBookCard />
         <LiquidityCard compact />
-        <SupportResistanceCard compact />
       </div>
 
       {/* Tools Row */}

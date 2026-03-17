@@ -179,6 +179,35 @@ class MarketEnergy(BaseModel):
     expansion_warning: bool = False  # True if expansion likely soon
     data_source: str = "Multi-Exchange + CoinGlass"
 
+# ============== MARKET REGIME ==============
+
+class MarketRegime(BaseModel):
+    """Market Regime Detection - classifies current market context"""
+    regime: str  # "TREND", "RANGE", "COMPRESSION", "EXPANSION"
+    regime_strength: int  # 0-100 confidence in regime classification
+    directional_bias: str  # "BULLISH", "BEARISH", "NEUTRAL"
+    suggested_setup: str  # What type of setup is most appropriate
+    setup_explanation: str  # Why this setup is suggested
+    
+    # Supporting factors
+    trend_score: int = 0  # 0-100 trend characteristics
+    range_score: int = 0  # 0-100 range characteristics
+    compression_score: int = 0  # 0-100 compression characteristics
+    expansion_score: int = 0  # 0-100 expansion characteristics
+    
+    # Key indicators
+    bias_alignment: bool = False  # Is bias strong and aligned?
+    whale_alignment: bool = False  # Are whales aligned with direction?
+    liquidity_alignment: bool = False  # Is liquidity path clear?
+    energy_state: str = "LOW"  # "LOW", "MEDIUM", "HIGH"
+    oi_supportive: bool = False  # Is OI supporting the regime?
+    trap_risk: str = "LOW"  # "LOW", "MEDIUM", "HIGH"
+    distance_to_sr: str = "FAR"  # "NEAR", "MEDIUM", "FAR" to key S/R
+    
+    signals: List[str] = []  # Key regime signals
+    explanation: str  # Summary explanation
+    data_source: str = "Multi-Factor Analysis"
+
 # ============== LIQUIDITY MAGNET ==============
 
 class LiquidityMagnet(BaseModel):
@@ -276,6 +305,9 @@ class TradeSignal(BaseModel):
     quality_score: int = 0  # 0-100 quality score
     quality_level: str = "POOR"  # "EXCELLENT", "GOOD", "WEAK", "POOR"
     quality_gate_passed: bool = False  # Whether signal passed all quality checks
+    
+    # NEW v2.9: Market Regime
+    market_regime: Optional[Dict[str, Any]] = None  # Market regime classification
 
 
 class SignalHistoryEntry(BaseModel):
@@ -4649,6 +4681,353 @@ def _build_energy_explanation(
             return get_translation("energy_low_normal", lang)
 
 
+# ============== MARKET REGIME DETECTION ==============
+
+def detect_market_regime(
+    market_bias: MarketBias,
+    market_energy: MarketEnergy,
+    liquidity_magnet: LiquidityMagnet,
+    liquidity_ladder: LiquidityLadder,
+    whale_activity: WhaleActivity,
+    open_interest_data: dict,
+    expected_move: float,
+    trap_risk_detected: bool,
+    current_price: float,
+    supports: List,
+    resistances: List,
+    lang: str = "it"
+) -> MarketRegime:
+    """
+    Market Regime Detection v1.0 - Classifies current market context.
+    
+    Regimes:
+    - TREND: Strong directional bias, aligned factors, clear path
+    - RANGE: Neutral/mixed bias, price between S/R, no clean breakout
+    - COMPRESSION: Low volatility, OI rising, liquidity both sides, pre-breakout
+    - EXPANSION: High energy, strong move, dominant direction, breakout active
+    
+    This module improves interpretation without forcing trades.
+    """
+    
+    signals = []
+    
+    # ======== 1. EXTRACT KEY METRICS ========
+    
+    # Bias metrics
+    bias_direction = market_bias.bias if market_bias else "NEUTRAL"
+    bias_confidence = market_bias.confidence if market_bias else 50
+    bias_strong = bias_confidence >= 60 and bias_direction in ["BULLISH", "BEARISH"]
+    
+    # Energy metrics
+    energy_score = market_energy.energy_score if market_energy else 50
+    compression_level = market_energy.compression_level if market_energy else "MEDIUM"
+    breakout_prob = market_energy.breakout_probability if market_energy else "LOW"
+    expansion_ready = market_energy.expansion_readiness if market_energy else "LOW"
+    energy_state = compression_level  # Use compression level as energy state
+    
+    # Liquidity metrics
+    magnet_direction = liquidity_magnet.target_direction if liquidity_magnet else "BALANCED"
+    magnet_score = liquidity_magnet.magnet_score if liquidity_magnet else 50
+    sweep_expectation = liquidity_magnet.sweep_expectation if liquidity_magnet else "NO_CLEAR_SWEEP"
+    liq_above = liquidity_magnet.liquidity_above_total if liquidity_magnet else 0
+    liq_below = liquidity_magnet.liquidity_below_total if liquidity_magnet else 0
+    liq_balanced = abs(liq_above - liq_below) / max(liq_above + liq_below, 1) < 0.3
+    
+    # Whale metrics
+    whale_direction = whale_activity.direction if whale_activity else "NEUTRAL"
+    whale_strength = whale_activity.strength if whale_activity else 0
+    whale_aligned = whale_direction in ["BUY", "SELL"] and whale_strength >= 40
+    
+    # OI metrics
+    oi_change_1h = open_interest_data.get("change_1h", 0) if open_interest_data else 0
+    oi_change_24h = open_interest_data.get("change_24h", 0) if open_interest_data else 0
+    oi_rising = oi_change_1h > 0.5 or oi_change_24h > 2
+    oi_falling = oi_change_1h < -0.5 or oi_change_24h < -2
+    
+    # Distance to S/R
+    nearest_support = supports[0].price if supports else current_price * 0.95
+    nearest_resistance = resistances[0].price if resistances else current_price * 1.05
+    dist_to_support = ((current_price - nearest_support) / current_price) * 100
+    dist_to_resistance = ((nearest_resistance - current_price) / current_price) * 100
+    price_in_middle = dist_to_support > 0.5 and dist_to_resistance > 0.5
+    near_sr = dist_to_support < 0.3 or dist_to_resistance < 0.3
+    
+    distance_to_sr = "NEAR" if near_sr else ("MEDIUM" if dist_to_support < 1 or dist_to_resistance < 1 else "FAR")
+    
+    # ======== 2. CALCULATE REGIME SCORES ========
+    
+    trend_score = 0
+    range_score = 0
+    compression_score = 0
+    expansion_score = 0
+    
+    # ----- TREND Score -----
+    # Strong directional bias
+    if bias_strong:
+        trend_score += 25
+        signals.append(f"Strong {bias_direction} bias ({bias_confidence:.0f}%)")
+    
+    # Whales aligned with direction
+    whale_bias_aligned = (
+        (bias_direction == "BULLISH" and whale_direction == "BUY") or
+        (bias_direction == "BEARISH" and whale_direction == "SELL")
+    )
+    if whale_bias_aligned and whale_strength >= 40:
+        trend_score += 20
+        signals.append(f"Whales aligned ({whale_direction})")
+    
+    # Liquidity aligned (clear path in trend direction)
+    liq_bias_aligned = (
+        (bias_direction == "BULLISH" and magnet_direction == "UP") or
+        (bias_direction == "BEARISH" and magnet_direction == "DOWN")
+    )
+    if liq_bias_aligned:
+        trend_score += 20
+        signals.append(f"Liquidity path aligned ({magnet_direction})")
+    
+    # OI supportive (rising in trend)
+    if oi_rising and bias_strong:
+        trend_score += 15
+    
+    # No major trap conflict
+    if not trap_risk_detected:
+        trend_score += 10
+    
+    # Expected move decent
+    if abs(expected_move) >= 0.5:
+        trend_score += 10
+    
+    # ----- RANGE Score -----
+    # Neutral or mixed bias
+    if bias_direction == "NEUTRAL" or bias_confidence < 55:
+        range_score += 25
+        signals.append("Neutral/mixed market bias")
+    
+    # Moderate/low energy
+    if compression_level in ["LOW", "MEDIUM"] and breakout_prob == "LOW":
+        range_score += 20
+    
+    # Unclear magnet direction
+    if magnet_direction == "BALANCED" or liq_balanced:
+        range_score += 20
+        signals.append("Balanced liquidity (no clear direction)")
+    
+    # Price between S/R
+    if price_in_middle:
+        range_score += 20
+        signals.append(f"Price in range ({dist_to_support:.1f}% from support, {dist_to_resistance:.1f}% from resistance)")
+    
+    # No clean breakout
+    if breakout_prob == "LOW":
+        range_score += 15
+    
+    # ----- COMPRESSION Score -----
+    # Low/medium volatility with energy building
+    if compression_level == "LOW" or (compression_level == "MEDIUM" and expansion_ready in ["MEDIUM", "HIGH"]):
+        compression_score += 25
+        signals.append(f"Compression detected ({compression_level})")
+    
+    # OI increasing (positions building)
+    if oi_rising:
+        compression_score += 20
+        signals.append(f"OI rising (+{oi_change_24h:.1f}% 24h)")
+    
+    # Whales active (preparing for move)
+    if whale_strength >= 30:
+        compression_score += 15
+    
+    # Liquidity above AND below (both sides loaded)
+    if liq_above > 0 and liq_below > 0 and liq_balanced:
+        compression_score += 20
+        signals.append("Liquidity loaded both sides")
+    
+    # Price trapped before breakout
+    if near_sr and breakout_prob in ["MEDIUM", "HIGH"]:
+        compression_score += 20
+        signals.append("Price near key level, breakout likely")
+    
+    # ----- EXPANSION Score -----
+    # High energy
+    if energy_score >= 65 or compression_level == "HIGH":
+        expansion_score += 25
+        signals.append(f"High market energy ({energy_score:.0f})")
+    
+    # Strong expected move
+    if abs(expected_move) >= 1.0:
+        expansion_score += 20
+        signals.append(f"Strong expected move ({expected_move:.2f}%)")
+    
+    # Dominant liquidity direction
+    if magnet_direction in ["UP", "DOWN"] and magnet_score >= 60:
+        expansion_score += 20
+        signals.append(f"Dominant liquidity direction ({magnet_direction})")
+    
+    # Whales confirm
+    if whale_aligned:
+        expansion_score += 15
+    
+    # Breaking or reclaiming key level
+    if near_sr and (breakout_prob == "HIGH" or expansion_ready == "HIGH"):
+        expansion_score += 20
+        signals.append("Price at key level with high breakout probability")
+    
+    # ======== 3. DETERMINE REGIME ========
+    
+    scores = {
+        "TREND": trend_score,
+        "RANGE": range_score,
+        "COMPRESSION": compression_score,
+        "EXPANSION": expansion_score
+    }
+    
+    # Find dominant regime
+    regime = max(scores, key=scores.get)
+    regime_strength = scores[regime]
+    
+    # Normalize strength (cap at 100)
+    regime_strength = min(regime_strength, 100)
+    
+    # ======== 4. DETERMINE DIRECTIONAL BIAS ========
+    
+    if bias_direction == "BULLISH" and bias_confidence >= 55:
+        directional_bias = "BULLISH"
+    elif bias_direction == "BEARISH" and bias_confidence >= 55:
+        directional_bias = "BEARISH"
+    else:
+        directional_bias = "NEUTRAL"
+    
+    # ======== 5. SUGGEST SETUP ========
+    
+    setup_suggestions = {
+        "it": {
+            "TREND": {
+                "setup": "Preferire Trend Continuation",
+                "explanation": "Mercato in trend: seguire la direzione dominante con setup di continuazione. Evitare controtrend."
+            },
+            "RANGE": {
+                "setup": "Preferire Sweep Reversal",
+                "explanation": "Mercato in range: cercare sweep ai confini del range per inversioni. Evitare breakout prematuri."
+            },
+            "COMPRESSION": {
+                "setup": "Attendere Breakout / Conferma Sweep",
+                "explanation": "Mercato in compressione: energia in accumulo. Attendere rottura chiara prima di entrare."
+            },
+            "EXPANSION": {
+                "setup": "Continuazione Favorita, Evitare Entry Tardive",
+                "explanation": "Mercato in espansione: movimento forte in corso. Se già dentro, gestire posizione. Se fuori, attendere pullback."
+            }
+        },
+        "en": {
+            "TREND": {
+                "setup": "Prefer Trend Continuation",
+                "explanation": "Trending market: follow the dominant direction with continuation setups. Avoid counter-trend."
+            },
+            "RANGE": {
+                "setup": "Prefer Sweep Reversal",
+                "explanation": "Ranging market: look for sweeps at range boundaries for reversals. Avoid premature breakouts."
+            },
+            "COMPRESSION": {
+                "setup": "Wait for Breakout / Sweep Confirmation",
+                "explanation": "Compressing market: energy building up. Wait for clear breakout before entering."
+            },
+            "EXPANSION": {
+                "setup": "Continuation Favored, Avoid Late Entries",
+                "explanation": "Expanding market: strong move in progress. If already in, manage position. If out, wait for pullback."
+            }
+        },
+        "de": {
+            "TREND": {
+                "setup": "Trend Continuation bevorzugen",
+                "explanation": "Trendender Markt: der dominanten Richtung mit Fortsetzungs-Setups folgen."
+            },
+            "RANGE": {
+                "setup": "Sweep Reversal bevorzugen",
+                "explanation": "Range-Markt: nach Sweeps an den Range-Grenzen für Umkehrungen suchen."
+            },
+            "COMPRESSION": {
+                "setup": "Auf Breakout / Sweep-Bestätigung warten",
+                "explanation": "Komprimierender Markt: Energie baut sich auf. Auf klaren Ausbruch warten."
+            },
+            "EXPANSION": {
+                "setup": "Fortsetzung bevorzugt, späte Einstiege vermeiden",
+                "explanation": "Expandierender Markt: starke Bewegung läuft. Auf Pullback warten."
+            }
+        },
+        "pl": {
+            "TREND": {
+                "setup": "Preferuj Trend Continuation",
+                "explanation": "Rynek w trendzie: podążaj za dominującym kierunkiem z setupami kontynuacji."
+            },
+            "RANGE": {
+                "setup": "Preferuj Sweep Reversal",
+                "explanation": "Rynek w zakresie: szukaj sweepów na granicach zakresu dla odwróceń."
+            },
+            "COMPRESSION": {
+                "setup": "Czekaj na Breakout / Potwierdzenie Sweep",
+                "explanation": "Kompresja rynku: energia się gromadzi. Czekaj na wyraźne wybicie."
+            },
+            "EXPANSION": {
+                "setup": "Kontynuacja preferowana, unikaj późnych wejść",
+                "explanation": "Rynek w ekspansji: silny ruch w toku. Czekaj na korektę."
+            }
+        }
+    }
+    
+    lang_suggestions = setup_suggestions.get(lang, setup_suggestions["en"])
+    suggested_setup = lang_suggestions[regime]["setup"]
+    setup_explanation = lang_suggestions[regime]["explanation"]
+    
+    # ======== 6. BUILD EXPLANATION ========
+    
+    regime_names = {
+        "it": {"TREND": "TREND", "RANGE": "RANGE", "COMPRESSION": "COMPRESSIONE", "EXPANSION": "ESPANSIONE"},
+        "en": {"TREND": "TREND", "RANGE": "RANGE", "COMPRESSION": "COMPRESSION", "EXPANSION": "EXPANSION"},
+        "de": {"TREND": "TREND", "RANGE": "RANGE", "COMPRESSION": "KOMPRESSION", "EXPANSION": "EXPANSION"},
+        "pl": {"TREND": "TREND", "RANGE": "ZAKRES", "COMPRESSION": "KOMPRESJA", "EXPANSION": "EKSPANSJA"}
+    }
+    
+    regime_display = regime_names.get(lang, regime_names["en"]).get(regime, regime)
+    
+    explanation_templates = {
+        "it": f"Regime di mercato: {regime_display} (forza {regime_strength}%). {setup_explanation}",
+        "en": f"Market regime: {regime_display} (strength {regime_strength}%). {setup_explanation}",
+        "de": f"Marktregime: {regime_display} (Stärke {regime_strength}%). {setup_explanation}",
+        "pl": f"Reżim rynkowy: {regime_display} (siła {regime_strength}%). {setup_explanation}"
+    }
+    
+    explanation = explanation_templates.get(lang, explanation_templates["en"])
+    
+    # ======== 7. CALCULATE ALIGNMENT FLAGS ========
+    
+    bias_alignment = bias_strong
+    whale_alignment = whale_bias_aligned if bias_strong else False
+    liquidity_alignment = liq_bias_aligned if bias_strong else (magnet_direction != "BALANCED")
+    oi_supportive = oi_rising if regime in ["TREND", "COMPRESSION"] else not oi_falling
+    trap_risk_level = "HIGH" if trap_risk_detected else ("MEDIUM" if range_score > 60 else "LOW")
+    
+    return MarketRegime(
+        regime=regime,
+        regime_strength=regime_strength,
+        directional_bias=directional_bias,
+        suggested_setup=suggested_setup,
+        setup_explanation=setup_explanation,
+        trend_score=trend_score,
+        range_score=range_score,
+        compression_score=compression_score,
+        expansion_score=expansion_score,
+        bias_alignment=bias_alignment,
+        whale_alignment=whale_alignment,
+        liquidity_alignment=liquidity_alignment,
+        energy_state=energy_state,
+        oi_supportive=oi_supportive,
+        trap_risk=trap_risk_level,
+        distance_to_sr=distance_to_sr,
+        signals=signals[:5],  # Limit to top 5 signals
+        explanation=explanation,
+        data_source="Multi-Factor Analysis"
+    )
+
+
 # ============== LIQUIDITY MAGNET ENGINE ==============
 
 def analyze_liquidity_magnet(
@@ -6028,9 +6407,9 @@ def detect_trend_continuation_setup(
     return result
 
 
-def detect_market_regime(candles: List[dict], lookback: int = 20) -> str:
+def detect_simple_market_regime(candles: List[dict], lookback: int = 20) -> str:
     """
-    Detect if market is TRENDING or RANGING.
+    Detect if market is TRENDING or RANGING (simple version for internal use).
     
     Uses:
     - Price vs moving averages
@@ -6085,6 +6464,7 @@ def generate_trade_signal(
     whale_activity: WhaleActivity = None,
     liquidity_ladder: LiquidityLadder = None,
     market_energy: MarketEnergy = None,
+    liquidity_magnet: LiquidityMagnet = None,
     lang: str = "it"
 ) -> TradeSignal:
     """
@@ -7368,6 +7748,60 @@ def generate_trade_signal(
         reasoning += f"• {get_translation('valid_for', lang)}: {timing['valid_for_minutes']} min\n"
         reasoning += f"• {timing['urgency_reason']}\n"
     
+    # ================== MARKET REGIME DETECTION ==================
+    # Detect market regime for context (does NOT change signal logic)
+    market_regime_data = None
+    
+    try:
+        # Check for trap risk in warnings
+        trap_risk_detected = any("trappola" in w.lower() or "trap" in w.lower() for w in warnings)
+        
+        # Get OI data
+        oi_data = {
+            "change_1h": open_interest.change_1h if open_interest else 0,
+            "change_24h": open_interest.change_24h if open_interest else 0
+        }
+        
+        market_regime = detect_market_regime(
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liquidity_magnet,
+            liquidity_ladder=liquidity_ladder,
+            whale_activity=whale_activity,
+            open_interest_data=oi_data,
+            expected_move=estimated_move,
+            trap_risk_detected=trap_risk_detected,
+            current_price=current_price,
+            supports=supports,
+            resistances=resistances,
+            lang=lang
+        )
+        
+        # Convert to dict for JSON response
+        market_regime_data = {
+            "regime": market_regime.regime,
+            "regime_strength": market_regime.regime_strength,
+            "directional_bias": market_regime.directional_bias,
+            "suggested_setup": market_regime.suggested_setup,
+            "setup_explanation": market_regime.setup_explanation,
+            "trend_score": market_regime.trend_score,
+            "range_score": market_regime.range_score,
+            "compression_score": market_regime.compression_score,
+            "expansion_score": market_regime.expansion_score,
+            "bias_alignment": market_regime.bias_alignment,
+            "whale_alignment": market_regime.whale_alignment,
+            "liquidity_alignment": market_regime.liquidity_alignment,
+            "energy_state": market_regime.energy_state,
+            "oi_supportive": market_regime.oi_supportive,
+            "trap_risk": market_regime.trap_risk,
+            "distance_to_sr": market_regime.distance_to_sr,
+            "signals": market_regime.signals,
+            "explanation": market_regime.explanation
+        }
+    except Exception as regime_err:
+        logger.warning(f"Market regime detection failed: {regime_err}")
+        market_regime_data = None
+    
     return TradeSignal(
         direction=direction,
         confidence=round(confidence, 1),
@@ -7404,7 +7838,9 @@ def generate_trade_signal(
         # NEW v2.7: Trade Quality Gate
         quality_score=quality_score,
         quality_level=quality_level,
-        quality_gate_passed=quality_gate_passed
+        quality_gate_passed=quality_gate_passed,
+        # NEW v2.9: Market Regime
+        market_regime=market_regime_data
     )
 
 # ============== API ROUTES ==============
@@ -8036,6 +8472,7 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         whale_activity=whale_activity,
         liquidity_ladder=liquidity_ladder,
         market_energy=market_energy,
+        liquidity_magnet=liquidity_magnet,
         lang=lang
     )
     

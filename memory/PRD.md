@@ -1,7 +1,7 @@
-# CryptoRadar v2.8.1 - Product Requirements Document
-**Last Updated:** 2025-12-16
+# CryptoRadar v2.9 - Product Requirements Document
+**Last Updated:** 2025-12-17
 
-## DEPLOYMENT READINESS: VERIFIED (2025-12-16)
+## DEPLOYMENT READINESS: VERIFIED (2025-12-17)
 - System Health Endpoint: `/api/system/health` - All APIs OK
 - Background Scheduler: Active (outcome check every 1 hour)
 - Dynamic Signal Timing: Active
@@ -10,7 +10,61 @@
 - Signal Engine Version Tracking: Active (v1 vs v2 comparison)
 - 4H Timeframe Calibration: Active (realistic targets/R:R)
 - Trade Quality Gate: Active (signal validation before publishing)
-- **UI/Manual Language Check: COMPLETED (2025-12-16)**
+- UI/Manual Language Check: COMPLETED (2025-12-16)
+- **Market Regime Detection: Active (context interpretation)**
+
+---
+
+## 🆕 v2.9 MARKET REGIME DETECTION ✅ (2025-12-17)
+
+**CLASSIFIES MARKET CONTEXT FOR BETTER SIGNAL INTERPRETATION:**
+
+### Why Added:
+- NO TRADE situations were unclear - users didn't know if it was ranging, trending, or compressing
+- Need to explain what type of market environment we're in
+- Help users understand which setup is most appropriate
+
+### 4 Market Regimes:
+| Regime | Description | Suggested Setup |
+|--------|-------------|-----------------|
+| **TREND** | Strong directional bias, aligned factors | Trend Continuation |
+| **RANGE** | Neutral/mixed bias, price between S/R | Sweep Reversal |
+| **COMPRESSION** | Low volatility, OI rising, pre-breakout | Wait for Breakout |
+| **EXPANSION** | High energy, strong move in progress | Continuation (avoid late entries) |
+
+### Regime Detection Logic:
+Uses existing internal data:
+- Market Bias (direction & confidence)
+- Market Energy (compression level)
+- Liquidity Magnet/Ladder (direction & balance)
+- Whale Activity (direction & strength)
+- Open Interest (rising/falling)
+- Expected Move
+- Trap Risk
+- Distance to S/R
+
+### Regime Scores (0-100 each):
+Each regime is scored based on how many conditions match:
+- TREND: Strong bias + whale aligned + liquidity aligned + OI supportive + no trap
+- RANGE: Neutral bias + low energy + balanced liquidity + price in middle
+- COMPRESSION: Low volatility + OI rising + whales active + liquidity both sides
+- EXPANSION: High energy + strong move + dominant liquidity + near key level
+
+### New UI Component: MarketRegimeCard
+Displays:
+- Regime Name (with icon)
+- Regime Strength (0-100%)
+- Directional Bias (BULLISH/BEARISH/NEUTRAL)
+- Suggested Setup with explanation
+- 4-column score breakdown (TREND/RANGE/COMP/EXP)
+- Key Factors grid (6 factors with ✅/❌)
+- Detected Signals list
+
+### Key Implementation Details:
+- Does NOT change signal logic (interpretive only)
+- Multilingual (IT/EN/DE/PL)
+- Refreshes every 60 seconds
+- Located after Market Energy row in dashboard
 
 ---
 
