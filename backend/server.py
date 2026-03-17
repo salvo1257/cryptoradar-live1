@@ -308,6 +308,9 @@ class TradeSignal(BaseModel):
     
     # NEW v2.9: Market Regime
     market_regime: Optional[Dict[str, Any]] = None  # Market regime classification
+    
+    # NEW v2.9.1: Data Freshness Indicator
+    data_freshness: Optional[Dict[str, Any]] = None  # Age of each data source in ms
 
 
 class SignalHistoryEntry(BaseModel):
@@ -1085,7 +1088,7 @@ market_data_cache = {
 CACHE_TTL = 15  # seconds
 ORDERBOOK_CACHE_TTL = 10  # seconds
 NEWS_CACHE_TTL = 300  # 5 minutes
-COINGLASS_CACHE_TTL = 60  # 1 minute for CoinGlass data
+COINGLASS_CACHE_TTL = 30  # 30 seconds for CoinGlass data (reduced from 60s for better sync)
 TRADE_SIGNAL_CACHE_TTL = 180  # 3 minutes - Trade signal refresh rate
 
 # ============== MULTILINGUAL SYSTEM ==============
@@ -8323,6 +8326,8 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
     
     # Fetch all required data in parallel
     # NOTE: Using 4H (240min) candles as the core operational timeframe for trading intelligence
+    fetch_start_time = datetime.now(timezone.utc)
+    
     ticker_task = fetch_kraken_ticker()
     candles_task = fetch_kraken_ohlc(240)  # 4H timeframe for bot-ready signals
     aggregated_ob_task = get_aggregated_orderbook()
@@ -8515,6 +8520,26 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
     
     # NEW v2.0: Add Liquidity Magnet data
     response["liquidity_magnet"] = liquidity_magnet.model_dump() if liquidity_magnet else None
+    
+    # NEW v2.9.1: Add Data Freshness Indicator
+    signal_completion_time = datetime.now(timezone.utc)
+    total_fetch_time_ms = int((signal_completion_time - fetch_start_time).total_seconds() * 1000)
+    
+    response["data_freshness"] = {
+        "signal_generation_time_ms": total_fetch_time_ms,
+        "price_cache_ttl_s": CACHE_TTL,
+        "oi_cache_ttl_s": COINGLASS_CACHE_TTL,
+        "orderbook_cache_ttl_s": ORDERBOOK_CACHE_TTL,
+        "max_data_age_s": max(CACHE_TTL, COINGLASS_CACHE_TTL, ORDERBOOK_CACHE_TTL),
+        "data_sources": {
+            "price": "Kraken (primary)",
+            "orderbook": "Kraken + Coinbase + Bitstamp (aggregated)",
+            "open_interest": "CoinGlass",
+            "liquidation": "CoinGlass",
+            "candles": "Kraken 4H OHLC"
+        },
+        "sync_warning": total_fetch_time_ms > 2000  # Warn if signal took > 2s to generate
+    }
     
     return response
 

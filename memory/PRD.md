@@ -1,4 +1,4 @@
-# CryptoRadar v2.9 - Product Requirements Document
+# CryptoRadar v2.9.1 - Product Requirements Document
 **Last Updated:** 2025-12-17
 
 ## DEPLOYMENT READINESS: VERIFIED (2025-12-17)
@@ -11,7 +11,51 @@
 - 4H Timeframe Calibration: Active (realistic targets/R:R)
 - Trade Quality Gate: Active (signal validation before publishing)
 - UI/Manual Language Check: COMPLETED (2025-12-16)
-- **Market Regime Detection: Active (context interpretation)**
+- Market Regime Detection: Active (context interpretation)
+- **Data Layer Audit: COMPLETED (2025-12-17)**
+
+---
+
+## 🆕 v2.9.1 DATA LAYER AUDIT ✅ (2025-12-17)
+
+**COMPREHENSIVE DATA SYNCHRONIZATION REVIEW:**
+
+### Audit Summary
+Full audit of CryptoRadar data layer completed. Report available at `/app/memory/DATA_AUDIT_REPORT.md`
+
+### Issues Identified & Fixed
+
+#### 🔴 FIXED: OI Cache Too Long
+- **Before:** 60s cache for CoinGlass OI data
+- **After:** 30s cache (aligned better with 15s price cache)
+- **Impact:** OI data now max 30s stale vs 60s before
+
+#### 🟢 ADDED: Data Freshness Indicator
+New `data_freshness` field in API response:
+```json
+{
+  "signal_generation_time_ms": 2319,
+  "price_cache_ttl_s": 15,
+  "oi_cache_ttl_s": 30,
+  "max_data_age_s": 30,
+  "sync_warning": true,
+  "data_sources": {...}
+}
+```
+
+### Data Sources Summary
+| Data | Source | Cache TTL | Reliability |
+|------|--------|-----------|-------------|
+| Price | Kraken | 15s | ⭐⭐⭐⭐⭐ |
+| Orderbook | Multi-exchange | 10s | ⭐⭐⭐⭐⭐ |
+| Open Interest | CoinGlass | 30s | ⭐⭐⭐⭐ |
+| Liquidation | CoinGlass | 30s | ⭐⭐⭐ |
+| Candles | Kraken 4H | 15s | ⭐⭐⭐⭐⭐ |
+
+### Remaining Issues (Low Priority)
+1. Single-source price (Kraken only) - consider aggregating
+2. Sequential liquidation fetch adds ~500ms latency
+3. No master timestamp for all data points
 
 ---
 
