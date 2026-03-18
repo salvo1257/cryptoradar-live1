@@ -1,0 +1,167 @@
+{
+  "summary": "Comprehensive testing of V3 Multi-Timeframe Signal Engine. 42 tests passed, 1 expected failure (xfail) for known target calculation bug. All V3 endpoints working correctly: /api/v3/trade-signal, /api/v3/active-setups, /api/v3/expire-setup, /api/v3/clear-setups. Phase transitions work correctly (SETUP_DETECTED -> WAITING_FOR_RETEST -> ENTRY_READY). Structure-based stop loss calculation verified. Found bug in target calculation for SHORT direction.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/v3/trade-signal",
+        "function": "calculate_v3_targets()",
+        "issue": "SHORT target calculation bug: target_1 may be above entry price. Line 5702-5704 takes supports[0].price without checking if it's below entry_price. Current data showed target_1=$74,543 above entry=$74,022 for SHORT position.",
+        "priority": "MEDIUM",
+        "fix_suggestion": "Filter supports to only include those with price < entry_price before selecting target_1 for SHORT direction"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "V3 trade-signal returns 200 status",
+    "V3 response has engine_version='v3'",
+    "V3 response has valid market_regime (TREND/RANGE/COMPRESSION/EXPANSION)",
+    "V3 response has valid market_bias (BULLISH/BEARISH/NEUTRAL)",
+    "V3 response has bias_confidence 0-100",
+    "V3 response has has_active_setup boolean",
+    "V3 response has valid recommended_action (WAIT/MONITOR_SETUP/PREPARE_ENTRY/ENTRY_NOW)",
+    "V3 response has setup counts (setups_detected_count, setups_waiting_count, setups_ready_count)",
+    "V3 response has 5M candle data info",
+    "V3 response has context_summary",
+    "V3 response has current_price",
+    "V3 response has data_freshness",
+    "V3 response has market_regime_details with scores",
+    "V3 response has whale_context",
+    "V3 response has liquidity_context",
+    "V3 response has energy_context",
+    "V3 works with lang=it",
+    "V3 works with lang=en",
+    "V3 works with lang=de",
+    "V3 works with lang=pl",
+    "V3 defaults to Italian for invalid language",
+    "V3 active-setups returns 200",
+    "V3 active-setups has count field",
+    "V3 active-setups has setups list",
+    "V3 active-setups has phases breakdown (detected/waiting/ready)",
+    "V3 active-setups count matches list length",
+    "V3 setup has all required fields",
+    "V3 setup phases are valid",
+    "V3 setup directions are valid (LONG/SHORT)",
+    "V3 stop_loss is structure-based (below swing_low for LONG)",
+    "V3 setups have targets with types",
+    "V3 setups have valid risk_reward_ratio",
+    "V3 setups have valid quality_score 0-100",
+    "V3 clear-setups deletes all setups",
+    "V3 signal and active-setups data is consistent",
+    "V3 supports resistance_breakout event type",
+    "V3 supports support_breakout event type",
+    "V3 supports liquidity_sweep event type",
+    "V3 supports trend_continuation event type",
+    "V3 trade-signal response time < 30s",
+    "V3 active-setups response time < 5s",
+    "V3 data_freshness contains timing info"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_v3_signal_engine.py",
+    "/app/test_reports/pytest/pytest_v3_signal_engine.xml"
+  ],
+  "action_items": [
+    "Fix calculate_v3_targets() to filter supports by price < entry_price for SHORT direction (line 5702-5704 in server.py)"
+  ],
+  "critical_code_review_comments": [
+    "detect_4h_events() correctly uses swing high/low as PRIMARY structural reference with liquidity as SECONDARY reinforcement",
+    "detect_5m_confirmation() implements all 3 confirmation patterns: rejection_candle, stabilization, micro_structure_break",
+    "calculate_v3_stop_loss() correctly calculates structure-based stops with adaptive buffer (0.1-0.25%)",
+    "BUG: calculate_v3_targets() doesn't filter supports/resistances to ensure targets are in the correct direction relative to entry",
+    "Phase transitions in process_v3_signal() work correctly with proper invalidation logic (>2% from zone)",
+    "5M candle caching works correctly (30 second TTL)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v3_signal_engine.py"
+  ],
+  "success_rate": {
+    "backend": "97.7% (42/43 tests - 1 xfail for known bug)",
+    "frontend": "N/A (backend-only testing requested)"
+  },
+  "test_credentials": "",
+  "seed_data_creation": "",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "V3 Multi-Timeframe Signal Engine tested. Key endpoints: /api/v3/trade-signal?lang={it|en|de|pl}, /api/v3/active-setups, /api/v3/clear-setups. One bug found in calculate_v3_targets() - SHORT targets may be calculated incorrectly (above entry instead of below). The setup phase lifecycle works correctly: SETUP_DETECTED -> WAITING_FOR_RETEST -> ENTRY_READY -> EXECUTED/EXPIRED/INVALIDATED. Test file: test_v3_signal_engine.py covers all V3 features.",
+  "features_verified": {
+    "v3_trade_signal_api": {
+      "endpoint": "/api/v3/trade-signal",
+      "response_fields": [
+        "engine_version",
+        "timestamp",
+        "current_price",
+        "market_regime",
+        "market_bias",
+        "bias_confidence",
+        "has_active_setup",
+        "active_setup",
+        "setups_detected_count",
+        "setups_waiting_count",
+        "setups_ready_count",
+        "candles_5m_loaded",
+        "last_5m_update",
+        "retest_in_progress",
+        "retest_zone_distance_percent",
+        "overall_quality",
+        "context_summary",
+        "recommended_action",
+        "data_freshness",
+        "market_regime_details",
+        "whale_context",
+        "liquidity_context",
+        "energy_context"
+      ],
+      "translations": ["it", "en", "de", "pl"]
+    },
+    "v3_active_setups_api": {
+      "endpoint": "/api/v3/active-setups",
+      "response_fields": ["count", "setups", "phases"]
+    },
+    "v3_setup_event_structure": {
+      "required_fields": [
+        "setup_id", "created_at", "updated_at", "expires_at",
+        "phase", "event_type", "direction",
+        "zone_high", "zone_low", "event_price", "current_price",
+        "swing_high", "swing_low", "stop_loss", "stop_type",
+        "target_1", "target_1_type", "target_2", "target_2_type",
+        "risk_reward_ratio", "market_regime", "market_bias",
+        "quality_score", "confidence"
+      ]
+    },
+    "v3_event_types": [
+      "resistance_breakout",
+      "support_breakout",
+      "liquidity_sweep_high",
+      "liquidity_sweep_low",
+      "trend_continuation"
+    ],
+    "v3_phases": [
+      "SETUP_DETECTED",
+      "WAITING_FOR_RETEST",
+      "ENTRY_READY",
+      "EXECUTED",
+      "EXPIRED",
+      "INVALIDATED"
+    ],
+    "v3_confirmation_types": [
+      "rejection_candle",
+      "stabilization",
+      "micro_structure_break"
+    ]
+  },
+  "rca_of_the_issue": {
+    "bug": "SHORT target_1 calculated above entry price",
+    "root_cause": "calculate_v3_targets() at line 5702-5704 takes supports[0].price directly without filtering to ensure the support is below the entry price. The supports list may be sorted by distance or strength rather than price direction.",
+    "reproduction_steps": [
+      "1. Wait for a SHORT setup to be detected",
+      "2. Call /api/v3/active-setups",
+      "3. Observe target_1 may be above zone_high/entry_price"
+    ],
+    "mitigation": "Filter supports list to only include levels with price < entry_price before selecting target_1 for SHORT direction"
+  }
+}

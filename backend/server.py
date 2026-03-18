@@ -5221,6 +5221,13 @@ def detect_4h_events(
     - Liquidity sweep (high/low)
     - Strong trend continuation
     
+    V3 Logic (user requirements):
+    1. Detect structural levels from recent swing highs/lows (PRIMARY)
+    2. Check whether those levels are reinforced by liquidity/volume (SECONDARY)
+    3. Use combined levels for breakout/sweep event detection
+    
+    Structure must remain the primary reference.
+    
     Returns list of detected events with details.
     """
     events = []
@@ -5233,57 +5240,138 @@ def detect_4h_events(
     last_candle = recent_candles[-1]
     prev_candle = recent_candles[-2] if len(recent_candles) >= 2 else None
     
-    # Calculate recent swing high/low (last 10 candles)
+    # ===== STRUCTURE DETECTION (PRIMARY) =====
+    # Calculate recent swing high/low using pivot detection (last 10-20 candles)
     swing_high = max(c["high"] for c in recent_candles[-10:])
     swing_low = min(c["low"] for c in recent_candles[-10:])
+    
+    # Find the actual pivot candles for more precise level detection
+    pivot_highs = []
+    pivot_lows = []
+    for i in range(2, len(recent_candles) - 2):
+        # Pivot high: higher than 2 candles before and after
+        if (recent_candles[i]["high"] > recent_candles[i-1]["high"] and 
+            recent_candles[i]["high"] > recent_candles[i-2]["high"] and
+            recent_candles[i]["high"] > recent_candles[i+1]["high"] and 
+            recent_candles[i]["high"] > recent_candles[i+2]["high"]):
+            pivot_highs.append(recent_candles[i]["high"])
+        # Pivot low: lower than 2 candles before and after
+        if (recent_candles[i]["low"] < recent_candles[i-1]["low"] and 
+            recent_candles[i]["low"] < recent_candles[i-2]["low"] and
+            recent_candles[i]["low"] < recent_candles[i+1]["low"] and 
+            recent_candles[i]["low"] < recent_candles[i+2]["low"]):
+            pivot_lows.append(recent_candles[i]["low"])
+    
+    # Use the most recent pivot as the key structural level
+    structural_resistance = pivot_highs[-1] if pivot_highs else swing_high
+    structural_support = pivot_lows[-1] if pivot_lows else swing_low
+    
+    # ===== LIQUIDITY REINFORCEMENT (SECONDARY) =====
+    # Check if structural levels are reinforced by S/R levels (from orderbook/volume)
+    resistance_reinforced = False
+    support_reinforced = False
+    reinforcement_strength = 0
+    
+    # Check if any resistance level is close to structural_resistance (within 0.3%)
+    for r in resistances:
+        if abs(r.price - structural_resistance) / structural_resistance < 0.003:
+            resistance_reinforced = True
+            reinforcement_strength = 30 if r.strength == "strong" else (20 if r.strength == "moderate" else 10)
+            # If orderbook-backed, add more weight
+            if r.volume_at_level and r.volume_at_level > 0:
+                reinforcement_strength += 20
+            break
+    
+    # Check if any support level is close to structural_support (within 0.3%)
+    for s in supports:
+        if abs(s.price - structural_support) / structural_support < 0.003:
+            support_reinforced = True
+            reinforcement_strength = 30 if s.strength == "strong" else (20 if s.strength == "moderate" else 10)
+            if s.volume_at_level and s.volume_at_level > 0:
+                reinforcement_strength += 20
+            break
     
     # Volatility for buffer calculation
     atr = sum(c["high"] - c["low"] for c in recent_candles[-14:]) / 14
     volatility_percent = (atr / current_price) * 100
     
     # ===== 1. RESISTANCE BREAKOUT =====
-    if resistances and len(resistances) > 0:
-        nearest_resistance = resistances[0].price
-        # Check if price broke above resistance and closed above
-        if (last_candle["close"] > nearest_resistance and 
-            prev_candle and prev_candle["close"] <= nearest_resistance):
-            events.append({
-                "type": SetupEventType.RESISTANCE_BREAKOUT.value,
-                "direction": "LONG",
-                "event_price": current_price,
-                "zone_high": nearest_resistance * 1.002,  # Slightly above
-                "zone_low": nearest_resistance * 0.998,   # Slightly below
-                "swing_high": swing_high,
-                "swing_low": swing_low,
-                "breakout_level": nearest_resistance,
-                "strength": min(100, (current_price - nearest_resistance) / nearest_resistance * 10000),
-                "signal": f"Breakout sopra resistenza ${nearest_resistance:,.0f}"
-            })
+    # Use structural_resistance as primary level, check for breakout
+    if (last_candle["close"] > structural_resistance and 
+        prev_candle and prev_candle["close"] <= structural_resistance):
+        
+        base_strength = 50  # Structure-based
+        if resistance_reinforced:
+            base_strength += reinforcement_strength  # Volume/liquidity reinforcement
+        
+        # Additional strength from move magnitude
+        move_percent = ((last_candle["close"] - structural_resistance) / structural_resistance) * 100
+        base_strength = min(100, base_strength + move_percent * 10)
+        
+        reinforcement_note = " (RINFORZATO da liquidità)" if resistance_reinforced else ""
+        events.append({
+            "type": SetupEventType.RESISTANCE_BREAKOUT.value,
+            "direction": "LONG",
+            "event_price": current_price,
+            "zone_high": structural_resistance * 1.002,  # Slightly above
+            "zone_low": structural_resistance * 0.998,   # Slightly below
+            "swing_high": swing_high,
+            "swing_low": swing_low,
+            "breakout_level": structural_resistance,
+            "strength": base_strength,
+            "reinforced_by_liquidity": resistance_reinforced,
+            "signal": f"Breakout sopra resistenza strutturale ${structural_resistance:,.0f}{reinforcement_note}"
+        })
     
     # ===== 2. SUPPORT BREAKOUT =====
-    if supports and len(supports) > 0:
-        nearest_support = supports[0].price
-        # Check if price broke below support and closed below
-        if (last_candle["close"] < nearest_support and 
-            prev_candle and prev_candle["close"] >= nearest_support):
-            events.append({
-                "type": SetupEventType.SUPPORT_BREAKOUT.value,
-                "direction": "SHORT",
-                "event_price": current_price,
-                "zone_high": nearest_support * 1.002,
-                "zone_low": nearest_support * 0.998,
-                "swing_high": swing_high,
-                "swing_low": swing_low,
-                "breakout_level": nearest_support,
-                "strength": min(100, (nearest_support - current_price) / nearest_support * 10000),
-                "signal": f"Breakout sotto supporto ${nearest_support:,.0f}"
-            })
+    # Use structural_support as primary level, check for breakout
+    if (last_candle["close"] < structural_support and 
+        prev_candle and prev_candle["close"] >= structural_support):
+        
+        base_strength = 50  # Structure-based
+        if support_reinforced:
+            base_strength += reinforcement_strength  # Volume/liquidity reinforcement
+        
+        # Additional strength from move magnitude
+        move_percent = ((structural_support - last_candle["close"]) / structural_support) * 100
+        base_strength = min(100, base_strength + move_percent * 10)
+        
+        reinforcement_note = " (RINFORZATO da liquidità)" if support_reinforced else ""
+        events.append({
+            "type": SetupEventType.SUPPORT_BREAKOUT.value,
+            "direction": "SHORT",
+            "event_price": current_price,
+            "zone_high": structural_support * 1.002,
+            "zone_low": structural_support * 0.998,
+            "swing_high": swing_high,
+            "swing_low": swing_low,
+            "breakout_level": structural_support,
+            "strength": base_strength,
+            "reinforced_by_liquidity": support_reinforced,
+            "signal": f"Breakout sotto supporto strutturale ${structural_support:,.0f}{reinforcement_note}"
+        })
     
     # ===== 3. LIQUIDITY SWEEP HIGH (Stop Hunt Above) =====
     # Price spiked above recent swing high but closed back inside
+    # This is a STRUCTURAL pattern - swing high is primary, liquidity reinforces
     if (last_candle["high"] > swing_high * 1.001 and 
         last_candle["close"] < swing_high):
         sweep_level = last_candle["high"]
+        
+        # Base strength from structure (sweep of swing high)
+        base_strength = 50
+        
+        # Liquidity reinforcement
+        liq_reinforced = liquidity_above > 5000000  # $5M+ in liquidity above
+        if liq_reinforced:
+            # More liquidity = stronger sweep signal
+            liq_factor = min(30, liquidity_above / 10000000 * 30)  # Max +30 from liquidity
+            base_strength += liq_factor
+        
+        # Move magnitude
+        sweep_depth = ((sweep_level - swing_high) / swing_high) * 100
+        base_strength = min(100, base_strength + sweep_depth * 20)
+        
         events.append({
             "type": SetupEventType.LIQUIDITY_SWEEP_HIGH.value,
             "direction": "SHORT",  # Sweep above = potential short
@@ -5293,15 +5381,33 @@ def detect_4h_events(
             "swing_high": swing_high,
             "swing_low": swing_low,
             "sweep_level": sweep_level,
-            "strength": min(100, liquidity_above / 1000000),  # Based on liquidity taken
-            "signal": f"Sweep liquidità sopra ${sweep_level:,.0f} - potenziale inversione SHORT"
+            "strength": base_strength,
+            "reinforced_by_liquidity": liq_reinforced,
+            "liquidity_swept": liquidity_above,
+            "signal": f"Sweep liquidità sopra ${sweep_level:,.0f} - potenziale inversione SHORT" + 
+                      (f" (liquidità ${liquidity_above/1000000:.1f}M)" if liq_reinforced else "")
         })
     
     # ===== 4. LIQUIDITY SWEEP LOW (Stop Hunt Below) =====
     # Price spiked below recent swing low but closed back inside
+    # This is a STRUCTURAL pattern - swing low is primary, liquidity reinforces
     if (last_candle["low"] < swing_low * 0.999 and 
         last_candle["close"] > swing_low):
         sweep_level = last_candle["low"]
+        
+        # Base strength from structure (sweep of swing low)
+        base_strength = 50
+        
+        # Liquidity reinforcement
+        liq_reinforced = liquidity_below > 5000000  # $5M+ in liquidity below
+        if liq_reinforced:
+            liq_factor = min(30, liquidity_below / 10000000 * 30)
+            base_strength += liq_factor
+        
+        # Move magnitude
+        sweep_depth = ((swing_low - sweep_level) / swing_low) * 100
+        base_strength = min(100, base_strength + sweep_depth * 20)
+        
         events.append({
             "type": SetupEventType.LIQUIDITY_SWEEP_LOW.value,
             "direction": "LONG",  # Sweep below = potential long
@@ -5311,8 +5417,11 @@ def detect_4h_events(
             "swing_high": swing_high,
             "swing_low": swing_low,
             "sweep_level": sweep_level,
-            "strength": min(100, liquidity_below / 1000000),
-            "signal": f"Sweep liquidità sotto ${sweep_level:,.0f} - potenziale inversione LONG"
+            "strength": base_strength,
+            "reinforced_by_liquidity": liq_reinforced,
+            "liquidity_swept": liquidity_below,
+            "signal": f"Sweep liquidità sotto ${sweep_level:,.0f} - potenziale inversione LONG" +
+                      (f" (liquidità ${liquidity_below/1000000:.1f}M)" if liq_reinforced else "")
         })
     
     # ===== 5. TREND CONTINUATION (Strong move in trend direction) =====
@@ -5733,27 +5842,34 @@ async def update_setup_phase(
     confirmation: Optional[Dict[str, Any]] = None
 ):
     """Update a setup's phase in the database."""
-    update_data = {
+    # Build the $set part
+    set_data = {
         "phase": new_phase,
-        "updated_at": datetime.now(timezone.utc),
-        "$push": {
-            "phase_history": {
-                "phase": new_phase,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "reason": reason
-            }
+        "updated_at": datetime.now(timezone.utc)
+    }
+    
+    # Build the $push part
+    push_data = {
+        "phase_history": {
+            "phase": new_phase,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reason": reason
         }
     }
     
     if confirmation and new_phase == SetupEventPhase.ENTRY_READY.value:
-        update_data["confirmation_type"] = confirmation["type"]
-        update_data["confirmation_time"] = datetime.now(timezone.utc)
-        update_data["confirmation_price"] = confirmation["price"]
-        update_data["confirmation_details"] = confirmation.get("details")
+        set_data["confirmation_type"] = confirmation["type"]
+        set_data["confirmation_time"] = datetime.now(timezone.utc)
+        set_data["confirmation_price"] = confirmation["price"]
+        set_data["confirmation_details"] = confirmation.get("details")
     
+    # Properly combine $set and $push
     await setup_events_collection.update_one(
         {"setup_id": setup_id},
-        {"$set": update_data} if "$push" not in update_data else update_data
+        {
+            "$set": set_data,
+            "$push": push_data
+        }
     )
     logger.info(f"[V3] Updated setup {setup_id[:8]} to phase: {new_phase}")
 
@@ -9538,6 +9654,253 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
     }
     
     return response
+
+
+# ============== V3 MULTI-TIMEFRAME SIGNAL ENGINE ENDPOINT ==============
+
+@api_router.get("/v3/trade-signal")
+async def get_v3_trade_signal(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+    """
+    V3 Multi-Timeframe Signal Engine.
+    
+    Professional trading workflow:
+    1. 4H timeframe for CONTEXT (market regime, structure, events)
+    2. Event Detection (breakout, sweep, continuation)
+    3. Wait for price to RETEST the key zone
+    4. 5M timeframe for EXECUTION confirmation
+    5. Entry signal only after valid 5M pattern
+    
+    States:
+    - WAIT: No active setup
+    - MONITOR_SETUP: Setup detected, watching for retest
+    - PREPARE_ENTRY: Price in retest zone, watching 5M
+    - ENTRY_NOW: 5M confirmation received, ready for entry
+    
+    Returns full setup context including:
+    - Structure-based stop loss (below swing low/high)
+    - Liquidity-based targets (nearest liquidity levels)
+    - Quality score and confidence
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    fetch_start_time = datetime.now(timezone.utc)
+    
+    # ===== 1. FETCH ALL REQUIRED DATA =====
+    # 4H data for context
+    ticker_task = fetch_kraken_ticker()
+    candles_4h_task = fetch_kraken_ohlc(240)  # 4H timeframe
+    aggregated_ob_task = get_aggregated_orderbook()
+    
+    ticker, candles_4h, aggregated_orderbook = await asyncio.gather(
+        ticker_task, candles_4h_task, aggregated_ob_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    if current_price == 0:
+        return SignalV3(
+            current_price=0,
+            market_regime="UNKNOWN",
+            market_bias="NEUTRAL",
+            bias_confidence=0,
+            context_summary="API non disponibile",
+            recommended_action="WAIT"
+        )
+    
+    # ===== 2. GENERATE INTELLIGENCE COMPONENTS =====
+    # Support/Resistance (structure-based + volume-reinforced)
+    sr_levels = calculate_support_resistance_enhanced(candles_4h, current_price, aggregated_orderbook)
+    supports = [l for l in sr_levels if l.level_type == "support"]
+    resistances = [l for l in sr_levels if l.level_type == "resistance"]
+    
+    # Market Bias
+    market_bias = calculate_market_bias(candles_4h, aggregated_orderbook)
+    
+    # Liquidity clusters
+    clusters, liquidity_direction = generate_liquidity_clusters_enhanced(candles_4h, current_price, aggregated_orderbook, lang)
+    
+    # Calculate liquidity totals
+    liquidity_above = sum(c.estimated_value for c in clusters if c.side == "above")
+    liquidity_below = sum(c.estimated_value for c in clusters if c.side == "below")
+    
+    # OI data
+    oi_data = await fetch_coinglass_open_interest()
+    oi_data_dict = {
+        "change_1h": oi_data.get("change_1h", 0) if oi_data else 0,
+        "change_24h": oi_data.get("change_24h", 0) if oi_data else 0
+    }
+    
+    # Get funding rate
+    funding_rate = await generate_funding_rate(aggregated_orderbook, None, lang)
+    
+    # Market Energy
+    market_energy = analyze_market_energy(
+        candles=candles_4h,
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        open_interest_data=oi_data_dict,
+        liquidity_clusters=clusters,
+        lang=lang
+    )
+    
+    # Liquidity Magnet
+    liquidity_magnet = analyze_liquidity_magnet(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=None,
+        open_interest_data=oi_data_dict,
+        lang=lang
+    )
+    
+    # Whale Activity
+    whale_activity = analyze_whale_activity(
+        candles=candles_4h,
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidation_data=None,
+        open_interest_data=oi_data_dict,
+        lang=lang
+    )
+    
+    # Liquidity Ladder
+    liquidity_ladder = build_liquidity_ladder(
+        current_price=current_price,
+        sr_levels=sr_levels,
+        liquidity_clusters=clusters,
+        aggregated_orderbook=aggregated_orderbook,
+        lang=lang
+    )
+    
+    # ===== 3. DETECT MARKET REGIME =====
+    market_regime = detect_market_regime(
+        market_bias=market_bias,
+        market_energy=market_energy,
+        liquidity_magnet=liquidity_magnet,
+        liquidity_ladder=liquidity_ladder,
+        whale_activity=whale_activity,
+        open_interest_data=oi_data_dict,
+        expected_move=0.5,  # Default
+        trap_risk_detected=False,
+        current_price=current_price,
+        supports=supports,
+        resistances=resistances,
+        lang=lang
+    )
+    
+    # ===== 4. FETCH 5M DATA FOR EXECUTION =====
+    candles_5m = await fetch_5m_candles()
+    
+    # ===== 5. PROCESS V3 SIGNAL =====
+    v3_signal = await process_v3_signal(
+        current_price=current_price,
+        candles_4h=candles_4h,
+        candles_5m=candles_5m,
+        supports=supports,
+        resistances=resistances,
+        market_regime=market_regime.regime,
+        market_bias=market_bias.bias if market_bias else "NEUTRAL",
+        bias_confidence=market_bias.confidence if market_bias else 50,
+        whale_direction=whale_activity.direction if whale_activity else None,
+        whale_strength=whale_activity.strength if whale_activity else None,
+        liquidity_above=liquidity_above,
+        liquidity_below=liquidity_below,
+        lang=lang
+    )
+    
+    # ===== 6. BUILD RESPONSE =====
+    fetch_time = int((datetime.now(timezone.utc) - fetch_start_time).total_seconds() * 1000)
+    
+    response = v3_signal.model_dump()
+    
+    # Add additional context
+    response["market_regime_details"] = {
+        "regime": market_regime.regime,
+        "strength": market_regime.regime_strength,
+        "directional_bias": market_regime.directional_bias,
+        "suggested_setup": market_regime.suggested_setup,
+        "scores": {
+            "trend": market_regime.trend_score,
+            "range": market_regime.range_score,
+            "compression": market_regime.compression_score,
+            "expansion": market_regime.expansion_score
+        }
+    }
+    
+    response["whale_context"] = {
+        "direction": whale_activity.direction if whale_activity else "NEUTRAL",
+        "strength": whale_activity.strength if whale_activity else 0,
+        "signals": whale_activity.signals[:3] if whale_activity else []
+    }
+    
+    response["liquidity_context"] = {
+        "above_total": liquidity_above,
+        "below_total": liquidity_below,
+        "imbalance_direction": "UP" if liquidity_above > liquidity_below * 1.3 else ("DOWN" if liquidity_below > liquidity_above * 1.3 else "BALANCED"),
+        "magnet_score": liquidity_magnet.magnet_score if liquidity_magnet else 50,
+        "sweep_expectation": liquidity_magnet.sweep_expectation if liquidity_magnet else "NO_CLEAR_SWEEP"
+    }
+    
+    response["energy_context"] = {
+        "score": market_energy.energy_score if market_energy else 50,
+        "compression_level": market_energy.compression_level if market_energy else "MEDIUM",
+        "expansion_readiness": market_energy.expansion_readiness if market_energy else "LOW",
+        "breakout_probability": market_energy.breakout_probability if market_energy else "LOW"
+    }
+    
+    response["data_freshness"] = {
+        "signal_generation_time_ms": fetch_time,
+        "4h_candles_count": len(candles_4h) if candles_4h else 0,
+        "5m_candles_count": len(candles_5m) if candles_5m else 0,
+        "5m_cache_age_s": (datetime.now(timezone.utc) - v3_5m_cache["last_update"]).seconds if v3_5m_cache.get("last_update") else None
+    }
+    
+    # Exclude _id from any nested objects if present
+    if "active_setup" in response and response["active_setup"]:
+        response["active_setup"].pop("_id", None)
+    
+    return response
+
+
+@api_router.get("/v3/active-setups")
+async def get_v3_active_setups():
+    """
+    Get all active V3 setups from the database.
+    
+    Returns list of setups in various phases:
+    - SETUP_DETECTED: Event detected, waiting for retest
+    - WAITING_FOR_RETEST: Price approaching zone
+    - ENTRY_READY: 5M confirmation received
+    """
+    setups = await get_active_setups()
+    return {
+        "count": len(setups),
+        "setups": setups,
+        "phases": {
+            "detected": len([s for s in setups if s["phase"] == SetupEventPhase.SETUP_DETECTED.value]),
+            "waiting": len([s for s in setups if s["phase"] == SetupEventPhase.WAITING_FOR_RETEST.value]),
+            "ready": len([s for s in setups if s["phase"] == SetupEventPhase.ENTRY_READY.value])
+        }
+    }
+
+
+@api_router.post("/v3/expire-setup/{setup_id}")
+async def expire_v3_setup(setup_id: str, reason: str = "Manual expiration"):
+    """
+    Manually expire/invalidate a V3 setup.
+    """
+    await update_setup_phase(setup_id, SetupEventPhase.EXPIRED.value, reason)
+    return {"success": True, "setup_id": setup_id, "new_phase": "EXPIRED"}
+
+
+@api_router.delete("/v3/clear-setups")
+async def clear_v3_setups():
+    """
+    Clear all V3 setups (for testing/reset purposes).
+    """
+    result = await setup_events_collection.delete_many({})
+    return {"deleted": result.deleted_count}
 
 
 def apply_signal_confirmation(
