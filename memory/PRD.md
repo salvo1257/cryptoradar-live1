@@ -1,6 +1,60 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-03-18
 
+## ✅ NEW: V3 Signal Card UI (2026-03-18)
+
+### V3 Signal Card Overview
+Professional UI card displaying the full lifecycle of V3 MTF setups.
+
+### Key Features
+| Feature | Description |
+|---------|-------------|
+| **Position** | Side-by-side with V2 card for real-time comparison |
+| **Phase Badge** | Prominent status (SETUP/WAITING/ENTRY_READY) - readable in <2s |
+| **Detail Level** | Hybrid (compact default, expandable for full details) |
+| **No Setup State** | Shows market context (regime, bias, energy) |
+
+### Phase Visual Styling
+| Phase | Color | Icon | Animation |
+|-------|-------|------|-----------|
+| SETUP_DETECTED | Blue | Eye | - |
+| WAITING_FOR_RETEST | Yellow | Timer | Pulse |
+| ENTRY_READY | Green | CheckCircle | Pulse |
+| EXECUTED | Purple | CheckCircle | - |
+| EXPIRED | Gray | XCircle | - |
+| INVALIDATED | Red | XCircle | - |
+
+### Compact View Shows
+- Phase badge with description
+- Direction badge (LONG/SHORT)
+- Setup type with event icon
+- Entry zone, stop loss, targets (T1/T2)
+- Quality score, R:R ratio
+- 5M confirmation status
+- Time remaining
+
+### Expanded View Adds
+- Structure details (swing high/low, buffer, stop type)
+- Target details with types (resistance, support, percentage)
+- Liquidity context (above/below totals, imbalance)
+- Whale context (direction, strength)
+- Phase history timeline
+- Reasoning text
+
+### No Setup State Shows
+- "Nessun Setup Attivo" / "No Active Setup"
+- Market regime (TREND/RANGE/COMPRESSION/EXPANSION)
+- Bias with confidence %
+- Energy level with compression
+- "In attesa di evento 4H" message
+
+### Component Details
+- **File:** `/app/frontend/src/components/cards/V3SignalCard.js`
+- **Refresh Rate:** 30 seconds
+- **data-testid:** `v3-signal-card`, `v3-signal-card-loading`
+
+---
+
 ## ✅ NEW: V3 Multi-Timeframe Signal Engine (2026-03-18)
 
 ### V3 Engine Overview
