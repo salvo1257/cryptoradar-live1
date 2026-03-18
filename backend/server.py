@@ -8993,7 +8993,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "CryptoRadar API",
-        "version": "1.1.0",
+        "version": "3.0.0",
         "data_sources": {
             "market_data": "Kraken",
             "news": "CryptoCompare"
