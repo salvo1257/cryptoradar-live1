@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
+from enum import Enum
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -27,6 +28,7 @@ db = client[os.environ['DB_NAME']]
 # MongoDB Collections
 signal_history_collection = db["signal_history"]
 telegram_settings_collection = db["telegram_settings"]
+setup_events_collection = db["setup_events_v3"]  # V3 Multi-Timeframe Setup Events
 
 # Create the main app
 app = FastAPI(title="CryptoRadar API", version="2.3.0")
@@ -311,6 +313,133 @@ class TradeSignal(BaseModel):
     
     # NEW v2.9.1: Data Freshness Indicator
     data_freshness: Optional[Dict[str, Any]] = None  # Age of each data source in ms
+
+
+# ============== SIGNAL ENGINE V3 - MULTI-TIMEFRAME ==============
+
+class SetupEventPhase(str, Enum):
+    """Phases in the v3 signal lifecycle"""
+    SETUP_DETECTED = "SETUP_DETECTED"       # 4H event detected (breakout/sweep)
+    WAITING_FOR_RETEST = "WAITING_FOR_RETEST"  # Price returning to zone
+    ENTRY_READY = "ENTRY_READY"             # 5M confirmation received
+    EXECUTED = "EXECUTED"                    # Trade taken
+    EXPIRED = "EXPIRED"                      # Setup timed out
+    INVALIDATED = "INVALIDATED"              # Setup invalidated by price action
+
+class SetupEventType(str, Enum):
+    """Types of 4H events that trigger setups"""
+    RESISTANCE_BREAKOUT = "resistance_breakout"
+    SUPPORT_BREAKOUT = "support_breakout"
+    LIQUIDITY_SWEEP_HIGH = "liquidity_sweep_high"
+    LIQUIDITY_SWEEP_LOW = "liquidity_sweep_low"
+    TREND_CONTINUATION = "trend_continuation"
+
+class ConfirmationType(str, Enum):
+    """Types of 5M confirmation patterns"""
+    REJECTION_CANDLE = "rejection_candle"       # Wick > body
+    STABILIZATION = "stabilization"             # 2-3 candles in zone
+    MICRO_STRUCTURE_BREAK = "micro_structure_break"  # Break of 5M structure
+
+class SetupEvent(BaseModel):
+    """
+    V3 Setup Event - tracks a detected trading setup through its lifecycle.
+    Stored in database for full tracking.
+    """
+    setup_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime  # Setup validity (default 8 hours)
+    
+    # Phase tracking
+    phase: str = SetupEventPhase.SETUP_DETECTED.value
+    phase_history: List[Dict[str, Any]] = []  # [{phase, timestamp, reason}]
+    
+    # 4H Context
+    event_type: str  # SetupEventType value
+    direction: str  # "LONG" or "SHORT"
+    
+    # Zone definition
+    zone_high: float  # Upper bound of entry zone
+    zone_low: float   # Lower bound of entry zone
+    event_price: float  # Price at event detection
+    current_price: float  # Latest price
+    
+    # Structure levels (for stop calculation)
+    swing_high: float
+    swing_low: float
+    sweep_level: Optional[float] = None  # If sweep detected
+    
+    # Stop loss (structure-based)
+    stop_loss: float
+    stop_type: str  # "swing", "sweep", "combined"
+    buffer_percent: float  # Buffer applied
+    
+    # Targets (liquidity-based)
+    target_1: float  # Nearest liquidity level
+    target_1_type: str  # "liquidity", "structure"
+    target_2: float  # Next major zone
+    target_2_type: str
+    risk_reward_ratio: float
+    
+    # 4H Context data
+    market_regime: str  # TREND, RANGE, COMPRESSION, EXPANSION
+    market_bias: str  # BULLISH, BEARISH, NEUTRAL
+    whale_direction: Optional[str] = None
+    whale_strength: Optional[float] = None
+    liquidity_above: float = 0
+    liquidity_below: float = 0
+    
+    # 5M Confirmation (populated when ENTRY_READY)
+    confirmation_type: Optional[str] = None  # ConfirmationType value
+    confirmation_time: Optional[datetime] = None
+    confirmation_price: Optional[float] = None
+    confirmation_details: Optional[Dict[str, Any]] = None
+    
+    # Quality metrics
+    quality_score: int = 0  # 0-100
+    confidence: float = 0   # 0-100
+    
+    # Signals and reasoning
+    signals_detected: List[str] = []
+    reasoning: str = ""
+    warnings: List[str] = []
+
+class SignalV3(BaseModel):
+    """
+    V3 Signal Response - Multi-Timeframe Signal Engine output.
+    Returns current state and any active setups.
+    """
+    engine_version: str = "v3"
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Current market state (4H)
+    current_price: float
+    market_regime: str
+    market_bias: str
+    bias_confidence: float
+    
+    # Active setup (if any)
+    has_active_setup: bool = False
+    active_setup: Optional[SetupEvent] = None
+    
+    # All tracked setups
+    setups_detected_count: int = 0
+    setups_waiting_count: int = 0
+    setups_ready_count: int = 0
+    
+    # 5M execution data
+    candles_5m_loaded: bool = False
+    last_5m_update: Optional[datetime] = None
+    retest_in_progress: bool = False
+    retest_zone_distance_percent: Optional[float] = None
+    
+    # Quality and context
+    overall_quality: int = 0
+    context_summary: str = ""
+    recommended_action: str = "WAIT"  # "WAIT", "MONITOR_SETUP", "PREPARE_ENTRY", "ENTRY_NOW"
+    
+    # Data freshness
+    data_freshness: Optional[Dict[str, Any]] = None
 
 
 class SignalHistoryEntry(BaseModel):
@@ -5028,6 +5157,814 @@ def detect_market_regime(
         signals=signals[:5],  # Limit to top 5 signals
         explanation=explanation,
         data_source="Multi-Factor Analysis"
+    )
+
+
+# ============== SIGNAL ENGINE V3 - MULTI-TIMEFRAME ==============
+
+# V3 Configuration
+V3_SETUP_VALIDITY_HOURS = 8  # Setup expires after 8 hours (2 x 4H candles)
+V3_5M_CACHE_TTL = 30  # 5M data cache: 30 seconds
+V3_RETEST_ZONE_TOLERANCE = 0.002  # 0.2% tolerance for zone retest
+V3_STOP_BUFFER_MIN = 0.001  # 0.1% minimum buffer
+V3_STOP_BUFFER_MAX = 0.0025  # 0.25% maximum buffer
+
+# 5M candles cache
+v3_5m_cache = {
+    "candles": None,
+    "last_update": None
+}
+
+
+async def fetch_5m_candles() -> List[dict]:
+    """
+    Fetch 5-minute candles for V3 execution timing.
+    Uses separate cache with 30s TTL for fresher data.
+    """
+    global v3_5m_cache
+    
+    try:
+        # Check cache
+        if (v3_5m_cache["candles"] and v3_5m_cache["last_update"] and
+            (datetime.now(timezone.utc) - v3_5m_cache["last_update"]).seconds < V3_5M_CACHE_TTL):
+            return v3_5m_cache["candles"]
+        
+        # Fetch fresh 5M candles from Kraken
+        candles = await fetch_kraken_ohlc(interval=5)  # 5-minute interval
+        
+        if candles and len(candles) > 0:
+            v3_5m_cache["candles"] = candles
+            v3_5m_cache["last_update"] = datetime.now(timezone.utc)
+            logger.info(f"[V3] Fetched {len(candles)} 5M candles")
+            return candles
+    except Exception as e:
+        logger.error(f"[V3] Error fetching 5M candles: {e}")
+    
+    return v3_5m_cache.get("candles") or []
+
+
+def detect_4h_events(
+    candles_4h: List[dict],
+    current_price: float,
+    supports: List,
+    resistances: List,
+    liquidity_above: float,
+    liquidity_below: float,
+    market_regime: str,
+    market_bias: str,
+    lang: str = "it"
+) -> List[Dict[str, Any]]:
+    """
+    Detect significant 4H events that could trigger setups:
+    - Resistance breakout
+    - Support breakout
+    - Liquidity sweep (high/low)
+    - Strong trend continuation
+    
+    Returns list of detected events with details.
+    """
+    events = []
+    
+    if not candles_4h or len(candles_4h) < 10:
+        return events
+    
+    # Get recent candles for analysis
+    recent_candles = candles_4h[-20:]
+    last_candle = recent_candles[-1]
+    prev_candle = recent_candles[-2] if len(recent_candles) >= 2 else None
+    
+    # Calculate recent swing high/low (last 10 candles)
+    swing_high = max(c["high"] for c in recent_candles[-10:])
+    swing_low = min(c["low"] for c in recent_candles[-10:])
+    
+    # Volatility for buffer calculation
+    atr = sum(c["high"] - c["low"] for c in recent_candles[-14:]) / 14
+    volatility_percent = (atr / current_price) * 100
+    
+    # ===== 1. RESISTANCE BREAKOUT =====
+    if resistances and len(resistances) > 0:
+        nearest_resistance = resistances[0].price
+        # Check if price broke above resistance and closed above
+        if (last_candle["close"] > nearest_resistance and 
+            prev_candle and prev_candle["close"] <= nearest_resistance):
+            events.append({
+                "type": SetupEventType.RESISTANCE_BREAKOUT.value,
+                "direction": "LONG",
+                "event_price": current_price,
+                "zone_high": nearest_resistance * 1.002,  # Slightly above
+                "zone_low": nearest_resistance * 0.998,   # Slightly below
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "breakout_level": nearest_resistance,
+                "strength": min(100, (current_price - nearest_resistance) / nearest_resistance * 10000),
+                "signal": f"Breakout sopra resistenza ${nearest_resistance:,.0f}"
+            })
+    
+    # ===== 2. SUPPORT BREAKOUT =====
+    if supports and len(supports) > 0:
+        nearest_support = supports[0].price
+        # Check if price broke below support and closed below
+        if (last_candle["close"] < nearest_support and 
+            prev_candle and prev_candle["close"] >= nearest_support):
+            events.append({
+                "type": SetupEventType.SUPPORT_BREAKOUT.value,
+                "direction": "SHORT",
+                "event_price": current_price,
+                "zone_high": nearest_support * 1.002,
+                "zone_low": nearest_support * 0.998,
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "breakout_level": nearest_support,
+                "strength": min(100, (nearest_support - current_price) / nearest_support * 10000),
+                "signal": f"Breakout sotto supporto ${nearest_support:,.0f}"
+            })
+    
+    # ===== 3. LIQUIDITY SWEEP HIGH (Stop Hunt Above) =====
+    # Price spiked above recent swing high but closed back inside
+    if (last_candle["high"] > swing_high * 1.001 and 
+        last_candle["close"] < swing_high):
+        sweep_level = last_candle["high"]
+        events.append({
+            "type": SetupEventType.LIQUIDITY_SWEEP_HIGH.value,
+            "direction": "SHORT",  # Sweep above = potential short
+            "event_price": current_price,
+            "zone_high": sweep_level,
+            "zone_low": swing_high * 0.998,
+            "swing_high": swing_high,
+            "swing_low": swing_low,
+            "sweep_level": sweep_level,
+            "strength": min(100, liquidity_above / 1000000),  # Based on liquidity taken
+            "signal": f"Sweep liquidità sopra ${sweep_level:,.0f} - potenziale inversione SHORT"
+        })
+    
+    # ===== 4. LIQUIDITY SWEEP LOW (Stop Hunt Below) =====
+    # Price spiked below recent swing low but closed back inside
+    if (last_candle["low"] < swing_low * 0.999 and 
+        last_candle["close"] > swing_low):
+        sweep_level = last_candle["low"]
+        events.append({
+            "type": SetupEventType.LIQUIDITY_SWEEP_LOW.value,
+            "direction": "LONG",  # Sweep below = potential long
+            "event_price": current_price,
+            "zone_high": swing_low * 1.002,
+            "zone_low": sweep_level,
+            "swing_high": swing_high,
+            "swing_low": swing_low,
+            "sweep_level": sweep_level,
+            "strength": min(100, liquidity_below / 1000000),
+            "signal": f"Sweep liquidità sotto ${sweep_level:,.0f} - potenziale inversione LONG"
+        })
+    
+    # ===== 5. TREND CONTINUATION (Strong move in trend direction) =====
+    if market_regime == "TREND" and market_bias in ["BULLISH", "BEARISH"]:
+        # Check for strong momentum candle in trend direction
+        candle_body = abs(last_candle["close"] - last_candle["open"])
+        candle_range = last_candle["high"] - last_candle["low"]
+        body_ratio = candle_body / candle_range if candle_range > 0 else 0
+        
+        if body_ratio > 0.7:  # Strong body candle
+            if market_bias == "BULLISH" and last_candle["close"] > last_candle["open"]:
+                events.append({
+                    "type": SetupEventType.TREND_CONTINUATION.value,
+                    "direction": "LONG",
+                    "event_price": current_price,
+                    "zone_high": last_candle["close"],
+                    "zone_low": last_candle["open"],
+                    "swing_high": swing_high,
+                    "swing_low": swing_low,
+                    "strength": min(100, body_ratio * 100),
+                    "signal": "Trend continuation LONG - candela momentum forte"
+                })
+            elif market_bias == "BEARISH" and last_candle["close"] < last_candle["open"]:
+                events.append({
+                    "type": SetupEventType.TREND_CONTINUATION.value,
+                    "direction": "SHORT",
+                    "event_price": current_price,
+                    "zone_high": last_candle["open"],
+                    "zone_low": last_candle["close"],
+                    "swing_high": swing_high,
+                    "swing_low": swing_low,
+                    "strength": min(100, body_ratio * 100),
+                    "signal": "Trend continuation SHORT - candela momentum forte"
+                })
+    
+    return events
+
+
+def detect_5m_confirmation(
+    candles_5m: List[dict],
+    setup: SetupEvent,
+    current_price: float
+) -> Optional[Dict[str, Any]]:
+    """
+    Detect 5M confirmation patterns for entry:
+    - Rejection candle (wick > body)
+    - Stabilization (2-3 candles in zone)
+    - Micro-structure break
+    
+    Returns confirmation details or None if not confirmed.
+    """
+    if not candles_5m or len(candles_5m) < 5:
+        return None
+    
+    # Get recent 5M candles
+    recent_5m = candles_5m[-10:]
+    last_candle = recent_5m[-1]
+    
+    zone_high = setup.zone_high
+    zone_low = setup.zone_low
+    
+    # Check if price is in the retest zone
+    in_zone = zone_low <= current_price <= zone_high
+    
+    if not in_zone:
+        # Check if price was recently in zone
+        candles_in_zone = [c for c in recent_5m[-5:] 
+                          if zone_low <= c["close"] <= zone_high or
+                             zone_low <= c["open"] <= zone_high]
+        if len(candles_in_zone) < 2:
+            return None  # Not in retest zone
+    
+    confirmation = None
+    
+    # ===== 1. REJECTION CANDLE =====
+    # For LONG: Lower wick > body + upper wick (bullish rejection)
+    # For SHORT: Upper wick > body + lower wick (bearish rejection)
+    body = abs(last_candle["close"] - last_candle["open"])
+    upper_wick = last_candle["high"] - max(last_candle["close"], last_candle["open"])
+    lower_wick = min(last_candle["close"], last_candle["open"]) - last_candle["low"]
+    
+    if setup.direction == "LONG":
+        if lower_wick > body + upper_wick and lower_wick > 0:
+            rejection_strength = (lower_wick / (body + upper_wick + 0.01)) * 100
+            confirmation = {
+                "type": ConfirmationType.REJECTION_CANDLE.value,
+                "strength": min(100, rejection_strength),
+                "price": current_price,
+                "details": {
+                    "body": body,
+                    "lower_wick": lower_wick,
+                    "upper_wick": upper_wick,
+                    "candle_close": last_candle["close"]
+                },
+                "signal": f"Candela di rifiuto LONG al supporto - wick inferiore {lower_wick:.0f}"
+            }
+    else:  # SHORT
+        if upper_wick > body + lower_wick and upper_wick > 0:
+            rejection_strength = (upper_wick / (body + lower_wick + 0.01)) * 100
+            confirmation = {
+                "type": ConfirmationType.REJECTION_CANDLE.value,
+                "strength": min(100, rejection_strength),
+                "price": current_price,
+                "details": {
+                    "body": body,
+                    "lower_wick": lower_wick,
+                    "upper_wick": upper_wick,
+                    "candle_close": last_candle["close"]
+                },
+                "signal": f"Candela di rifiuto SHORT alla resistenza - wick superiore {upper_wick:.0f}"
+            }
+    
+    if confirmation:
+        return confirmation
+    
+    # ===== 2. STABILIZATION (2-3 candles in zone) =====
+    candles_in_zone = []
+    for c in recent_5m[-5:]:
+        candle_mid = (c["high"] + c["low"]) / 2
+        if zone_low * 0.998 <= candle_mid <= zone_high * 1.002:
+            candles_in_zone.append(c)
+    
+    if len(candles_in_zone) >= 2:
+        # Check if candles are tightening (compression in zone)
+        ranges = [c["high"] - c["low"] for c in candles_in_zone]
+        if len(ranges) >= 2 and ranges[-1] < ranges[0]:  # Tightening
+            confirmation = {
+                "type": ConfirmationType.STABILIZATION.value,
+                "strength": min(100, len(candles_in_zone) * 30),
+                "price": current_price,
+                "details": {
+                    "candles_in_zone": len(candles_in_zone),
+                    "zone_center": (zone_high + zone_low) / 2,
+                    "compression": True
+                },
+                "signal": f"Stabilizzazione in zona ({len(candles_in_zone)} candele) - compressione rilevata"
+            }
+            return confirmation
+    
+    # ===== 3. MICRO-STRUCTURE BREAK =====
+    # For LONG: Break above recent 5M swing high
+    # For SHORT: Break below recent 5M swing low
+    micro_swing_high = max(c["high"] for c in recent_5m[-5:])
+    micro_swing_low = min(c["low"] for c in recent_5m[-5:])
+    
+    if setup.direction == "LONG":
+        if last_candle["close"] > micro_swing_high and in_zone:
+            confirmation = {
+                "type": ConfirmationType.MICRO_STRUCTURE_BREAK.value,
+                "strength": min(100, 70),
+                "price": current_price,
+                "details": {
+                    "micro_high": micro_swing_high,
+                    "break_level": last_candle["close"],
+                    "break_percent": (last_candle["close"] - micro_swing_high) / micro_swing_high * 100
+                },
+                "signal": f"Rottura micro-struttura 5M sopra ${micro_swing_high:,.0f}"
+            }
+    else:  # SHORT
+        if last_candle["close"] < micro_swing_low and in_zone:
+            confirmation = {
+                "type": ConfirmationType.MICRO_STRUCTURE_BREAK.value,
+                "strength": min(100, 70),
+                "price": current_price,
+                "details": {
+                    "micro_low": micro_swing_low,
+                    "break_level": last_candle["close"],
+                    "break_percent": (micro_swing_low - last_candle["close"]) / micro_swing_low * 100
+                },
+                "signal": f"Rottura micro-struttura 5M sotto ${micro_swing_low:,.0f}"
+            }
+    
+    return confirmation
+
+
+def calculate_v3_stop_loss(
+    direction: str,
+    swing_high: float,
+    swing_low: float,
+    sweep_level: Optional[float],
+    current_price: float,
+    volatility_percent: float = 0.5
+) -> Dict[str, Any]:
+    """
+    Calculate structure-based stop loss for V3.
+    
+    LONG: stop = min(swing_low, sweep_low) - buffer
+    SHORT: stop = max(swing_high, sweep_high) + buffer
+    
+    Buffer: 0.1% – 0.25% depending on volatility
+    """
+    # Calculate adaptive buffer based on volatility
+    buffer_percent = min(V3_STOP_BUFFER_MAX, max(V3_STOP_BUFFER_MIN, volatility_percent / 200))
+    
+    if direction == "LONG":
+        # Use the lower of swing_low and sweep_level (if available)
+        base_stop = swing_low
+        stop_type = "swing"
+        
+        if sweep_level and sweep_level < swing_low:
+            base_stop = sweep_level
+            stop_type = "sweep"
+        elif sweep_level:
+            base_stop = min(swing_low, sweep_level)
+            stop_type = "combined"
+        
+        stop_loss = base_stop * (1 - buffer_percent)
+        
+    else:  # SHORT
+        # Use the higher of swing_high and sweep_level (if available)
+        base_stop = swing_high
+        stop_type = "swing"
+        
+        if sweep_level and sweep_level > swing_high:
+            base_stop = sweep_level
+            stop_type = "sweep"
+        elif sweep_level:
+            base_stop = max(swing_high, sweep_level)
+            stop_type = "combined"
+        
+        stop_loss = base_stop * (1 + buffer_percent)
+    
+    return {
+        "stop_loss": round(stop_loss, 2),
+        "stop_type": stop_type,
+        "buffer_percent": buffer_percent * 100,
+        "base_level": base_stop,
+        "swing_used": swing_low if direction == "LONG" else swing_high,
+        "sweep_used": sweep_level
+    }
+
+
+def calculate_v3_targets(
+    direction: str,
+    entry_price: float,
+    liquidity_above: float,
+    liquidity_below: float,
+    resistances: List,
+    supports: List,
+    swing_high: float,
+    swing_low: float
+) -> Dict[str, Any]:
+    """
+    Calculate liquidity-based targets for V3.
+    
+    T1: Nearest liquidity level
+    T2: Next major liquidity zone or structure level
+    """
+    if direction == "LONG":
+        # T1: Nearest resistance or liquidity level above
+        t1 = entry_price * 1.005  # Default 0.5%
+        t1_type = "percentage"
+        
+        if resistances and len(resistances) > 0:
+            t1 = resistances[0].price
+            t1_type = "resistance"
+        
+        if swing_high > entry_price and (t1_type == "percentage" or swing_high < t1):
+            t1 = swing_high
+            t1_type = "swing_high"
+        
+        # T2: Next major level
+        t2 = entry_price * 1.012  # Default 1.2%
+        t2_type = "percentage"
+        
+        if resistances and len(resistances) > 1:
+            t2 = resistances[1].price
+            t2_type = "resistance"
+        elif resistances and len(resistances) > 0:
+            t2 = resistances[0].price * 1.01
+            t2_type = "liquidity_extended"
+        
+    else:  # SHORT
+        # T1: Nearest support or liquidity level below
+        t1 = entry_price * 0.995  # Default 0.5%
+        t1_type = "percentage"
+        
+        if supports and len(supports) > 0:
+            t1 = supports[0].price
+            t1_type = "support"
+        
+        if swing_low < entry_price and (t1_type == "percentage" or swing_low > t1):
+            t1 = swing_low
+            t1_type = "swing_low"
+        
+        # T2: Next major level
+        t2 = entry_price * 0.988  # Default 1.2%
+        t2_type = "percentage"
+        
+        if supports and len(supports) > 1:
+            t2 = supports[1].price
+            t2_type = "support"
+        elif supports and len(supports) > 0:
+            t2 = supports[0].price * 0.99
+            t2_type = "liquidity_extended"
+    
+    return {
+        "target_1": round(t1, 2),
+        "target_1_type": t1_type,
+        "target_2": round(t2, 2),
+        "target_2_type": t2_type
+    }
+
+
+async def create_setup_event(
+    event: Dict[str, Any],
+    current_price: float,
+    market_regime: str,
+    market_bias: str,
+    whale_direction: Optional[str],
+    whale_strength: Optional[float],
+    liquidity_above: float,
+    liquidity_below: float,
+    resistances: List,
+    supports: List,
+    lang: str = "it"
+) -> SetupEvent:
+    """
+    Create a new SetupEvent from a detected 4H event.
+    Calculates stop loss and targets, then saves to database.
+    """
+    direction = event["direction"]
+    swing_high = event.get("swing_high", current_price * 1.01)
+    swing_low = event.get("swing_low", current_price * 0.99)
+    sweep_level = event.get("sweep_level")
+    
+    # Calculate structure-based stop loss
+    stop_info = calculate_v3_stop_loss(
+        direction=direction,
+        swing_high=swing_high,
+        swing_low=swing_low,
+        sweep_level=sweep_level,
+        current_price=current_price
+    )
+    
+    # Calculate liquidity-based targets
+    target_info = calculate_v3_targets(
+        direction=direction,
+        entry_price=current_price,
+        liquidity_above=liquidity_above,
+        liquidity_below=liquidity_below,
+        resistances=resistances,
+        supports=supports,
+        swing_high=swing_high,
+        swing_low=swing_low
+    )
+    
+    # Calculate R:R
+    risk = abs(current_price - stop_info["stop_loss"])
+    reward = abs(target_info["target_1"] - current_price)
+    rr_ratio = reward / risk if risk > 0 else 0
+    
+    # Calculate quality score
+    quality_score = 50  # Base score
+    if whale_direction and ((direction == "LONG" and whale_direction == "BUY") or 
+                            (direction == "SHORT" and whale_direction == "SELL")):
+        quality_score += 15
+    if market_regime in ["TREND", "EXPANSION"]:
+        quality_score += 10
+    if rr_ratio >= 1.5:
+        quality_score += 15
+    elif rr_ratio >= 1.0:
+        quality_score += 10
+    if event.get("strength", 0) >= 70:
+        quality_score += 10
+    
+    quality_score = min(100, quality_score)
+    
+    # Create setup event
+    setup = SetupEvent(
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=V3_SETUP_VALIDITY_HOURS),
+        phase=SetupEventPhase.SETUP_DETECTED.value,
+        phase_history=[{
+            "phase": SetupEventPhase.SETUP_DETECTED.value,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reason": event.get("signal", "Event detected")
+        }],
+        event_type=event["type"],
+        direction=direction,
+        zone_high=event["zone_high"],
+        zone_low=event["zone_low"],
+        event_price=event["event_price"],
+        current_price=current_price,
+        swing_high=swing_high,
+        swing_low=swing_low,
+        sweep_level=sweep_level,
+        stop_loss=stop_info["stop_loss"],
+        stop_type=stop_info["stop_type"],
+        buffer_percent=stop_info["buffer_percent"],
+        target_1=target_info["target_1"],
+        target_1_type=target_info["target_1_type"],
+        target_2=target_info["target_2"],
+        target_2_type=target_info["target_2_type"],
+        risk_reward_ratio=round(rr_ratio, 2),
+        market_regime=market_regime,
+        market_bias=market_bias,
+        whale_direction=whale_direction,
+        whale_strength=whale_strength,
+        liquidity_above=liquidity_above,
+        liquidity_below=liquidity_below,
+        quality_score=quality_score,
+        confidence=event.get("strength", 50),
+        signals_detected=[event.get("signal", "")],
+        reasoning=f"V3 Setup: {event['type']} - {event.get('signal', '')}"
+    )
+    
+    # Save to database
+    await setup_events_collection.insert_one(setup.model_dump())
+    logger.info(f"[V3] Created setup event: {setup.setup_id} - {setup.event_type} {setup.direction}")
+    
+    return setup
+
+
+async def update_setup_phase(
+    setup_id: str,
+    new_phase: str,
+    reason: str,
+    confirmation: Optional[Dict[str, Any]] = None
+):
+    """Update a setup's phase in the database."""
+    update_data = {
+        "phase": new_phase,
+        "updated_at": datetime.now(timezone.utc),
+        "$push": {
+            "phase_history": {
+                "phase": new_phase,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "reason": reason
+            }
+        }
+    }
+    
+    if confirmation and new_phase == SetupEventPhase.ENTRY_READY.value:
+        update_data["confirmation_type"] = confirmation["type"]
+        update_data["confirmation_time"] = datetime.now(timezone.utc)
+        update_data["confirmation_price"] = confirmation["price"]
+        update_data["confirmation_details"] = confirmation.get("details")
+    
+    await setup_events_collection.update_one(
+        {"setup_id": setup_id},
+        {"$set": update_data} if "$push" not in update_data else update_data
+    )
+    logger.info(f"[V3] Updated setup {setup_id[:8]} to phase: {new_phase}")
+
+
+async def get_active_setups() -> List[Dict[str, Any]]:
+    """Get all active (non-expired, non-invalidated) setups."""
+    active_phases = [
+        SetupEventPhase.SETUP_DETECTED.value,
+        SetupEventPhase.WAITING_FOR_RETEST.value,
+        SetupEventPhase.ENTRY_READY.value
+    ]
+    
+    cursor = setup_events_collection.find({
+        "phase": {"$in": active_phases},
+        "expires_at": {"$gt": datetime.now(timezone.utc)}
+    }).sort("created_at", -1)
+    
+    setups = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        setups.append(doc)
+    
+    return setups
+
+
+async def process_v3_signal(
+    current_price: float,
+    candles_4h: List[dict],
+    candles_5m: List[dict],
+    supports: List,
+    resistances: List,
+    market_regime: str,
+    market_bias: str,
+    bias_confidence: float,
+    whale_direction: Optional[str],
+    whale_strength: Optional[float],
+    liquidity_above: float,
+    liquidity_below: float,
+    lang: str = "it"
+) -> SignalV3:
+    """
+    Main V3 signal processor.
+    
+    1. Check for new 4H events
+    2. Update existing setups based on price action
+    3. Check for 5M confirmations on active setups
+    4. Return consolidated V3 signal
+    """
+    fetch_start = datetime.now(timezone.utc)
+    
+    # Get active setups from database
+    active_setups = await get_active_setups()
+    
+    setups_detected = len([s for s in active_setups if s["phase"] == SetupEventPhase.SETUP_DETECTED.value])
+    setups_waiting = len([s for s in active_setups if s["phase"] == SetupEventPhase.WAITING_FOR_RETEST.value])
+    setups_ready = len([s for s in active_setups if s["phase"] == SetupEventPhase.ENTRY_READY.value])
+    
+    # ===== 1. DETECT NEW 4H EVENTS =====
+    new_events = detect_4h_events(
+        candles_4h=candles_4h,
+        current_price=current_price,
+        supports=supports,
+        resistances=resistances,
+        liquidity_above=liquidity_above,
+        liquidity_below=liquidity_below,
+        market_regime=market_regime,
+        market_bias=market_bias,
+        lang=lang
+    )
+    
+    # Create setup events for new detections (avoid duplicates)
+    for event in new_events:
+        # Check if similar setup already exists
+        existing = [s for s in active_setups 
+                   if s["event_type"] == event["type"] and 
+                      s["direction"] == event["direction"] and
+                      abs(s["zone_low"] - event["zone_low"]) / event["zone_low"] < 0.005]
+        
+        if not existing:
+            new_setup = await create_setup_event(
+                event=event,
+                current_price=current_price,
+                market_regime=market_regime,
+                market_bias=market_bias,
+                whale_direction=whale_direction,
+                whale_strength=whale_strength,
+                liquidity_above=liquidity_above,
+                liquidity_below=liquidity_below,
+                resistances=resistances,
+                supports=supports,
+                lang=lang
+            )
+            active_setups.append(new_setup.model_dump())
+            setups_detected += 1
+    
+    # ===== 2. UPDATE EXISTING SETUPS =====
+    primary_setup = None
+    retest_in_progress = False
+    retest_distance = None
+    
+    for setup_dict in active_setups:
+        setup_id = setup_dict["setup_id"]
+        phase = setup_dict["phase"]
+        zone_high = setup_dict["zone_high"]
+        zone_low = setup_dict["zone_low"]
+        direction = setup_dict["direction"]
+        
+        # Calculate distance to zone
+        if direction == "LONG":
+            zone_center = zone_low
+            distance_percent = ((current_price - zone_center) / zone_center) * 100
+        else:
+            zone_center = zone_high
+            distance_percent = ((zone_center - current_price) / zone_center) * 100
+        
+        # Check if price is approaching/in retest zone
+        in_retest_zone = zone_low * 0.998 <= current_price <= zone_high * 1.002
+        approaching_zone = abs(distance_percent) < 0.5  # Within 0.5% of zone
+        
+        # Phase transitions
+        if phase == SetupEventPhase.SETUP_DETECTED.value:
+            if approaching_zone or in_retest_zone:
+                await update_setup_phase(
+                    setup_id, 
+                    SetupEventPhase.WAITING_FOR_RETEST.value,
+                    f"Price approaching zone (distance: {distance_percent:.2f}%)"
+                )
+                setup_dict["phase"] = SetupEventPhase.WAITING_FOR_RETEST.value
+                retest_in_progress = True
+                retest_distance = distance_percent
+        
+        elif phase == SetupEventPhase.WAITING_FOR_RETEST.value:
+            retest_in_progress = True
+            retest_distance = distance_percent
+            
+            # Check for 5M confirmation
+            if candles_5m and len(candles_5m) >= 5:
+                # Create temporary SetupEvent for confirmation check
+                temp_setup = SetupEvent(**setup_dict)
+                confirmation = detect_5m_confirmation(candles_5m, temp_setup, current_price)
+                
+                if confirmation:
+                    await update_setup_phase(
+                        setup_id,
+                        SetupEventPhase.ENTRY_READY.value,
+                        confirmation.get("signal", "5M confirmation"),
+                        confirmation
+                    )
+                    setup_dict["phase"] = SetupEventPhase.ENTRY_READY.value
+                    setup_dict["confirmation_type"] = confirmation["type"]
+                    setup_dict["confirmation_details"] = confirmation.get("details")
+                    setups_ready += 1
+            
+            # Check for invalidation (price moved too far from zone)
+            if abs(distance_percent) > 2.0:  # More than 2% from zone
+                await update_setup_phase(
+                    setup_id,
+                    SetupEventPhase.INVALIDATED.value,
+                    f"Price moved too far from zone ({distance_percent:.2f}%)"
+                )
+                setup_dict["phase"] = SetupEventPhase.INVALIDATED.value
+        
+        # Select primary setup (highest quality ENTRY_READY or WAITING)
+        if setup_dict["phase"] in [SetupEventPhase.ENTRY_READY.value, SetupEventPhase.WAITING_FOR_RETEST.value]:
+            if not primary_setup or setup_dict["quality_score"] > primary_setup.get("quality_score", 0):
+                primary_setup = setup_dict
+    
+    # ===== 3. DETERMINE RECOMMENDED ACTION =====
+    recommended_action = "WAIT"
+    context_summary = ""
+    
+    if setups_ready > 0:
+        recommended_action = "ENTRY_NOW"
+        context_summary = f"ENTRY READY: {setups_ready} setup(s) con conferma 5M"
+    elif retest_in_progress:
+        recommended_action = "PREPARE_ENTRY"
+        context_summary = f"Retest in corso - distanza dalla zona: {retest_distance:.2f}%"
+    elif setups_detected > 0:
+        recommended_action = "MONITOR_SETUP"
+        context_summary = f"{setups_detected} setup rilevato/i - attendere retest"
+    else:
+        context_summary = f"Nessun setup attivo - Regime: {market_regime}, Bias: {market_bias}"
+    
+    # Calculate overall quality
+    overall_quality = primary_setup["quality_score"] if primary_setup else 0
+    
+    # Build response
+    fetch_time = int((datetime.now(timezone.utc) - fetch_start).total_seconds() * 1000)
+    
+    return SignalV3(
+        current_price=current_price,
+        market_regime=market_regime,
+        market_bias=market_bias,
+        bias_confidence=bias_confidence,
+        has_active_setup=primary_setup is not None,
+        active_setup=SetupEvent(**primary_setup) if primary_setup else None,
+        setups_detected_count=setups_detected,
+        setups_waiting_count=setups_waiting,
+        setups_ready_count=setups_ready,
+        candles_5m_loaded=candles_5m is not None and len(candles_5m) > 0,
+        last_5m_update=v3_5m_cache.get("last_update"),
+        retest_in_progress=retest_in_progress,
+        retest_zone_distance_percent=retest_distance,
+        overall_quality=overall_quality,
+        context_summary=context_summary,
+        recommended_action=recommended_action,
+        data_freshness={
+            "signal_generation_time_ms": fetch_time,
+            "5m_cache_age_s": (datetime.now(timezone.utc) - v3_5m_cache["last_update"]).seconds if v3_5m_cache.get("last_update") else None,
+            "4h_data": "from_main_cache"
+        }
     )
 
 
