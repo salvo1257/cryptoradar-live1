@@ -12,7 +12,8 @@ import {
   TradeSignalCard,
   MarketEnergyCard,
   LiquidityMagnetCard,
-  PriceMeasurementTool
+  PriceMeasurementTool,
+  V3SignalCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
 
@@ -34,18 +35,20 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 space-y-4" data-testid="dashboard-page">
-      {/* Trade Signal - Main Intelligence Card */}
+      {/* V2 vs V3 Signal Comparison Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TradeSignalCard />
-        {/* Main Chart */}
-        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-            <h2 className="font-heading font-semibold text-sm uppercase tracking-wider">BTC/USDT</h2>
-            <span className="text-xs text-zinc-500 font-mono">TradingView Chart</span>
-          </div>
-          <div className="p-2">
-            <TradingChart height={330} />
-          </div>
+        <V3SignalCard language={language} />
+      </div>
+
+      {/* Main Chart */}
+      <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+          <h2 className="font-heading font-semibold text-sm uppercase tracking-wider">BTC/USDT</h2>
+          <span className="text-xs text-zinc-500 font-mono">TradingView Chart</span>
+        </div>
+        <div className="p-2">
+          <TradingChart height={330} />
         </div>
       </div>
 

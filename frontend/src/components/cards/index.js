@@ -12,3 +12,4 @@ export { TradeSignalCard } from './TradeSignalCard';
 export { MarketEnergyCard } from './MarketEnergyCard';
 export { LiquidityMagnetCard } from './LiquidityMagnetCard';
 export { PriceMeasurementTool } from './PriceMeasurementTool';
+export { V3SignalCard } from './V3SignalCard';
