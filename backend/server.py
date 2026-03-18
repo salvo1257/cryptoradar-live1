@@ -5669,54 +5669,80 @@ def calculate_v3_targets(
     
     T1: Nearest liquidity level
     T2: Next major liquidity zone or structure level
+    
+    Ensures targets are in the correct direction:
+    - LONG: targets above entry price
+    - SHORT: targets below entry price
     """
     if direction == "LONG":
         # T1: Nearest resistance or liquidity level above
         t1 = entry_price * 1.005  # Default 0.5%
         t1_type = "percentage"
         
-        if resistances and len(resistances) > 0:
-            t1 = resistances[0].price
+        # Filter resistances to only those ABOVE entry price
+        valid_resistances = [r for r in resistances if r.price > entry_price] if resistances else []
+        
+        if valid_resistances and len(valid_resistances) > 0:
+            t1 = valid_resistances[0].price
             t1_type = "resistance"
         
-        if swing_high > entry_price and (t1_type == "percentage" or swing_high < t1):
-            t1 = swing_high
-            t1_type = "swing_high"
+        # Swing high is valid target only if above entry
+        if swing_high > entry_price:
+            # Use swing_high if it's closer to entry than current t1
+            if t1_type == "percentage" or swing_high < t1:
+                t1 = swing_high
+                t1_type = "swing_high"
         
         # T2: Next major level
         t2 = entry_price * 1.012  # Default 1.2%
         t2_type = "percentage"
         
-        if resistances and len(resistances) > 1:
-            t2 = resistances[1].price
+        if valid_resistances and len(valid_resistances) > 1:
+            t2 = valid_resistances[1].price
             t2_type = "resistance"
-        elif resistances and len(resistances) > 0:
-            t2 = resistances[0].price * 1.01
+        elif valid_resistances and len(valid_resistances) > 0:
+            t2 = valid_resistances[0].price * 1.01
             t2_type = "liquidity_extended"
+        
+        # Ensure T2 is above T1 for LONG
+        if t2 <= t1:
+            t2 = t1 * 1.01
+            t2_type = "percentage"
         
     else:  # SHORT
         # T1: Nearest support or liquidity level below
         t1 = entry_price * 0.995  # Default 0.5%
         t1_type = "percentage"
         
-        if supports and len(supports) > 0:
-            t1 = supports[0].price
+        # Filter supports to only those BELOW entry price
+        valid_supports = [s for s in supports if s.price < entry_price] if supports else []
+        
+        if valid_supports and len(valid_supports) > 0:
+            t1 = valid_supports[0].price
             t1_type = "support"
         
-        if swing_low < entry_price and (t1_type == "percentage" or swing_low > t1):
-            t1 = swing_low
-            t1_type = "swing_low"
+        # Swing low is valid target only if below entry
+        if swing_low < entry_price:
+            # Use swing_low if it's closer to entry than current t1
+            if t1_type == "percentage" or swing_low > t1:
+                t1 = swing_low
+                t1_type = "swing_low"
         
         # T2: Next major level
         t2 = entry_price * 0.988  # Default 1.2%
         t2_type = "percentage"
         
-        if supports and len(supports) > 1:
-            t2 = supports[1].price
+        if valid_supports and len(valid_supports) > 1:
+            t2 = valid_supports[1].price
             t2_type = "support"
-        elif supports and len(supports) > 0:
-            t2 = supports[0].price * 0.99
+        elif valid_supports and len(valid_supports) > 0:
+            t2 = valid_supports[0].price * 0.99
             t2_type = "liquidity_extended"
+        
+        # Ensure T2 is below T1 for SHORT
+        if t2 >= t1:
+            t2 = t1 * 0.99
+            t2_type = "percentage"
     
     return {
         "target_1": round(t1, 2),

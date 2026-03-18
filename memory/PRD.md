@@ -1,5 +1,100 @@
-# CryptoRadar v2.9.1 - Product Requirements Document
-**Last Updated:** 2025-12-17
+# CryptoRadar v3.0.0 - Product Requirements Document
+**Last Updated:** 2026-03-18
+
+## ✅ NEW: V3 Multi-Timeframe Signal Engine (2026-03-18)
+
+### V3 Engine Overview
+The V3 Signal Engine is a professional multi-timeframe (MTF) trading architecture:
+- **4H Timeframe (Context):** Market regime detection, structure/event detection
+- **5M Timeframe (Execution):** Entry confirmation patterns
+
+### V3 Architecture
+```
+4H Context → Event Detection → Wait for Retest → 5M Confirmation → Entry Signal
+     │              │                │                  │              │
+  Regime    Breakout/Sweep    Price approaches    Rejection/         ENTRY_READY
+ Detection       detected          zone         Stabilization/
+                                                Micro-break
+```
+
+### V3 Event Types
+| Event Type | Direction | Trigger |
+|------------|-----------|---------|
+| resistance_breakout | LONG | Price closes above structural resistance |
+| support_breakout | SHORT | Price closes below structural support |
+| liquidity_sweep_high | SHORT | Price spikes above swing high, closes back inside |
+| liquidity_sweep_low | LONG | Price spikes below swing low, closes back inside |
+| trend_continuation | LONG/SHORT | Strong momentum candle in trend direction |
+
+### V3 Setup Phases
+| Phase | Description | Next Step |
+|-------|-------------|-----------|
+| SETUP_DETECTED | 4H event detected | Wait for price to approach zone |
+| WAITING_FOR_RETEST | Price near/in zone | Monitor 5M for confirmation |
+| ENTRY_READY | 5M confirmation received | Execute trade |
+| EXECUTED | Trade taken | Track outcome |
+| EXPIRED | 8h timeout | Setup removed |
+| INVALIDATED | Price moved >2% from zone | Setup removed |
+
+### V3 5M Confirmation Patterns
+| Pattern | Description |
+|---------|-------------|
+| rejection_candle | Wick > body (bullish/bearish rejection) |
+| stabilization | 2-3 candles in zone with compression |
+| micro_structure_break | Break of 5M swing high/low within zone |
+
+### V3 Stop Loss (Structure-Based)
+- **LONG:** Below swing low or sweep level (whichever is lower)
+- **SHORT:** Above swing high or sweep level (whichever is higher)
+- Buffer: 0.1% - 0.25% adaptive based on volatility
+
+### V3 Targets (Liquidity-Based)
+- **T1:** Nearest valid S/R or swing level in trade direction
+- **T2:** Next major liquidity zone
+- Validates targets are in correct direction (above entry for LONG, below for SHORT)
+
+### V3 API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v3/trade-signal` | GET | Main V3 signal with context and active setup |
+| `/api/v3/active-setups` | GET | List all active setups with phases |
+| `/api/v3/expire-setup/{id}` | POST | Manually expire a setup |
+| `/api/v3/clear-setups` | DELETE | Clear all setups (testing) |
+
+### V3 Response Fields
+```json
+{
+  "engine_version": "v3",
+  "current_price": 74000.00,
+  "market_regime": "COMPRESSION",
+  "market_bias": "BEARISH",
+  "bias_confidence": 78.6,
+  "has_active_setup": true,
+  "recommended_action": "PREPARE_ENTRY",
+  "setups_detected_count": 1,
+  "setups_waiting_count": 0,
+  "setups_ready_count": 0,
+  "context_summary": "Retest in corso - distanza dalla zona: 0.57%",
+  "active_setup": { ... },
+  "market_regime_details": { ... },
+  "whale_context": { ... },
+  "liquidity_context": { ... },
+  "energy_context": { ... }
+}
+```
+
+### V3 S/R Detection Logic (User Requirement)
+1. **Primary:** Swing high/low from recent candles (structural levels)
+2. **Secondary:** Volume/liquidity reinforcement (orderbook walls, liquidity clusters)
+3. Structure remains the **primary reference**, volume/liquidity strengthens the level
+
+### V3 Configuration
+- `V3_SETUP_VALIDITY_HOURS = 8` (2 x 4H candles)
+- `V3_5M_CACHE_TTL = 30` seconds
+- `V3_STOP_BUFFER_MIN = 0.1%`
+- `V3_STOP_BUFFER_MAX = 0.25%`
+
+---
 
 ## ✅ DEPLOYED: CryptoRadar v2.9.2 (2025-12-17)
 
