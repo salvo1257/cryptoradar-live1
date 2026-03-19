@@ -1,6 +1,62 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-03-19
 
+## ✅ FIX: Signal History Statistics Consistency (2026-03-19)
+
+### Problem Identified
+- Dashboard showed 1426+ total signals but only 31 had outcomes
+- Signals created without `outcome` field (NULL instead of "PENDING")
+- Performance stats based on incomplete data subset
+
+### Root Cause
+- Legacy signals saved without `outcome` field
+- Outcome engine only processed signals with `outcome: "PENDING"`
+- NULL outcomes were ignored, creating data inconsistency
+
+### Fixes Applied
+
+#### 1. New Endpoint: `/api/signal-history/fix-missing-outcomes`
+Fixes signals with missing outcomes:
+- NO TRADE signals → `outcome: "NO_TRADE"`
+- Recent LONG/SHORT (<24h) → `outcome: "PENDING"`
+- Old LONG/SHORT (>24h) → `outcome: "EXPIRED"`
+
+#### 2. Data Health Diagnostics
+Added to `/api/signal-history/statistics` response:
+```json
+"data_health": {
+  "total_signals": 221,
+  "tradeable_signals": 142,
+  "signals_with_outcome": 142,
+  "signals_missing_outcome": 0,
+  "outcome_coverage_percent": 100.0,
+  "pending_analysis": 0,
+  "analyzed_signals": 142
+}
+```
+
+#### 3. UI Data Health Indicator
+- Shows "Segnali Tradabili" vs "Analizzati"
+- Badge showing "100% Copertura" (green) or warning (yellow/red)
+- Tooltip explaining missing outcome count
+
+### Results After Fix
+| Metric | Before | After |
+|--------|--------|-------|
+| Tradeable Signals | 142 | 142 |
+| Signals with Outcome | 31 | 142 |
+| Missing Outcomes | 111 | 0 |
+| Coverage | 21.8% | **100%** |
+
+### Statistics Breakdown (Correct)
+- 2 WIN
+- 3 PARTIAL_WIN
+- 7 LOSS
+- 130 EXPIRED
+- 0 PENDING
+
+---
+
 ## ✅ NEW: V3 Telegram Alerts (2026-03-19)
 
 ### Overview

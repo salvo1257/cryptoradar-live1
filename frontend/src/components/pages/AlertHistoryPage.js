@@ -370,6 +370,54 @@ export function AlertHistoryPage() {
               <div className="text-zinc-500">PENDING</div>
             </div>
           </div>
+          
+          {/* Data Health Indicator */}
+          {performanceStats.data_health && (
+            <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-4">
+                <span className="text-zinc-500">
+                  {language === 'it' ? 'Segnali Tradabili' : 'Tradeable Signals'}: 
+                  <span className="text-zinc-300 ml-1 font-mono">{performanceStats.data_health?.tradeable_signals || 0}</span>
+                </span>
+                <span className="text-zinc-500">
+                  {language === 'it' ? 'Analizzati' : 'Analyzed'}: 
+                  <span className="text-zinc-300 ml-1 font-mono">{performanceStats.data_health?.analyzed_signals || 0}</span>
+                </span>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge 
+                      className={cn(
+                        "text-[10px]",
+                        performanceStats.data_health?.outcome_coverage_percent === 100 
+                          ? "bg-bullish/20 text-bullish border-bullish/30" 
+                          : performanceStats.data_health?.outcome_coverage_percent >= 90
+                            ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                            : "bg-bearish/20 text-bearish border-bearish/30"
+                      )}
+                    >
+                      <BadgeCheck className="w-3 h-3 mr-1" />
+                      {performanceStats.data_health?.outcome_coverage_percent || 0}% {language === 'it' ? 'Copertura' : 'Coverage'}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-crypto-surface border-crypto-border">
+                    <div className="text-xs">
+                      {performanceStats.data_health?.signals_missing_outcome > 0 ? (
+                        <span className="text-yellow-400">
+                          {performanceStats.data_health?.signals_missing_outcome} {language === 'it' ? 'segnali senza outcome' : 'signals missing outcome'}
+                        </span>
+                      ) : (
+                        <span className="text-bullish">
+                          {language === 'it' ? 'Tutti i segnali hanno outcome' : 'All signals have outcome'}
+                        </span>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
         </div>
       )}
       

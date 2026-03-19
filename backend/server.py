@@ -10986,6 +10986,75 @@ async def migrate_signal_outcomes():
         return {"error": str(e)}
 
 
+@api_router.post("/signal-history/fix-missing-outcomes")
+async def fix_missing_outcomes():
+    """
+    Fix signals with missing outcome field.
+    
+    This function:
+    1. Sets "NO_TRADE" outcome for NO TRADE direction signals
+    2. Sets "PENDING" outcome for recent LONG/SHORT signals (< 24h old)
+    3. Sets "EXPIRED" outcome for older LONG/SHORT signals (> 24h old)
+    4. Also fixes signals with empty string outcome
+    
+    Returns count of fixed signals by category.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff_24h = now - timedelta(hours=24)
+        
+        # 1. Fix NO TRADE signals (null or empty outcome)
+        no_trade_null = await signal_history_collection.update_many(
+            {
+                "direction": "NO TRADE",
+                "$or": [
+                    {"outcome": {"$exists": False}},
+                    {"outcome": None},
+                    {"outcome": ""}
+                ]
+            },
+            {"$set": {"outcome": "NO_TRADE"}}
+        )
+        
+        # 2. Fix recent LONG/SHORT signals (< 24h) - set to PENDING
+        recent_pending = await signal_history_collection.update_many(
+            {
+                "direction": {"$in": ["LONG", "SHORT"]},
+                "timestamp": {"$gte": cutoff_24h},
+                "$or": [
+                    {"outcome": {"$exists": False}},
+                    {"outcome": None},
+                    {"outcome": ""}
+                ]
+            },
+            {"$set": {"outcome": "PENDING", "outcome_notes": "Fixed from missing outcome"}}
+        )
+        
+        # 3. Fix old LONG/SHORT signals (> 24h) - set to EXPIRED
+        old_expired = await signal_history_collection.update_many(
+            {
+                "direction": {"$in": ["LONG", "SHORT"]},
+                "timestamp": {"$lt": cutoff_24h},
+                "$or": [
+                    {"outcome": {"$exists": False}},
+                    {"outcome": None},
+                    {"outcome": ""}
+                ]
+            },
+            {"$set": {"outcome": "EXPIRED", "outcome_notes": "Fixed from missing outcome - expired due to age"}}
+        )
+        
+        return {
+            "fixed_no_trade": no_trade_null.modified_count,
+            "fixed_recent_to_pending": recent_pending.modified_count,
+            "fixed_old_to_expired": old_expired.modified_count,
+            "total_fixed": no_trade_null.modified_count + recent_pending.modified_count + old_expired.modified_count
+        }
+    except Exception as e:
+        logger.error(f"Error fixing missing outcomes: {e}")
+        return {"error": str(e)}
+
+
 @api_router.post("/signal-history/recalculate-with-ohlc")
 async def recalculate_outcomes_with_ohlc(limit: int = Query(default=50, description="Max signals to recalculate")):
     """
@@ -11484,7 +11553,18 @@ async def get_signal_statistics():
             },
             
             "by_setup_type": setup_performance,
-            "by_market_condition": condition_performance
+            "by_market_condition": condition_performance,
+            
+            # Data health diagnostics
+            "data_health": {
+                "total_signals": total_signals,
+                "tradeable_signals": total_long + total_short,
+                "signals_with_outcome": tradeable_closed + pending,
+                "signals_missing_outcome": (total_long + total_short) - (tradeable_closed + pending),
+                "outcome_coverage_percent": round(((tradeable_closed + pending) / (total_long + total_short) * 100) if (total_long + total_short) > 0 else 0, 1),
+                "pending_analysis": pending,
+                "analyzed_signals": tradeable_closed
+            }
         }
         
     except Exception as e:
