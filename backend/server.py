@@ -651,6 +651,8 @@ class Settings(BaseModel):
     notify_operational_signals: bool = True  # When signal becomes OPERATIONAL
     notify_signal_invalidations: bool = True  # When signal is invalidated
     notify_signal_outcomes: bool = True  # WIN/LOSS/PARTIAL_WIN/EXPIRED
+    # V3 Multi-Timeframe notifications
+    notify_v3_entry_ready: bool = True  # When V3 signal reaches ENTRY_READY (high quality only)
 
 class TelegramMessage(BaseModel):
     message: str
@@ -985,8 +987,99 @@ Signal abgelaufen ohne Ziele oder Stop zu erreichen.
 
 Sygnał wygasł bez trafienia celów lub stopu.
 #CryptoRadar #Wygasł #BTC"""
+    },
+    
+    # V3 ENTRY_READY Template - High-quality alerts only
+    "v3_entry_ready": {
+        "en": """🎯 <b>V3 ENTRY READY</b>
+
+{direction_emoji} Direction: <b>{direction}</b>
+💰 Price: ${price:,.0f}
+
+📍 Entry Zone: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
+🎯 Target 1: ${target_1:,.0f}
+🎯 Target 2: ${target_2:,.0f}
+
+📊 Confidence: {confidence:.0f}%
+⚠️ Risk: {risk_level}
+⚖️ R:R: {rr:.2f}:1
+📈 Quality: {quality}/100
+
+⚡ Setup: {setup_type}
+🔄 Regime: {regime}
+✅ 5M Confirmation: {confirmation}
+
+#CryptoRadar #V3 #{direction}""",
+        
+        "it": """🎯 <b>V3 ENTRY PRONTO</b>
+
+{direction_emoji} Direzione: <b>{direction}</b>
+💰 Prezzo: ${price:,.0f}
+
+📍 Zona Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
+🎯 Target 1: ${target_1:,.0f}
+🎯 Target 2: ${target_2:,.0f}
+
+📊 Confidenza: {confidence:.0f}%
+⚠️ Rischio: {risk_level}
+⚖️ R:R: {rr:.2f}:1
+📈 Qualità: {quality}/100
+
+⚡ Setup: {setup_type}
+🔄 Regime: {regime}
+✅ Conferma 5M: {confirmation}
+
+#CryptoRadar #V3 #{direction}""",
+        
+        "de": """🎯 <b>V3 EINSTIEG BEREIT</b>
+
+{direction_emoji} Richtung: <b>{direction}</b>
+💰 Preis: ${price:,.0f}
+
+📍 Einstiegszone: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
+🎯 Ziel 1: ${target_1:,.0f}
+🎯 Ziel 2: ${target_2:,.0f}
+
+📊 Konfidenz: {confidence:.0f}%
+⚠️ Risiko: {risk_level}
+⚖️ R:R: {rr:.2f}:1
+📈 Qualität: {quality}/100
+
+⚡ Setup: {setup_type}
+🔄 Regime: {regime}
+✅ 5M Bestätigung: {confirmation}
+
+#CryptoRadar #V3 #{direction}""",
+
+        "pl": """🎯 <b>V3 GOTOWY DO WEJŚCIA</b>
+
+{direction_emoji} Kierunek: <b>{direction}</b>
+💰 Cena: ${price:,.0f}
+
+📍 Strefa Wejścia: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
+🎯 Cel 1: ${target_1:,.0f}
+🎯 Cel 2: ${target_2:,.0f}
+
+📊 Pewność: {confidence:.0f}%
+⚠️ Ryzyko: {risk_level}
+⚖️ R:R: {rr:.2f}:1
+📈 Jakość: {quality}/100
+
+⚡ Setup: {setup_type}
+🔄 Regime: {regime}
+✅ Potwierdzenie 5M: {confirmation}
+
+#CryptoRadar #V3 #{direction}"""
     }
 }
+
+
+# V3 Alert Deduplication Tracking
+v3_alerts_sent = {}  # {setup_id: timestamp}
 
 
 async def get_telegram_settings():
@@ -1043,7 +1136,8 @@ async def send_telegram_notification(template_key: str, data: dict, force_lang: 
             "outcome_win": "notify_signal_outcomes",
             "outcome_partial_win": "notify_signal_outcomes",
             "outcome_loss": "notify_signal_outcomes",
-            "outcome_expired": "notify_signal_outcomes"
+            "outcome_expired": "notify_signal_outcomes",
+            "v3_entry_ready": "notify_v3_entry_ready"
         }
         
         setting_key = notification_type_map.get(template_key)
@@ -1176,6 +1270,124 @@ async def notify_signal_outcome(outcome_data: dict):
         
     except Exception as e:
         logger.error(f"Error sending outcome notification: {e}")
+        return False
+
+
+async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> bool:
+    """
+    Send Telegram alert for V3 ENTRY_READY signal.
+    
+    ONLY sends alerts when:
+    - V3 signal phase = ENTRY_READY
+    - Setup has not already been alerted (deduplication)
+    
+    Does NOT send alerts for:
+    - NO_TRADE, WATCH, SETUP_DETECTED, WAITING_FOR_RETEST
+    
+    Args:
+        setup_data: V3 setup dictionary with all signal details
+        current_price: Current BTC price
+        
+    Returns:
+        True if alert sent successfully, False otherwise
+    """
+    global v3_alerts_sent
+    
+    try:
+        setup_id = setup_data.get("setup_id")
+        phase = setup_data.get("phase")
+        
+        # CRITICAL: Only send for ENTRY_READY phase
+        if phase != "ENTRY_READY":
+            logger.debug(f"[V3 Alert] Skipping - phase is {phase}, not ENTRY_READY")
+            return False
+        
+        # Check if V3 notifications are enabled in settings
+        tg_settings = await get_telegram_settings()
+        if tg_settings and not tg_settings.get("notify_v3_entry_ready", True):
+            logger.debug("[V3 Alert] Skipping - V3 notifications disabled in settings")
+            return False
+        
+        # Deduplication: Check if already alerted for this setup
+        if setup_id and setup_id in v3_alerts_sent:
+            time_since_alert = (datetime.now(timezone.utc) - v3_alerts_sent[setup_id]).seconds
+            if time_since_alert < 3600:  # Don't repeat within 1 hour
+                logger.debug(f"[V3 Alert] Skipping - already sent for setup {setup_id[:8]} ({time_since_alert}s ago)")
+                return False
+        
+        direction = setup_data.get("direction", "")
+        if direction not in ["LONG", "SHORT"]:
+            logger.debug(f"[V3 Alert] Skipping - invalid direction: {direction}")
+            return False
+        
+        # Calculate risk level based on quality score and R:R
+        quality = setup_data.get("quality_score", 50)
+        rr = setup_data.get("risk_reward_ratio", 1.0)
+        
+        if quality >= 80 and rr >= 1.5:
+            risk_level = "LOW"
+        elif quality >= 60 and rr >= 1.2:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "HIGH"
+        
+        # Format confirmation type
+        confirmation = setup_data.get("confirmation_type", "unknown")
+        confirmation_labels = {
+            "rejection_candle": "Rejection Candle",
+            "stabilization": "Stabilization",
+            "micro_structure_break": "Micro-Break"
+        }
+        confirmation_display = confirmation_labels.get(confirmation, confirmation.replace("_", " ").title())
+        
+        # Format setup type
+        event_type = setup_data.get("event_type", "unknown")
+        setup_labels = {
+            "resistance_breakout": "Resistance Breakout",
+            "support_breakout": "Support Breakout",
+            "liquidity_sweep_high": "Sweep High",
+            "liquidity_sweep_low": "Sweep Low",
+            "trend_continuation": "Trend Continuation"
+        }
+        setup_display = setup_labels.get(event_type, event_type.replace("_", " ").title())
+        
+        # Prepare data for template
+        data = {
+            "direction": direction,
+            "direction_emoji": "📈" if direction == "LONG" else "📉",
+            "price": current_price or setup_data.get("entry_price", 0),
+            "entry_low": setup_data.get("zone_low", 0),
+            "entry_high": setup_data.get("zone_high", 0),
+            "stop_loss": setup_data.get("stop_loss", 0),
+            "stop_type": setup_data.get("stop_type", "structure").title(),
+            "target_1": setup_data.get("target_1", 0),
+            "target_2": setup_data.get("target_2", 0),
+            "confidence": setup_data.get("confidence", quality),  # Use quality as confidence proxy
+            "risk_level": risk_level,
+            "rr": rr,
+            "quality": quality,
+            "setup_type": setup_display,
+            "regime": setup_data.get("market_regime", "UNKNOWN"),
+            "confirmation": confirmation_display
+        }
+        
+        # Send notification
+        success = await send_telegram_notification("v3_entry_ready", data)
+        
+        if success and setup_id:
+            # Track successful send for deduplication
+            v3_alerts_sent[setup_id] = datetime.now(timezone.utc)
+            logger.info(f"[V3 Alert] ENTRY_READY alert sent for setup {setup_id[:8]} - {direction}")
+            
+            # Cleanup old entries (keep only last 50)
+            if len(v3_alerts_sent) > 50:
+                sorted_alerts = sorted(v3_alerts_sent.items(), key=lambda x: x[1], reverse=True)
+                v3_alerts_sent = dict(sorted_alerts[:50])
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"[V3 Alert] Error sending alert: {e}")
         return False
 
 
@@ -6048,6 +6260,10 @@ async def process_v3_signal(
                     setup_dict["confirmation_type"] = confirmation["type"]
                     setup_dict["confirmation_details"] = confirmation.get("details")
                     setups_ready += 1
+                    
+                    # Send V3 ENTRY_READY Telegram alert
+                    setup_dict["market_regime"] = market_regime
+                    asyncio.create_task(send_v3_entry_alert(setup_dict, current_price))
             
             # Check for invalidation (price moved too far from zone)
             if abs(distance_percent) > 2.0:  # More than 2% from zone
@@ -11943,6 +12159,79 @@ async def test_telegram(message: TelegramMessage):
                 raise HTTPException(status_code=400, detail="Failed to send message")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/telegram/test-v3-alert")
+async def test_v3_telegram_alert():
+    """
+    Test V3 ENTRY_READY Telegram alert with sample data.
+    Useful for verifying Telegram setup is working correctly.
+    """
+    # Sample V3 ENTRY_READY data
+    sample_setup = {
+        "setup_id": "test-" + str(uuid.uuid4())[:8],
+        "phase": "ENTRY_READY",
+        "direction": "LONG",
+        "event_type": "liquidity_sweep_low",
+        "zone_low": 73500,
+        "zone_high": 74000,
+        "stop_loss": 73000,
+        "stop_type": "swing_low",
+        "target_1": 75500,
+        "target_2": 77000,
+        "quality_score": 82,
+        "risk_reward_ratio": 2.1,
+        "confirmation_type": "rejection_candle",
+        "market_regime": "TREND",
+        "confidence": 82
+    }
+    
+    current_price = 73800  # Sample price
+    
+    # Temporarily bypass deduplication for test
+    global v3_alerts_sent
+    test_id = sample_setup["setup_id"]
+    if test_id in v3_alerts_sent:
+        del v3_alerts_sent[test_id]
+    
+    success = await send_v3_entry_alert(sample_setup, current_price)
+    
+    if success:
+        return {"success": True, "message": "V3 test alert sent successfully"}
+    else:
+        # Check if Telegram is configured
+        tg_settings = await get_telegram_settings()
+        if not tg_settings or not tg_settings.get("enabled"):
+            raise HTTPException(status_code=400, detail="Telegram not enabled. Enable in Settings first.")
+        if not tg_settings.get("bot_token") or not tg_settings.get("chat_id"):
+            raise HTTPException(status_code=400, detail="Telegram bot_token or chat_id not configured")
+        raise HTTPException(status_code=500, detail="Failed to send V3 alert")
+
+
+@api_router.get("/telegram/v3-alerts-status")
+async def get_v3_alerts_status():
+    """
+    Get status of V3 alert system.
+    Shows recent alerts sent and deduplication tracking.
+    """
+    global v3_alerts_sent
+    
+    tg_settings = await get_telegram_settings()
+    
+    return {
+        "telegram_enabled": tg_settings.get("enabled", False) if tg_settings else False,
+        "telegram_configured": bool(tg_settings and tg_settings.get("bot_token") and tg_settings.get("chat_id")),
+        "alerts_sent_count": len(v3_alerts_sent),
+        "recent_alerts": [
+            {
+                "setup_id": sid[:8] + "...",
+                "sent_at": ts.isoformat()
+            } 
+            for sid, ts in sorted(v3_alerts_sent.items(), key=lambda x: x[1], reverse=True)[:5]
+        ],
+        "alert_triggers": ["V3 ENTRY_READY only"],
+        "deduplication": "1 hour cooldown per setup"
+    }
 
 # ============== WEBSOCKET FOR REAL-TIME PRICE ==============
 

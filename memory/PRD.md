@@ -1,5 +1,60 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-03-18
+**Last Updated:** 2026-03-19
+
+## ✅ NEW: V3 Telegram Alerts (2026-03-19)
+
+### Overview
+High-quality Telegram alerts for V3 ENTRY_READY signals only.
+
+### Alert Triggers
+| Phase | Alert? | Reason |
+|-------|--------|--------|
+| NO_TRADE | NO | Bad conditions |
+| WATCH | NO | Not actionable |
+| SETUP_DETECTED | NO | Just detected, no confirmation |
+| WAITING_FOR_RETEST | NO | Still waiting |
+| **ENTRY_READY** | **YES** | 5M confirmation received |
+
+### Message Format
+```
+Direction (LONG/SHORT)
+Price
+Entry zone
+Stop loss (structure type)
+Target 1 & 2
+Confidence %
+Risk level (LOW/MEDIUM/HIGH)
+Quality score
+Setup type
+Market regime
+5M Confirmation type
+```
+
+### Deduplication
+- 1 hour cooldown per setup_id
+- Tracks last 50 alerts
+- Won't repeat same setup within cooldown
+
+### Risk Level Calculation
+| Quality | R:R | Risk Level |
+|---------|-----|------------|
+| ≥80 | ≥1.5 | LOW |
+| ≥60 | ≥1.2 | MEDIUM |
+| <60 or <1.2 | - | HIGH |
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/telegram/test-v3-alert` | POST | Test V3 alert with sample data |
+| `/api/telegram/v3-alerts-status` | GET | Check alert system status |
+
+### Configuration
+Settings → `notify_v3_entry_ready: true` (default)
+
+### Languages Supported
+IT, EN, DE, PL (auto-detected from settings)
+
+---
 
 ## ✅ NEW: V3 Signal Card UI (2026-03-18)
 
