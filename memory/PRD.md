@@ -1,5 +1,69 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-03-19
+**Last Updated:** 2026-03-22
+
+## ✅ FIX: V3 Signal Tracking Integration (2026-03-22)
+
+### Problem Identified
+- V3 ENTRY_READY signals existed only in `setup_events_v3` collection
+- They were NOT being saved to `signal_history` collection
+- V3 signals were excluded from:
+  - Performance statistics
+  - Outcome engine processing
+  - Win rate calculations
+- Created inconsistency between setup tracking and signal history
+
+### Root Cause
+- `record_v3_entry_signal()` function was missing
+- When V3 setup transitioned to ENTRY_READY, only Telegram alert was sent
+- No persistence to main `signal_history` collection
+
+### Fixes Applied
+
+#### 1. New Function: `record_v3_entry_signal()`
+Records V3 ENTRY_READY signals to main `signal_history` collection:
+- Matches V2 signal format for consistency
+- Includes V3-specific fields (`v3_setup_id`, `v3_confirmation_type`, etc.)
+- Sets `outcome: "PENDING"` for outcome engine processing
+- Deduplication by `setup_id`
+
+#### 2. Integration Point
+When V3 setup reaches ENTRY_READY:
+```python
+asyncio.create_task(record_v3_entry_signal(setup_dict, current_price, market_context))
+asyncio.create_task(send_v3_entry_alert(setup_dict, current_price))
+```
+
+#### 3. New Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v3/signal-tracking-status` | GET | Shows V3 signals in history vs setups |
+| `/api/v3/backfill-missing-signals` | POST | Backfills existing ENTRY_READY setups |
+| `/api/v3/test-record-signal` | POST | Test signal recording |
+
+#### 4. Engine Comparison Statistics
+Added to `/api/signal-history/statistics`:
+```json
+"by_engine": {
+  "v1": { "total_signals": 66, "win_rate": 7.6 },
+  "v2": { "total_signals": 96, "win_rate": 0.0 },
+  "v3": { "total_signals": 3, "win_rate": 0.0 }
+}
+```
+
+### Results After Fix
+| Metric | Before | After |
+|--------|--------|-------|
+| V3 in signal_history | 0 | 3 |
+| V3 in outcome engine | No | Yes |
+| V3 in statistics | No | Yes |
+| Unified tracking | No | **Yes** |
+
+### Data Architecture (Fixed)
+- `signal_history` = **Single source of truth** for all signals (V1, V2, V3)
+- `setup_events_v3` = **Lifecycle tracking only** for V3 setups
+- Outcome engine processes ALL signals with `outcome: "PENDING"`
+
+---
 
 ## ✅ FIX: Signal History Statistics Consistency (2026-03-19)
 

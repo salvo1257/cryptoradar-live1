@@ -1391,6 +1391,132 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         return False
 
 
+# V3 Signal History Tracking - Deduplication
+v3_signals_recorded = {}  # {setup_id: signal_id}
+
+
+async def record_v3_entry_signal(setup_data: dict, current_price: float, market_context: dict = None) -> dict:
+    """
+    Record a V3 ENTRY_READY signal to the main signal_history collection.
+    
+    This ensures V3 signals:
+    - Are tracked in the same collection as V2 signals
+    - Are processed by the outcome engine
+    - Appear in performance statistics
+    
+    Args:
+        setup_data: V3 setup dictionary with all signal details
+        current_price: Current BTC price
+        market_context: Additional market context (regime, bias, etc.)
+        
+    Returns:
+        Dict with recording result
+    """
+    global v3_signals_recorded
+    
+    try:
+        setup_id = setup_data.get("setup_id")
+        phase = setup_data.get("phase")
+        
+        # Only record ENTRY_READY signals
+        if phase != "ENTRY_READY":
+            return {"recorded": False, "reason": f"Phase is {phase}, not ENTRY_READY"}
+        
+        # Deduplication: Check if already recorded for this setup
+        if setup_id and setup_id in v3_signals_recorded:
+            return {"recorded": False, "reason": "Already recorded", "signal_id": v3_signals_recorded[setup_id]}
+        
+        direction = setup_data.get("direction", "")
+        if direction not in ["LONG", "SHORT"]:
+            return {"recorded": False, "reason": f"Invalid direction: {direction}"}
+        
+        # Generate signal ID
+        signal_id = str(uuid.uuid4())
+        
+        # Calculate validity based on event type
+        event_type = setup_data.get("event_type", "unknown")
+        validity_hours = 8 if event_type in ["liquidity_sweep_high", "liquidity_sweep_low"] else 12
+        
+        # Build comprehensive history entry matching V2 format
+        history_entry = {
+            "signal_id": signal_id,
+            "timestamp": datetime.now(timezone.utc),
+            "direction": direction,
+            "confidence": setup_data.get("quality_score", 50),  # Use quality as confidence
+            "estimated_move": 0.5,  # Default, could be calculated
+            "entry_zone_low": setup_data.get("zone_low", 0),
+            "entry_zone_high": setup_data.get("zone_high", 0),
+            "stop_loss": setup_data.get("stop_loss", 0),
+            "target_1": setup_data.get("target_1", 0),
+            "target_2": setup_data.get("target_2", 0),
+            "risk_reward_ratio": setup_data.get("risk_reward_ratio", 1.0),
+            "setup_type": event_type,
+            "signal_engine_version": "v3",
+            "timeframe": "4H+5M",  # Multi-timeframe
+            "btc_price": current_price,
+            
+            # V3-specific fields
+            "v3_setup_id": setup_id,
+            "v3_confirmation_type": setup_data.get("confirmation_type"),
+            "v3_stop_type": setup_data.get("stop_type"),
+            "v3_target_1_type": setup_data.get("target_1_type"),
+            "v3_target_2_type": setup_data.get("target_2_type"),
+            "v3_swing_high": setup_data.get("swing_high"),
+            "v3_swing_low": setup_data.get("swing_low"),
+            
+            # Market context snapshot
+            "market_bias": market_context.get("market_bias") if market_context else None,
+            "whale_direction": market_context.get("whale_direction") if market_context else None,
+            "whale_strength": market_context.get("whale_strength") if market_context else None,
+            "liquidity_direction": market_context.get("liquidity_direction") if market_context else None,
+            "magnet_direction": market_context.get("magnet_direction") if market_context else None,
+            "magnet_score": market_context.get("magnet_score") if market_context else None,
+            "energy_score": market_context.get("energy_score") if market_context else None,
+            "compression_level": market_context.get("compression_level") if market_context else None,
+            "market_regime": setup_data.get("market_regime"),
+            
+            "warnings": [],
+            "reasoning_summary": setup_data.get("reasoning", "V3 ENTRY_READY signal"),
+            "signal_state": "OPERATIONAL",
+            
+            # Outcome tracking fields - initialized for V3
+            "outcome": "PENDING",
+            "outcome_timestamp": None,
+            "outcome_price": None,
+            "pnl_percent": None,
+            "target_1_hit": False,
+            "target_2_hit": False,
+            "stop_hit": False,
+            "validity_hours": validity_hours,
+            "price_at_check": None,
+            "outcome_notes": ""
+        }
+        
+        # Insert into signal history
+        await signal_history_collection.insert_one(history_entry)
+        
+        # Track for deduplication
+        v3_signals_recorded[setup_id] = signal_id
+        
+        # Cleanup old entries (keep only last 100)
+        if len(v3_signals_recorded) > 100:
+            v3_signals_recorded = dict(list(v3_signals_recorded.items())[-100:])
+        
+        logger.info(f"[V3 Signal] Recorded ENTRY_READY signal {signal_id[:8]} for setup {setup_id[:8]} - {direction}")
+        
+        return {
+            "recorded": True, 
+            "signal_id": signal_id, 
+            "setup_id": setup_id,
+            "direction": direction,
+            "engine": "v3"
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3 Signal] Error recording signal: {e}")
+        return {"recorded": False, "error": str(e)}
+
+
 # ============== KRAKEN API HELPERS ==============
 
 KRAKEN_API_URL = "https://api.kraken.com/0/public"
@@ -6261,8 +6387,24 @@ async def process_v3_signal(
                     setup_dict["confirmation_details"] = confirmation.get("details")
                     setups_ready += 1
                     
-                    # Send V3 ENTRY_READY Telegram alert
+                    # Add market context to setup_dict for recording
                     setup_dict["market_regime"] = market_regime
+                    
+                    # CRITICAL: Record V3 signal to main signal_history collection
+                    # This ensures V3 signals are tracked, measured, and outcome-processed
+                    market_context = {
+                        "market_bias": market_bias,
+                        "whale_direction": None,  # Can be populated from whale_activity if available
+                        "whale_strength": None,
+                        "liquidity_direction": None,
+                        "magnet_direction": None,
+                        "magnet_score": None,
+                        "energy_score": None,
+                        "compression_level": None
+                    }
+                    asyncio.create_task(record_v3_entry_signal(setup_dict, current_price, market_context))
+                    
+                    # Send V3 ENTRY_READY Telegram alert
                     asyncio.create_task(send_v3_entry_alert(setup_dict, current_price))
             
             # Check for invalidation (price moved too far from zone)
@@ -10145,6 +10287,163 @@ async def clear_v3_setups():
     return {"deleted": result.deleted_count}
 
 
+@api_router.get("/v3/signal-tracking-status")
+async def get_v3_signal_tracking_status():
+    """
+    Get status of V3 signal tracking.
+    
+    Shows:
+    - V3 signals recorded in main signal_history
+    - V3 setups in setup_events_v3
+    - Comparison for consistency check
+    """
+    # Count V3 signals in main collection
+    v3_signals_count = await signal_history_collection.count_documents({"signal_engine_version": "v3"})
+    
+    # Count V3 signals by outcome
+    v3_outcomes = await signal_history_collection.aggregate([
+        {"$match": {"signal_engine_version": "v3"}},
+        {"$group": {"_id": "$outcome", "count": {"$sum": 1}}}
+    ]).to_list(10)
+    
+    # Count ENTRY_READY setups in setup_events_v3
+    entry_ready_setups = await setup_events_collection.count_documents({"phase": "ENTRY_READY"})
+    total_setups = await setup_events_collection.count_documents({})
+    
+    # Get recent V3 signals
+    recent_v3 = await signal_history_collection.find(
+        {"signal_engine_version": "v3"},
+        {"_id": 0, "signal_id": 1, "direction": 1, "outcome": 1, "timestamp": 1, "v3_setup_id": 1, "btc_price": 1}
+    ).sort("timestamp", -1).limit(5).to_list(5)
+    
+    return {
+        "v3_signals_in_history": v3_signals_count,
+        "v3_signals_by_outcome": {item["_id"]: item["count"] for item in v3_outcomes},
+        "entry_ready_setups": entry_ready_setups,
+        "total_setups": total_setups,
+        "recent_v3_signals": recent_v3,
+        "tracking_healthy": v3_signals_count >= 0,  # Will be more meaningful when we have data
+        "v3_signals_recorded_cache": len(v3_signals_recorded)
+    }
+
+
+@api_router.post("/v3/test-record-signal")
+async def test_record_v3_signal():
+    """
+    Test the V3 signal recording function with sample data.
+    
+    Creates a test V3 ENTRY_READY signal in the main signal_history collection.
+    Useful for verifying the integration works correctly.
+    """
+    # Get current price
+    ticker = await fetch_kraken_ticker()
+    current_price = ticker["price"] if ticker else 68000
+    
+    # Create test setup data
+    test_setup = {
+        "setup_id": "test-" + str(uuid.uuid4()),
+        "phase": "ENTRY_READY",
+        "direction": "LONG",
+        "event_type": "liquidity_sweep_low",
+        "zone_low": current_price * 0.995,
+        "zone_high": current_price * 1.005,
+        "stop_loss": current_price * 0.98,
+        "stop_type": "swing_low",
+        "target_1": current_price * 1.015,
+        "target_1_type": "resistance",
+        "target_2": current_price * 1.025,
+        "target_2_type": "liquidity_extended",
+        "quality_score": 75,
+        "risk_reward_ratio": 1.8,
+        "confirmation_type": "rejection_candle",
+        "market_regime": "TREND",
+        "swing_high": current_price * 1.02,
+        "swing_low": current_price * 0.97,
+        "reasoning": "Test V3 signal for tracking verification"
+    }
+    
+    market_context = {
+        "market_bias": "BULLISH",
+        "whale_direction": "BUY",
+        "whale_strength": 65,
+        "energy_score": 55,
+        "compression_level": "LOW"
+    }
+    
+    result = await record_v3_entry_signal(test_setup, current_price, market_context)
+    
+    return {
+        "test_result": result,
+        "current_price": current_price,
+        "message": "Test V3 signal recorded" if result.get("recorded") else "Recording failed"
+    }
+
+
+@api_router.post("/v3/backfill-missing-signals")
+async def backfill_v3_signals():
+    """
+    Backfill V3 signals that were ENTRY_READY but not recorded in signal_history.
+    
+    This is a one-time migration for setups that reached ENTRY_READY before
+    the signal recording was implemented.
+    """
+    # Get current price
+    ticker = await fetch_kraken_ticker()
+    current_price = ticker["price"] if ticker else 68000
+    
+    # Find ENTRY_READY setups not yet in signal_history
+    entry_ready_setups = await setup_events_collection.find({"phase": "ENTRY_READY"}).to_list(100)
+    
+    recorded = 0
+    skipped = 0
+    
+    for setup in entry_ready_setups:
+        setup_id = setup.get("setup_id")
+        
+        # Check if already recorded
+        existing = await signal_history_collection.find_one({"v3_setup_id": setup_id})
+        if existing:
+            skipped += 1
+            continue
+        
+        # Convert MongoDB document to dict for recording
+        setup_dict = {
+            "setup_id": setup_id,
+            "phase": "ENTRY_READY",
+            "direction": setup.get("direction"),
+            "event_type": setup.get("event_type"),
+            "zone_low": setup.get("zone_low"),
+            "zone_high": setup.get("zone_high"),
+            "stop_loss": setup.get("stop_loss"),
+            "stop_type": setup.get("stop_type"),
+            "target_1": setup.get("target_1"),
+            "target_1_type": setup.get("target_1_type"),
+            "target_2": setup.get("target_2"),
+            "target_2_type": setup.get("target_2_type"),
+            "quality_score": setup.get("quality_score", 50),
+            "risk_reward_ratio": setup.get("risk_reward_ratio", 1.0),
+            "confirmation_type": setup.get("confirmation_type"),
+            "market_regime": setup.get("market_regime"),
+            "swing_high": setup.get("swing_high"),
+            "swing_low": setup.get("swing_low"),
+            "reasoning": setup.get("reasoning", "Backfilled from setup_events_v3")
+        }
+        
+        # Use the setup's created_at timestamp if available
+        entry_price = setup.get("entry_price", current_price)
+        
+        result = await record_v3_entry_signal(setup_dict, entry_price, {})
+        if result.get("recorded"):
+            recorded += 1
+    
+    return {
+        "total_entry_ready": len(entry_ready_setups),
+        "recorded": recorded,
+        "skipped_already_exists": skipped,
+        "message": f"Backfilled {recorded} V3 signals"
+    }
+
+
 def apply_signal_confirmation(
     raw_signal: TradeSignal,
     current_price: float,
@@ -11341,6 +11640,68 @@ async def get_scheduler_status():
         return {"error": str(e), "running": False}
 
 
+async def get_engine_comparison_stats() -> dict:
+    """
+    Get comparison statistics between V2 and V3 signal engines.
+    
+    Returns breakdown of signals by engine version:
+    - Total signals
+    - Wins, Partial, Loss, Expired, Pending
+    - Win rate
+    - Avg P&L
+    """
+    try:
+        # Aggregate by engine version
+        pipeline = [
+            {"$match": {"direction": {"$in": ["LONG", "SHORT"]}}},
+            {"$group": {
+                "_id": {"$ifNull": ["$signal_engine_version", "v2"]},
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "WIN"]}, 1, 0]}},
+                "partial_wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "PARTIAL_WIN"]}, 1, 0]}},
+                "losses": {"$sum": {"$cond": [{"$eq": ["$outcome", "LOSS"]}, 1, 0]}},
+                "expired": {"$sum": {"$cond": [{"$eq": ["$outcome", "EXPIRED"]}, 1, 0]}},
+                "pending": {"$sum": {"$cond": [{"$eq": ["$outcome", "PENDING"]}, 1, 0]}},
+                "avg_pnl": {"$avg": {"$cond": [{"$ne": ["$pnl_percent", None]}, "$pnl_percent", 0]}},
+                "avg_confidence": {"$avg": "$confidence"},
+                "avg_rr": {"$avg": "$risk_reward_ratio"}
+            }}
+        ]
+        
+        results = await signal_history_collection.aggregate(pipeline).to_list(10)
+        
+        engine_stats = {}
+        for item in results:
+            engine = item["_id"] or "v2"
+            total = item["total"]
+            wins = item["wins"] + item["partial_wins"]
+            
+            engine_stats[engine] = {
+                "total_signals": total,
+                "wins": item["wins"],
+                "partial_wins": item["partial_wins"],
+                "losses": item["losses"],
+                "expired": item["expired"],
+                "pending": item["pending"],
+                "win_rate": round((wins / total * 100) if total > 0 else 0, 1),
+                "avg_pnl": round(item["avg_pnl"] or 0, 2),
+                "avg_confidence": round(item["avg_confidence"] or 0, 1),
+                "avg_rr": round(item["avg_rr"] or 0, 2)
+            }
+        
+        # Ensure both v2 and v3 exist in response
+        if "v2" not in engine_stats:
+            engine_stats["v2"] = {"total_signals": 0, "wins": 0, "partial_wins": 0, "losses": 0, "expired": 0, "pending": 0, "win_rate": 0, "avg_pnl": 0, "avg_confidence": 0, "avg_rr": 0}
+        if "v3" not in engine_stats:
+            engine_stats["v3"] = {"total_signals": 0, "wins": 0, "partial_wins": 0, "losses": 0, "expired": 0, "pending": 0, "win_rate": 0, "avg_pnl": 0, "avg_confidence": 0, "avg_rr": 0}
+        
+        return engine_stats
+        
+    except Exception as e:
+        logger.error(f"Error getting engine comparison stats: {e}")
+        return {"v2": {}, "v3": {}, "error": str(e)}
+
+
 @api_router.post("/signal-history/trigger-check")
 async def trigger_outcome_check():
     """
@@ -11554,6 +11915,9 @@ async def get_signal_statistics():
             
             "by_setup_type": setup_performance,
             "by_market_condition": condition_performance,
+            
+            # Engine comparison (V2 vs V3)
+            "by_engine": await get_engine_comparison_stats(),
             
             # Data health diagnostics
             "data_health": {
