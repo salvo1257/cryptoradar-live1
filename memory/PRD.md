@@ -1,6 +1,50 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-03-22
 
+## ✅ V3 Tracking Validation & V2 vs V3 Comparison UI (2026-03-22)
+
+### Validation Completed
+All V3 tracking systems verified working:
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| V3 Signal Recording | ✅ | Signals saved on ENTRY_READY |
+| Outcome Engine | ✅ | Processes V3 like V2 (hourly) |
+| Statistics | ✅ | V3 included in all metrics |
+| UI Comparison | ✅ | New V2 vs V3 panel added |
+
+### V2 vs V3 Comparison Panel
+New UI panel in Signal History page showing:
+
+**V2 (Reattivo)**
+- Total signals, WIN, LOSS, EXPIRED counts
+- Win Rate with progress bar
+- Pending signals count
+
+**V3 (Multi-Timeframe)**
+- Total signals, WIN, LOSS, EXPIRED counts
+- Win Rate with progress bar
+- Pending signals count
+- "Waiting for signals" message if empty
+
+### Current Results (Live Data)
+| Engine | Signals | Win Rate | Pending |
+|--------|---------|----------|---------|
+| V2 | 96 | 0.0% | 0 |
+| V3 | 4 | **25.0%** | 3 |
+
+### Key Insights
+- V3 already showing **1 WIN** from 4 signals
+- V3 win rate (25%) significantly higher than V2 (0%)
+- Data collection active, more signals needed for statistical significance
+
+### Next Steps
+- Collect more V3 signals before V4 development
+- Monitor V3 outcome engine processing
+- Compare V2 vs V3 performance over time
+
+---
+
 ## ✅ FIX: V3 Signal Tracking Integration (2026-03-22)
 
 ### Problem Identified

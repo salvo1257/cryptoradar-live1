@@ -421,6 +421,176 @@ export function AlertHistoryPage() {
         </div>
       )}
       
+      {/* V2 vs V3 Engine Comparison Panel */}
+      {performanceStats?.by_engine && (
+        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-purple-400" />
+              <span className="font-heading font-semibold text-sm uppercase tracking-wider">
+                {language === 'it' ? 'Confronto V2 vs V3' : 'V2 vs V3 Comparison'}
+              </span>
+              <Badge variant="outline" className="text-[10px] text-purple-400 border-purple-400/50">
+                LIVE
+              </Badge>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* V2 Engine Stats */}
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-blue-500/30 text-blue-400 border-blue-500/50">V2</Badge>
+                  <span className="text-sm text-zinc-400">{language === 'it' ? 'Reattivo' : 'Reactive'}</span>
+                </div>
+                <span className="text-xs text-zinc-500">
+                  {performanceStats.by_engine?.v2?.total_signals || 0} {language === 'it' ? 'segnali' : 'signals'}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">WIN</div>
+                  <div className="font-mono font-bold text-bullish">
+                    {(performanceStats.by_engine?.v2?.wins || 0) + (performanceStats.by_engine?.v2?.partial_wins || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">LOSS</div>
+                  <div className="font-mono font-bold text-bearish">
+                    {performanceStats.by_engine?.v2?.losses || 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">EXP</div>
+                  <div className="font-mono font-bold text-zinc-400">
+                    {performanceStats.by_engine?.v2?.expired || 0}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">{language === 'it' ? 'Win Rate' : 'Win Rate'}</span>
+                <span className={cn(
+                  "font-mono font-bold",
+                  (performanceStats.by_engine?.v2?.win_rate || 0) >= 50 ? "text-bullish" : "text-yellow-400"
+                )}>
+                  {performanceStats.by_engine?.v2?.win_rate || 0}%
+                </span>
+              </div>
+              <Progress 
+                value={performanceStats.by_engine?.v2?.win_rate || 0} 
+                className="h-1 mt-1 bg-zinc-800"
+              />
+              
+              {(performanceStats.by_engine?.v2?.pending || 0) > 0 && (
+                <div className="mt-2 text-xs text-blue-400 flex items-center gap-1">
+                  <Timer className="w-3 h-3" />
+                  {performanceStats.by_engine?.v2?.pending} {language === 'it' ? 'in attesa' : 'pending'}
+                </div>
+              )}
+            </div>
+            
+            {/* V3 Engine Stats */}
+            <div className="bg-purple-500/10 border border-purple-500/30 rounded-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-purple-500/30 text-purple-400 border-purple-500/50">V3</Badge>
+                  <span className="text-sm text-zinc-400">{language === 'it' ? 'Multi-Timeframe' : 'Multi-Timeframe'}</span>
+                </div>
+                <span className="text-xs text-zinc-500">
+                  {performanceStats.by_engine?.v3?.total_signals || 0} {language === 'it' ? 'segnali' : 'signals'}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">WIN</div>
+                  <div className="font-mono font-bold text-bullish">
+                    {(performanceStats.by_engine?.v3?.wins || 0) + (performanceStats.by_engine?.v3?.partial_wins || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">LOSS</div>
+                  <div className="font-mono font-bold text-bearish">
+                    {performanceStats.by_engine?.v3?.losses || 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">EXP</div>
+                  <div className="font-mono font-bold text-zinc-400">
+                    {performanceStats.by_engine?.v3?.expired || 0}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">{language === 'it' ? 'Win Rate' : 'Win Rate'}</span>
+                <span className={cn(
+                  "font-mono font-bold",
+                  (performanceStats.by_engine?.v3?.win_rate || 0) >= 50 ? "text-bullish" : "text-yellow-400"
+                )}>
+                  {performanceStats.by_engine?.v3?.win_rate || 0}%
+                </span>
+              </div>
+              <Progress 
+                value={performanceStats.by_engine?.v3?.win_rate || 0} 
+                className="h-1 mt-1 bg-zinc-800"
+              />
+              
+              {(performanceStats.by_engine?.v3?.pending || 0) > 0 && (
+                <div className="mt-2 text-xs text-purple-400 flex items-center gap-1">
+                  <Timer className="w-3 h-3" />
+                  {performanceStats.by_engine?.v3?.pending} {language === 'it' ? 'in attesa' : 'pending'}
+                </div>
+              )}
+              
+              {(performanceStats.by_engine?.v3?.total_signals || 0) === 0 && (
+                <div className="mt-2 text-xs text-zinc-500 italic">
+                  {language === 'it' ? 'In attesa di segnali V3 ENTRY_READY...' : 'Waiting for V3 ENTRY_READY signals...'}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Comparison Summary */}
+          <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-4">
+              <span className="text-zinc-500">
+                {language === 'it' ? 'Totale Tradabili' : 'Total Tradeable'}: 
+                <span className="text-zinc-300 ml-1 font-mono">
+                  {(performanceStats.by_engine?.v1?.total_signals || 0) + 
+                   (performanceStats.by_engine?.v2?.total_signals || 0) + 
+                   (performanceStats.by_engine?.v3?.total_signals || 0)}
+                </span>
+              </span>
+              {performanceStats.by_engine?.v1?.total_signals > 0 && (
+                <span className="text-zinc-500">
+                  V1: <span className="text-zinc-400 font-mono">{performanceStats.by_engine.v1.total_signals}</span>
+                </span>
+              )}
+            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Badge variant="outline" className="text-[10px] text-zinc-400 border-zinc-600">
+                    {language === 'it' ? 'Raccolta dati attiva' : 'Data collection active'}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="bg-crypto-surface border-crypto-border max-w-xs">
+                  <div className="text-xs">
+                    {language === 'it' 
+                      ? 'I segnali V3 vengono registrati automaticamente quando raggiungono ENTRY_READY. Outcome calcolato ogni ora.'
+                      : 'V3 signals are recorded automatically when reaching ENTRY_READY. Outcomes calculated hourly.'}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+      )}
+      
       {/* Toggle Performance Panel Button */}
       {!showPerformance && (
         <Button variant="outline" size="sm" onClick={() => setShowPerformance(true)} className="border-crypto-border">
