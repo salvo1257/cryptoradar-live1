@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer, BadgeCheck } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer, BadgeCheck, Eye, EyeOff, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Progress } from '../ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { Switch } from '../ui/switch';
 
 import { useApp } from '../../contexts/AppContext';
 
@@ -21,9 +22,10 @@ export function AlertHistoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [directionFilter, setDirectionFilter] = useState('all');
+  const [directionFilter, setDirectionFilter] = useState('operational'); // NEW: default to operational only
   const [outcomeFilter, setOutcomeFilter] = useState('all');
   const [versionFilter, setVersionFilter] = useState('all');
+  const [showDiagnostic, setShowDiagnostic] = useState(false); // NEW: toggle for diagnostic signals
   const [recording, setRecording] = useState(false);
   const [checkingOutcomes, setCheckingOutcomes] = useState(false);
   const [showPerformance, setShowPerformance] = useState(true);
@@ -31,13 +33,22 @@ export function AlertHistoryPage() {
   const fetchHistory = useCallback(async () => {
     try {
       setLoading(true);
-      let filterParam = directionFilter !== 'all' ? `&direction=${directionFilter}` : '';
+      let filterParam = '';
+      
+      // Handle operational filter (excludes NO_TRADE)
+      if (directionFilter === 'operational') {
+        filterParam = '&exclude_no_trade=true';
+      } else if (directionFilter !== 'all') {
+        filterParam = `&direction=${directionFilter}`;
+      }
+      
       if (outcomeFilter !== 'all') {
         filterParam += `&outcome=${outcomeFilter}`;
       }
       if (versionFilter !== 'all') {
         filterParam += `&engine_version=${versionFilter}`;
       }
+      
       const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`);
       const data = await response.json();
       setSignals(data.signals || []);
@@ -622,20 +633,39 @@ export function AlertHistoryPage() {
       )}
 
       {/* Filters */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <Filter className="w-4 h-4 text-zinc-500" />
+          
+          {/* Signal Type Filter - NEW */}
           <Select value={directionFilter} onValueChange={(val) => { setDirectionFilter(val); setPage(1); }}>
-            <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
-              <SelectValue placeholder={language === 'it' ? 'Direzione' : 'Direction'} />
+            <SelectTrigger className="w-[160px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
+              <SelectValue placeholder={language === 'it' ? 'Tipo Segnale' : 'Signal Type'} />
             </SelectTrigger>
             <SelectContent className="bg-crypto-surface border-crypto-border">
-              <SelectItem value="all">{language === 'it' ? 'Tutte' : 'All'}</SelectItem>
+              <SelectItem value="operational">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-3 h-3 text-green-400" />
+                  {language === 'it' ? 'Solo Operativi' : 'Operational Only'}
+                </div>
+              </SelectItem>
+              <SelectItem value="all">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-3 h-3 text-zinc-400" />
+                  {language === 'it' ? 'Tutti (incl. diagnostici)' : 'All (incl. diagnostic)'}
+                </div>
+              </SelectItem>
               <SelectItem value="LONG">LONG</SelectItem>
               <SelectItem value="SHORT">SHORT</SelectItem>
-              <SelectItem value="NO TRADE">NO TRADE</SelectItem>
+              <SelectItem value="NO TRADE">
+                <div className="flex items-center gap-2">
+                  <EyeOff className="w-3 h-3 text-zinc-500" />
+                  NO TRADE
+                </div>
+              </SelectItem>
             </SelectContent>
           </Select>
+          
           <Select value={outcomeFilter} onValueChange={(val) => { setOutcomeFilter(val); setPage(1); }}>
             <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="outcome-filter">
               <SelectValue placeholder="Outcome" />
@@ -649,6 +679,7 @@ export function AlertHistoryPage() {
               <SelectItem value="PENDING">PENDING</SelectItem>
             </SelectContent>
           </Select>
+          
           <Select value={versionFilter} onValueChange={(val) => { setVersionFilter(val); setPage(1); }}>
             <SelectTrigger className="w-[100px] bg-crypto-surface border-crypto-border" data-testid="version-filter">
               <SelectValue placeholder="Engine" />
@@ -657,10 +688,23 @@ export function AlertHistoryPage() {
               <SelectItem value="all">{language === 'it' ? 'Tutti' : 'All'}</SelectItem>
               <SelectItem value="v1">V1</SelectItem>
               <SelectItem value="v2">V2</SelectItem>
+              <SelectItem value="v3">
+                <div className="flex items-center gap-1">
+                  <span className="text-purple-400 font-bold">V3</span>
+                  <Badge className="text-[8px] bg-purple-500/20 text-purple-400 px-1">MTF</Badge>
+                </div>
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-2 text-sm text-zinc-500">
+        
+        <div className="flex items-center gap-3 text-sm text-zinc-500">
+          {directionFilter === 'operational' && (
+            <Badge variant="outline" className="text-[10px] text-green-400 border-green-500/30">
+              <Eye className="w-3 h-3 mr-1" />
+              {language === 'it' ? 'Solo operativi' : 'Operational only'}
+            </Badge>
+          )}
           <span>{totalCount} {language === 'it' ? 'segnali' : 'signals'}</span>
           <Button variant="ghost" size="sm" onClick={fetchHistory} data-testid="refresh-history-btn">
             <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
@@ -737,16 +781,33 @@ export function AlertHistoryPage() {
                           {signal.candles_analyzed > 0 && (
                             <span className="text-[9px] text-zinc-600">({signal.candles_analyzed} candles)</span>
                           )}
-                          {/* Engine Version Badge */}
+                          {/* Engine Version Badge - Enhanced */}
                           {signal.signal_engine_version && (
                             <Badge className={cn(
                               "font-mono text-[9px]",
-                              signal.signal_engine_version === "v2" 
+                              signal.signal_engine_version === "v3" 
                                 ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" 
-                                : "bg-zinc-600/20 text-zinc-400 border border-zinc-500/30"
+                                : signal.signal_engine_version === "v2"
+                                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                  : "bg-zinc-600/20 text-zinc-400 border border-zinc-500/30"
                             )}>
                               {signal.signal_engine_version.toUpperCase()}
+                              {signal.signal_engine_version === "v3" && " MTF"}
                             </Badge>
+                          )}
+                          {/* Signal Type Badge: Operational vs Diagnostic */}
+                          {signal.direction === "NO TRADE" ? (
+                            <Badge className="font-mono text-[8px] bg-zinc-700/30 text-zinc-500 border border-zinc-600/30">
+                              <EyeOff className="w-2.5 h-2.5 mr-0.5" />
+                              {language === 'it' ? 'DIAGNOSTICO' : 'DIAGNOSTIC'}
+                            </Badge>
+                          ) : (
+                            signal.signal_engine_version === "v3" && (
+                              <Badge className="font-mono text-[8px] bg-green-500/20 text-green-400 border border-green-500/30">
+                                <Eye className="w-2.5 h-2.5 mr-0.5" />
+                                {language === 'it' ? 'OPERATIVO' : 'OPERATIONAL'}
+                              </Badge>
+                            )
                           )}
                           <span className="text-xs text-zinc-500">{signal.setup_type}</span>
                         </div>

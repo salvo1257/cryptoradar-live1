@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { TradingChart } from '../TradingChart';
+import { ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { 
   MarketBiasCard, 
   SupportResistanceCard, 
@@ -16,9 +17,11 @@ import {
   V3SignalCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
+import { Badge } from '../ui/badge';
 
 export function DashboardPage() {
   const { isLoading, language } = useApp();
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
   if (isLoading) {
     return (
@@ -35,10 +38,40 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 space-y-4" data-testid="dashboard-page">
-      {/* V2 vs V3 Signal Comparison Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TradeSignalCard />
-        <V3SignalCard language={language} />
+      {/* V3 Primary Signal - Full Width on Mobile, Main Column on Desktop */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* V3 - Primary Operational Signal (2/3 width) */}
+        <div className="lg:col-span-2">
+          <V3SignalCard language={language} />
+        </div>
+        
+        {/* Market Regime - Quick Context (1/3 width) */}
+        <div className="lg:col-span-1">
+          <MarketRegimeCard language={language} compact />
+        </div>
+      </div>
+      
+      {/* V2 Diagnostic Section - Collapsible */}
+      <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-sm overflow-hidden">
+        <button
+          onClick={() => setShowDiagnostic(!showDiagnostic)}
+          className="w-full px-4 py-2 flex items-center justify-between text-xs text-zinc-500 hover:bg-white/5 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Wrench className="w-3 h-3" />
+            <span>{language === 'it' ? 'V2 Diagnostica / Avanzato' : 'V2 Diagnostic / Advanced'}</span>
+            <Badge variant="outline" className="text-[9px] text-zinc-600 border-zinc-700">
+              {language === 'it' ? 'Secondario' : 'Secondary'}
+            </Badge>
+          </div>
+          {showDiagnostic ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        
+        {showDiagnostic && (
+          <div className="p-4 pt-2 border-t border-zinc-800/50">
+            <TradeSignalCard compact />
+          </div>
+        )}
       </div>
 
       {/* Main Chart */}
@@ -66,14 +99,9 @@ export function DashboardPage() {
         <WhaleAlertCard compact />
       </div>
 
-      {/* Market Regime Analysis */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <MarketRegimeCard language={language} />
-        <SupportResistanceCard compact />
-      </div>
-
       {/* Secondary Analysis Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <SupportResistanceCard compact />
         <OrderBookCard />
         <LiquidityCard compact />
       </div>

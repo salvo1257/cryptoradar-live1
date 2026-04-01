@@ -1,5 +1,70 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-04-01
+
+## ✅ UX/UI Cleanup - V3 Primary, Operational Focus (2026-04-01)
+
+### Changes Applied
+
+#### Dashboard (DashboardPage.js)
+| Before | After |
+|--------|-------|
+| V2 and V3 side-by-side | **V3 primary** (2/3 width), Market Regime (1/3) |
+| V2 prominent | V2 collapsed under "V2 Diagnostica / Avanzato" with badge "Secondario" |
+| Equal visual weight | V3 prominent, V2 de-emphasized |
+
+#### Signal History (AlertHistoryPage.js)
+| Before | After |
+|--------|-------|
+| Show all signals | Default filter: **"Solo Operativi"** (excludes NO_TRADE) |
+| All directions equal | NO_TRADE marked as "DIAGNOSTICO" badge |
+| V2/V3 same weight | V3 shows "V3 MTF" and "OPERATIVO" badges |
+
+#### TradeSignalCard (V2)
+| Before | After |
+|--------|-------|
+| Full display always | `compact` mode when used as diagnostic |
+| "SEGNALE OPERATIVO" title | "V2 Diagnostica" title with "Secondario" badge |
+| Full visual emphasis | Reduced visual emphasis (smaller, gray tones) |
+
+#### New Backend Endpoint
+Added `exclude_no_trade` parameter to `/api/signal-history`:
+- `exclude_no_trade=true` → Only LONG/SHORT signals (operational)
+- Default in UI: operational only
+
+### Visual Hierarchy (New)
+```
+1. V3 ENTRY_READY (primary, prominent)
+2. V3 WAITING_FOR_RETEST
+3. Active LONG/SHORT signals
+4. Final outcomes (WIN/LOSS/EXPIRED)
+5. V2 diagnostic (collapsed, secondary)
+6. NO_TRADE (hidden by default, diagnostic only)
+```
+
+### Badges System
+| Badge | Color | Meaning |
+|-------|-------|---------|
+| V3 MTF | Purple | V3 Multi-Timeframe signal |
+| OPERATIVO | Green | Actionable signal |
+| DIAGNOSTICO | Gray | Non-actionable, diagnostic only |
+| Secondario | Outline | Secondary/fallback engine |
+
+### Current Results
+| Engine | Signals | Win Rate |
+|--------|---------|----------|
+| V2 | 107 | 0% |
+| **V3** | **5** | **80%** |
+
+V3 outperforming V2 significantly with 4 wins, 1 loss.
+
+### What's NOT Changed
+- ❌ Backend logic unchanged
+- ❌ V2 engine still active (just de-emphasized in UI)
+- ❌ NO_TRADE still saved to database
+- ❌ Core V3 logic unchanged
+- ❌ Analytics, outcome tracking, historical data intact
+
+---
 
 ## ✅ V3 Tracking Validation & V2 vs V3 Comparison UI (2026-03-22)
 

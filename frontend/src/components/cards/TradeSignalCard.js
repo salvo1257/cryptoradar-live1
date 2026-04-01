@@ -308,19 +308,26 @@ export function TradeSignalCard({ compact = false }) {
   return (
     <div 
       className={cn(
-        "bg-crypto-card/60 backdrop-blur-sm border-2 rounded-sm overflow-hidden tech-card",
-        config.borderClass
+        "bg-crypto-card/60 backdrop-blur-sm border rounded-sm overflow-hidden tech-card",
+        compact ? "border-zinc-700/50" : cn("border-2", config.borderClass)
       )}
       data-testid="trade-signal-card"
     >
       {/* Header */}
-      <div className={cn("px-4 py-3 border-b border-white/5", config.bgClass)}>
+      <div className={cn("px-4 py-3 border-b border-white/5", compact ? "bg-zinc-900/50" : config.bgClass)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-whale" />
-            <h3 className="font-heading font-bold text-sm uppercase tracking-wider">{t('tradeSignal')}</h3>
-            {signal.setup_type && getSetupTypeBadge(signal.setup_type)}
-            {signal.signal_state && getSignalStateBadge(signal.signal_state, signal.confirmation_progress)}
+            <Zap className={cn("w-4 h-4", compact ? "text-zinc-500" : "text-whale")} />
+            <h3 className={cn("font-heading font-semibold uppercase tracking-wider", compact ? "text-xs text-zinc-400" : "text-sm font-bold")}>
+              {compact ? (language === 'it' ? 'V2 Diagnostica' : 'V2 Diagnostic') : t('tradeSignal')}
+            </h3>
+            {compact && (
+              <Badge variant="outline" className="text-[8px] text-zinc-500 border-zinc-600">
+                {language === 'it' ? 'Secondario' : 'Secondary'}
+              </Badge>
+            )}
+            {!compact && signal.setup_type && getSetupTypeBadge(signal.setup_type)}
+            {!compact && signal.signal_state && getSignalStateBadge(signal.signal_state, signal.confirmation_progress)}
           </div>
           <button 
             onClick={fetchSignal}
@@ -333,7 +340,7 @@ export function TradeSignalCard({ compact = false }) {
       </div>
 
       {/* Volatility Warning */}
-      {signal.volatility_warning && (
+      {!compact && signal.volatility_warning && (
         <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
           <div className="flex items-center gap-2 text-yellow-400 text-xs">
             <AlertTriangle className="w-4 h-4" />
@@ -343,7 +350,7 @@ export function TradeSignalCard({ compact = false }) {
       )}
 
       {/* Confirmation Progress */}
-      {signal.signal_state === 'SETUP_IN_CONFIRMATION' && (
+      {!compact && signal.signal_state === 'SETUP_IN_CONFIRMATION' && (
         <div className="px-4 py-2 bg-yellow-500/5 border-b border-yellow-500/10">
           <div className="flex items-center justify-between text-xs">
             <span className="text-yellow-400">
@@ -359,36 +366,39 @@ export function TradeSignalCard({ compact = false }) {
       )}
 
       {/* Main Signal Display */}
-      <div className="p-4">
+      <div className={cn("p-4", compact && "py-3")}>
         {/* Direction Badge */}
         <div className="flex items-center justify-between mb-4">
           <div className={cn(
-            "flex items-center gap-3 px-4 py-3 rounded-sm",
+            "flex items-center gap-3 rounded-sm",
+            compact ? "px-3 py-2" : "px-4 py-3",
             config.bgClass,
-            config.glowClass
+            !compact && config.glowClass
           )}>
-            <DirectionIcon className={cn("w-10 h-10", config.textClass)} />
+            <DirectionIcon className={cn(compact ? "w-6 h-6" : "w-10 h-10", config.textClass)} />
             <div>
-              <div className={cn("text-2xl font-mono font-bold", config.textClass)}>
+              <div className={cn("font-mono font-bold", config.textClass, compact ? "text-lg" : "text-2xl")}>
                 {translateDirection(signal.direction)}
               </div>
-              <div className="text-xs text-zinc-500">{t('direction')}</div>
+              {!compact && <div className="text-xs text-zinc-500">{t('direction')}</div>}
             </div>
           </div>
           
           {/* Confidence */}
           <div className="text-right">
-            <div className="text-3xl font-mono font-bold">{signal.confidence?.toFixed(0)}%</div>
+            <div className={cn("font-mono font-bold", compact ? "text-xl" : "text-3xl")}>{signal.confidence?.toFixed(0)}%</div>
             <div className="text-xs text-zinc-500">{t('confidence')}</div>
-            <Progress 
-              value={signal.confidence || 0} 
-              className="h-1.5 w-24 mt-1 bg-zinc-800"
-              indicatorClassName={cn(
-                signal.direction === 'LONG' && "bg-bullish",
-                signal.direction === 'SHORT' && "bg-bearish",
-                signal.direction === 'NO TRADE' && "bg-zinc-500"
-              )}
-            />
+            {!compact && (
+              <Progress 
+                value={signal.confidence || 0} 
+                className="h-1.5 w-24 mt-1 bg-zinc-800"
+                indicatorClassName={cn(
+                  signal.direction === 'LONG' && "bg-bullish",
+                  signal.direction === 'SHORT' && "bg-bearish",
+                  signal.direction === 'NO TRADE' && "bg-zinc-500"
+                )}
+              />
+            )}
           </div>
         </div>
 

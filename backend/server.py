@@ -11156,16 +11156,28 @@ async def get_signal_history(
     page_size: int = Query(default=20, ge=1, le=100),
     direction: Optional[str] = Query(default=None, description="Filter by direction: LONG, SHORT, NO TRADE"),
     outcome: Optional[str] = Query(default=None, description="Filter by outcome: WIN, LOSS, PARTIAL_WIN, EXPIRED, PENDING"),
-    engine_version: Optional[str] = Query(default=None, description="Filter by engine version: v1, v2")
+    engine_version: Optional[str] = Query(default=None, description="Filter by engine version: v1, v2, v3"),
+    exclude_no_trade: bool = Query(default=False, description="Exclude NO TRADE signals (operational only)")
 ):
     """
     Get signal history with pagination.
+    
+    Supports filtering:
+    - direction: LONG, SHORT, NO TRADE
+    - outcome: WIN, LOSS, PARTIAL_WIN, EXPIRED, PENDING
+    - engine_version: v1, v2, v3
+    - exclude_no_trade: if true, only shows LONG/SHORT (operational signals)
     """
     try:
         # Build query
         query = {}
-        if direction:
+        
+        # Handle exclude_no_trade filter (operational signals only)
+        if exclude_no_trade:
+            query["direction"] = {"$in": ["LONG", "SHORT"]}
+        elif direction:
             query["direction"] = direction.upper()
+        
         if outcome:
             query["outcome"] = outcome.upper()
         if engine_version:
