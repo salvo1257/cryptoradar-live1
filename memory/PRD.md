@@ -1,6 +1,56 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-01
 
+## ✅ FIX: Regression Fix - Separated View Modes (2026-04-01)
+
+### Problem Identified
+The UX cleanup introduced a regression where:
+- Operational filter was mixed with full history
+- User could not easily access complete historical records
+- Risk of analytics/reliability data being affected by UI filters
+
+### Fix Applied
+
+#### 1. Separated View Modes with Tabs
+| Tab | Description | Default |
+|-----|-------------|---------|
+| **Operativi** (green) | Only actionable LONG/SHORT signals | ✅ Default |
+| **Storico Completo** (blue) | All records including NO_TRADE, diagnostic | Optional |
+
+#### 2. Clear Counts Display
+- Shows "178 / 274" format: filtered count / total count
+- Tooltip explains: "178 visualizzati, 274 totali nel database"
+
+#### 3. View Mode Descriptions
+- **Operational**: "Vista operativa: solo segnali LONG/SHORT azionabili. NO_TRADE e diagnostici nascosti."
+- **Full History**: "Storico completo: tutti i record inclusi NO_TRADE, diagnostici e stati intermedi. Dati grezzi per analytics."
+
+#### 4. Analytics Independence Verified
+Reliability Analytics (`/api/signal-history/reliability-analytics`):
+- Uses its own query: `direction: {"$in": ["LONG", "SHORT"]}`
+- **NOT affected by UI filters**
+- Correctly shows LONG: 44, SHORT: 103 (147 tradeable signals)
+
+### Data Integrity Preserved
+| Component | Filter Applied | Data Source |
+|-----------|----------------|-------------|
+| Signal List | UI viewMode filter | signal_history |
+| Performance Stats | None (shows all) | signal_history aggregate |
+| V2 vs V3 Comparison | None (shows all) | signal_history aggregate |
+| Reliability Analytics | Own query (LONG/SHORT) | signal_history aggregate |
+
+### Key Principle Applied
+```
+RAW/FULL HISTORY ←→ OPERATIONAL VIEW ←→ ANALYTICS
+      ↓                    ↓                ↓
+  Database          UI Presentation    Backend Query
+  (all data)        (filtered by tab)  (own filters)
+```
+
+These are now properly **separated** and **do not mix**.
+
+---
+
 ## ✅ UX/UI Cleanup - V3 Primary, Operational Focus (2026-04-01)
 
 ### Changes Applied

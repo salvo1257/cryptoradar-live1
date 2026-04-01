@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer, BadgeCheck, Eye, EyeOff, Layers } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, MinusCircle, RefreshCw, Filter, ChevronLeft, ChevronRight, BarChart3, Clock, Target, Shield, Zap, CheckCircle, XCircle, AlertTriangle, Activity, Trophy, Percent, PieChart, Timer, BadgeCheck, Eye, EyeOff, Layers, Database, LayoutList } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Progress } from '../ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Switch } from '../ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 import { useApp } from '../../contexts/AppContext';
 
@@ -22,10 +23,13 @@ export function AlertHistoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [directionFilter, setDirectionFilter] = useState('operational'); // NEW: default to operational only
+  const [fullTotalCount, setFullTotalCount] = useState(0); // Total count without filters
+  
+  // View mode: 'operational' (clean) or 'full' (complete history)
+  const [viewMode, setViewMode] = useState('operational');
+  const [directionFilter, setDirectionFilter] = useState('all');
   const [outcomeFilter, setOutcomeFilter] = useState('all');
   const [versionFilter, setVersionFilter] = useState('all');
-  const [showDiagnostic, setShowDiagnostic] = useState(false); // NEW: toggle for diagnostic signals
   const [recording, setRecording] = useState(false);
   const [checkingOutcomes, setCheckingOutcomes] = useState(false);
   const [showPerformance, setShowPerformance] = useState(true);
@@ -35,13 +39,14 @@ export function AlertHistoryPage() {
       setLoading(true);
       let filterParam = '';
       
-      // Handle operational filter (excludes NO_TRADE)
-      if (directionFilter === 'operational') {
+      // View mode determines base filtering
+      if (viewMode === 'operational') {
         filterParam = '&exclude_no_trade=true';
-      } else if (directionFilter !== 'all') {
-        filterParam = `&direction=${directionFilter}`;
       }
-      
+      // Additional filters on top of view mode
+      if (directionFilter !== 'all') {
+        filterParam += `&direction=${directionFilter}`;
+      }
       if (outcomeFilter !== 'all') {
         filterParam += `&outcome=${outcomeFilter}`;
       }
@@ -54,12 +59,17 @@ export function AlertHistoryPage() {
       setSignals(data.signals || []);
       setTotalPages(data.total_pages || 1);
       setTotalCount(data.total_count || 0);
+      
+      // Also fetch full count (without filters) for reference
+      const fullResponse = await fetch(`${API_URL}/api/signal-history?page=1&page_size=1`);
+      const fullData = await fullResponse.json();
+      setFullTotalCount(fullData.total_count || 0);
     } catch (error) {
       console.error('Error fetching signal history:', error);
     } finally {
       setLoading(false);
     }
-  }, [page, directionFilter, outcomeFilter, versionFilter]);
+  }, [page, viewMode, directionFilter, outcomeFilter, versionFilter]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -632,42 +642,116 @@ export function AlertHistoryPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* View Mode Tabs + Filters */}
+      <div className="space-y-4">
+        {/* Primary View Mode Selector */}
+        <div className="flex items-center justify-between">
+          <Tabs value={viewMode} onValueChange={(val) => { setViewMode(val); setPage(1); setDirectionFilter('all'); }}>
+            <TabsList className="bg-crypto-surface border border-crypto-border">
+              <TabsTrigger 
+                value="operational" 
+                className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400"
+                data-testid="operational-view-tab"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                {language === 'it' ? 'Operativi' : 'Operational'}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="full" 
+                className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400"
+                data-testid="full-history-tab"
+              >
+                <Database className="w-4 h-4 mr-2" />
+                {language === 'it' ? 'Storico Completo' : 'Full History'}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          
+          {/* Counts Summary */}
+          <div className="flex items-center gap-3 text-sm">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      "text-xs",
+                      viewMode === 'operational' 
+                        ? "text-green-400 border-green-500/30" 
+                        : "text-blue-400 border-blue-500/30"
+                    )}
+                  >
+                    {totalCount} / {fullTotalCount}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="bg-crypto-surface border-crypto-border">
+                  <div className="text-xs">
+                    <div>{totalCount} {language === 'it' ? 'visualizzati' : 'displayed'}</div>
+                    <div className="text-zinc-500">{fullTotalCount} {language === 'it' ? 'totali nel database' : 'total in database'}</div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <Button variant="ghost" size="sm" onClick={fetchHistory} data-testid="refresh-history-btn">
+              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+            </Button>
+          </div>
+        </div>
+        
+        {/* View Mode Description */}
+        <div className={cn(
+          "px-4 py-2 rounded-sm border text-xs",
+          viewMode === 'operational' 
+            ? "bg-green-500/5 border-green-500/20 text-green-400" 
+            : "bg-blue-500/5 border-blue-500/20 text-blue-400"
+        )}>
+          {viewMode === 'operational' ? (
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4" />
+              <span>
+                {language === 'it' 
+                  ? 'Vista operativa: solo segnali LONG/SHORT azionabili. NO_TRADE e diagnostici nascosti.' 
+                  : 'Operational view: only actionable LONG/SHORT signals. NO_TRADE and diagnostic hidden.'}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4" />
+              <span>
+                {language === 'it' 
+                  ? 'Storico completo: tutti i record inclusi NO_TRADE, diagnostici e stati intermedi. Dati grezzi per analytics.' 
+                  : 'Full history: all records including NO_TRADE, diagnostic and intermediate states. Raw data for analytics.'}
+              </span>
+            </div>
+          )}
+        </div>
+        
+        {/* Additional Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <Filter className="w-4 h-4 text-zinc-500" />
           
-          {/* Signal Type Filter - NEW */}
+          {/* Direction Filter */}
           <Select value={directionFilter} onValueChange={(val) => { setDirectionFilter(val); setPage(1); }}>
-            <SelectTrigger className="w-[160px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
-              <SelectValue placeholder={language === 'it' ? 'Tipo Segnale' : 'Signal Type'} />
+            <SelectTrigger className="w-[130px] bg-crypto-surface border-crypto-border" data-testid="direction-filter">
+              <SelectValue placeholder={language === 'it' ? 'Direzione' : 'Direction'} />
             </SelectTrigger>
             <SelectContent className="bg-crypto-surface border-crypto-border">
-              <SelectItem value="operational">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-3 h-3 text-green-400" />
-                  {language === 'it' ? 'Solo Operativi' : 'Operational Only'}
-                </div>
-              </SelectItem>
-              <SelectItem value="all">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-3 h-3 text-zinc-400" />
-                  {language === 'it' ? 'Tutti (incl. diagnostici)' : 'All (incl. diagnostic)'}
-                </div>
-              </SelectItem>
+              <SelectItem value="all">{language === 'it' ? 'Tutte' : 'All'}</SelectItem>
               <SelectItem value="LONG">LONG</SelectItem>
               <SelectItem value="SHORT">SHORT</SelectItem>
-              <SelectItem value="NO TRADE">
-                <div className="flex items-center gap-2">
-                  <EyeOff className="w-3 h-3 text-zinc-500" />
-                  NO TRADE
-                </div>
-              </SelectItem>
+              {viewMode === 'full' && (
+                <SelectItem value="NO TRADE">
+                  <div className="flex items-center gap-2">
+                    <EyeOff className="w-3 h-3 text-zinc-500" />
+                    NO TRADE
+                  </div>
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
           
           <Select value={outcomeFilter} onValueChange={(val) => { setOutcomeFilter(val); setPage(1); }}>
-            <SelectTrigger className="w-[140px] bg-crypto-surface border-crypto-border" data-testid="outcome-filter">
+            <SelectTrigger className="w-[130px] bg-crypto-surface border-crypto-border" data-testid="outcome-filter">
               <SelectValue placeholder="Outcome" />
             </SelectTrigger>
             <SelectContent className="bg-crypto-surface border-crypto-border">
@@ -677,6 +761,9 @@ export function AlertHistoryPage() {
               <SelectItem value="LOSS">LOSS</SelectItem>
               <SelectItem value="EXPIRED">EXPIRED</SelectItem>
               <SelectItem value="PENDING">PENDING</SelectItem>
+              {viewMode === 'full' && (
+                <SelectItem value="NO_TRADE">NO_TRADE</SelectItem>
+              )}
             </SelectContent>
           </Select>
           
@@ -696,19 +783,6 @@ export function AlertHistoryPage() {
               </SelectItem>
             </SelectContent>
           </Select>
-        </div>
-        
-        <div className="flex items-center gap-3 text-sm text-zinc-500">
-          {directionFilter === 'operational' && (
-            <Badge variant="outline" className="text-[10px] text-green-400 border-green-500/30">
-              <Eye className="w-3 h-3 mr-1" />
-              {language === 'it' ? 'Solo operativi' : 'Operational only'}
-            </Badge>
-          )}
-          <span>{totalCount} {language === 'it' ? 'segnali' : 'signals'}</span>
-          <Button variant="ghost" size="sm" onClick={fetchHistory} data-testid="refresh-history-btn">
-            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-          </Button>
         </div>
       </div>
 
