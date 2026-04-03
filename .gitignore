@@ -28,10 +28,8 @@ next-env.d.ts
 # Production builds
 /build
 dist/
-dist
 
-# Environment files (comprehensive coverage)
-
+# Credentials (keep secure)
 *token.json*
 *credentials.json*
 
@@ -48,7 +46,7 @@ dump.rdb
 
 # Python
 __pycache__/
-*pyc*
+*.pyc
 venv/
 .venv/
 
@@ -77,57 +75,5 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/12.pack
-frontend/node_modules/.cache/default-development/10.pack
-frontend/node_modules/.cache/default-development/3.pack
-frontend/node_modules/.cache/default-development/14.pack
-frontend/node_modules/.cache/default-development/13.pack
-frontend/node_modules/.cache/default-development/15.pack
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/17.pack
-frontend/node_modules/.cache/default-development/18.pack
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/21.pack
-frontend/node_modules/.cache/default-development/23.pack
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/24.pack
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/25.pack
-frontend/node_modules/.cache/default-development/28.pack
-frontend/node_modules/.cache/default-development/28.pack
-frontend/node_modules/.cache/default-development/8.pack
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/27.pack
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/29.pack
-frontend/node_modules/.cache/default-development/31.pack
-frontend/node_modules/.cache/default-development/35.pack
--e 
-# Environment files
-*.env
-*.env.*
+android-sdk/
 frontend/node_modules/.cache/default-development/32.pack
