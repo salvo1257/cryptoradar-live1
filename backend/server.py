@@ -2714,7 +2714,7 @@ def get_translation(key: str, lang: str = "it", *args) -> str:
     if args:
         try:
             return text.format(*args)
-        except:
+        except (IndexError, KeyError, ValueError):
             return text
     return text
 
@@ -12408,7 +12408,7 @@ async def get_reliability_analytics():
                 if isinstance(ts, str):
                     try:
                         ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                    except:
+                    except (ValueError, TypeError):
                         continue
                 day_of_week = ts.weekday()  # 0=Monday, 6=Sunday
                 if day_of_week < 5:  # Monday-Friday
@@ -13026,7 +13026,7 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
