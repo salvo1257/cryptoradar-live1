@@ -199,6 +199,73 @@ h1, h2, h3, h4, h5, h6, .font-heading {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   IMPROVED TEXT CONTRAST FOR DARK BACKGROUNDS
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Primary text - brighter white */
+.text-primary-bright {
+    color: #fafafa;
+}
+
+/* Improve default zinc colors for better contrast */
+.text-zinc-100 {
+    color: #f4f4f5 !important;
+}
+
+.text-zinc-200 {
+    color: #e4e4e7 !important;
+}
+
+.text-zinc-300 {
+    color: #d4d4d8 !important;
+}
+
+/* Make zinc-400 more readable (slightly brighter) */
+.text-zinc-400 {
+    color: #a8a8b3 !important;
+}
+
+/* Section titles - ensure high contrast */
+section h3,
+.section-title {
+    color: #f4f4f5;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* Card headers - ensure visibility */
+.tech-card h3,
+.bg-crypto-card h3 {
+    color: #f4f4f5;
+}
+
+/* Important values - maximum contrast */
+.value-highlight {
+    color: #ffffff;
+    text-shadow: 0 0 10px rgba(255,255,255,0.1);
+}
+
+/* Badge text improvements */
+.badge-text-bright {
+    color: #e4e4e7;
+}
+
+/* Improve label visibility */
+label,
+.label {
+    color: #a1a1aa;
+}
+
+/* Card content base text */
+.card-text {
+    color: #d4d4d8;
+}
+
+/* Muted text - still readable */
+.text-muted-improved {
+    color: #8b8b96;
+}
+
 @layer base {
     [data-debug-wrapper="true"] {
         display: contents !important;

@@ -15,15 +15,27 @@
 - **Added**: Multi-language support in `generate_market_news()` with IT/EN/DE/PL translations
 - **News now shows**: Market analysis, order flow analysis, industry reports, technical analysis, network data
 
-### 3. UI Layout Improvements
-- **Dashboard reorganized** with clear visual hierarchy:
-  - Top row: V3 Signal (2/3) + Market Regime (1/3)
-  - V2 Diagnostic collapsed by default
-  - Chart section with header and TradingView badge
-  - Section headers with colored accent bars: Primary Intelligence, Market Dynamics, Technical Context, Tools
-- **Section labels** translated in IT/EN/DE/PL
-- **Improved spacing**: p-5 padding, gap-5 between sections, gap-4 between cards
-- **Color coding**: Green (bullish), Red (bearish), Yellow (caution), Blue (neutral), Purple (V3)
+### 3. UI Layout Improvements (Updated 2026-04-03)
+**V2 Panel Visibility**:
+- V2 Diagnostic section now OPEN by default (`useState(true)`)
+- Renamed to "V2 Confronto / Diagnostica" with amber icon and "Confronto" badge
+
+**Text Contrast**:
+- Added CSS rules for improved zinc color contrast
+- Section titles now use `text-zinc-100` (brighter white)
+- Important values have better visibility
+
+**Visual Hierarchy**:
+- Section headers have larger accent bars (w-1.5 h-5)
+- Section labels are `text-sm font-bold text-zinc-100`
+- Increased spacing: p-6 main padding, space-y-8 between sections
+
+**Chart Presentation**:
+- New header design with cyan icon and "Analisi Live" subtitle
+- Gradient background (from-zinc-900/60 to-crypto-card/60)
+- Better border styling (border-zinc-700/60)
+- Shadow added (shadow-lg)
+- Chart height increased to 380px
 
 ---
 
