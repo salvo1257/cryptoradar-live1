@@ -10444,6 +10444,230 @@ async def backfill_v3_signals():
     }
 
 
+@api_router.get("/v3/monitoring-metrics")
+async def get_v3_monitoring_metrics():
+    """
+    Comprehensive V3 engine monitoring metrics for validation.
+    
+    Returns metrics for evaluating V3 performance over time:
+    - Total setups detected (all phases)
+    - Total ENTRY_READY signals
+    - Setup-to-entry conversion rate
+    - Win/Loss/Expired rates
+    - Long vs Short breakdown
+    - Average time from SETUP_DETECTED to ENTRY_READY
+    
+    Note: This is read-only monitoring, no trading logic changes.
+    """
+    try:
+        # 1. SETUP EVENTS METRICS (from setup_events_v3 collection)
+        # Count all setups ever created (including expired/invalidated)
+        total_setups_pipeline = [
+            {"$group": {
+                "_id": "$phase",
+                "count": {"$sum": 1}
+            }}
+        ]
+        setup_phases = await setup_events_collection.aggregate(total_setups_pipeline).to_list(20)
+        setup_by_phase = {item["_id"]: item["count"] for item in setup_phases}
+        
+        # Count setups by event type
+        event_type_pipeline = [
+            {"$group": {
+                "_id": "$event_type",
+                "count": {"$sum": 1}
+            }}
+        ]
+        setup_events = await setup_events_collection.aggregate(event_type_pipeline).to_list(20)
+        setup_by_event = {item["_id"]: item["count"] for item in setup_events}
+        
+        # Count setups by direction
+        direction_pipeline = [
+            {"$group": {
+                "_id": "$direction",
+                "count": {"$sum": 1}
+            }}
+        ]
+        setup_directions = await setup_events_collection.aggregate(direction_pipeline).to_list(10)
+        setup_by_direction = {item["_id"]: item["count"] for item in setup_directions}
+        
+        # Total setups in database
+        total_setups_all = await setup_events_collection.count_documents({})
+        
+        # 2. V3 SIGNALS METRICS (from signal_history collection)
+        # Only signals with signal_engine_version = "v3"
+        v3_signals_pipeline = [
+            {"$match": {"signal_engine_version": "v3"}},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "WIN"]}, 1, 0]}},
+                "partial_wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "PARTIAL_WIN"]}, 1, 0]}},
+                "losses": {"$sum": {"$cond": [{"$eq": ["$outcome", "LOSS"]}, 1, 0]}},
+                "expired": {"$sum": {"$cond": [{"$eq": ["$outcome", "EXPIRED"]}, 1, 0]}},
+                "pending": {"$sum": {"$cond": [{"$eq": ["$outcome", "PENDING"]}, 1, 0]}},
+                "long_count": {"$sum": {"$cond": [{"$eq": ["$direction", "LONG"]}, 1, 0]}},
+                "short_count": {"$sum": {"$cond": [{"$eq": ["$direction", "SHORT"]}, 1, 0]}},
+                "avg_confidence": {"$avg": "$confidence"},
+                "avg_rr": {"$avg": "$risk_reward_ratio"}
+            }}
+        ]
+        v3_stats_result = await signal_history_collection.aggregate(v3_signals_pipeline).to_list(1)
+        v3_stats = v3_stats_result[0] if v3_stats_result else {}
+        
+        # V3 signals by direction and outcome
+        v3_direction_outcome_pipeline = [
+            {"$match": {"signal_engine_version": "v3"}},
+            {"$group": {
+                "_id": {"direction": "$direction", "outcome": "$outcome"},
+                "count": {"$sum": 1}
+            }}
+        ]
+        v3_dir_outcome = await signal_history_collection.aggregate(v3_direction_outcome_pipeline).to_list(20)
+        
+        # Organize direction breakdown
+        long_breakdown = {"total": 0, "wins": 0, "losses": 0, "expired": 0, "pending": 0}
+        short_breakdown = {"total": 0, "wins": 0, "losses": 0, "expired": 0, "pending": 0}
+        
+        for item in v3_dir_outcome:
+            direction = item["_id"]["direction"]
+            outcome = item["_id"]["outcome"]
+            count = item["count"]
+            
+            if direction == "LONG":
+                long_breakdown["total"] += count
+                if outcome == "WIN":
+                    long_breakdown["wins"] += count
+                elif outcome == "PARTIAL_WIN":
+                    long_breakdown["wins"] += count  # Count partial as win
+                elif outcome == "LOSS":
+                    long_breakdown["losses"] += count
+                elif outcome == "EXPIRED":
+                    long_breakdown["expired"] += count
+                elif outcome == "PENDING":
+                    long_breakdown["pending"] += count
+            elif direction == "SHORT":
+                short_breakdown["total"] += count
+                if outcome == "WIN":
+                    short_breakdown["wins"] += count
+                elif outcome == "PARTIAL_WIN":
+                    short_breakdown["wins"] += count
+                elif outcome == "LOSS":
+                    short_breakdown["losses"] += count
+                elif outcome == "EXPIRED":
+                    short_breakdown["expired"] += count
+                elif outcome == "PENDING":
+                    short_breakdown["pending"] += count
+        
+        # Calculate win rates
+        long_breakdown["win_rate"] = round((long_breakdown["wins"] / long_breakdown["total"] * 100) if long_breakdown["total"] > 0 else 0, 1)
+        short_breakdown["win_rate"] = round((short_breakdown["wins"] / short_breakdown["total"] * 100) if short_breakdown["total"] > 0 else 0, 1)
+        
+        # 3. CONVERSION METRICS
+        total_entry_ready = v3_stats.get("total", 0)
+        total_setups_detected = setup_by_phase.get("SETUP_DETECTED", 0) + setup_by_phase.get("WAITING_FOR_RETEST", 0) + setup_by_phase.get("ENTRY_READY", 0) + setup_by_phase.get("EXPIRED", 0) + setup_by_phase.get("INVALIDATED", 0) + setup_by_phase.get("EXECUTED", 0)
+        
+        # If we have more ENTRY_READY signals than tracked setups, use signals as reference
+        if total_entry_ready > total_setups_detected:
+            total_setups_detected = total_entry_ready  # At minimum, we had this many setups
+        
+        conversion_rate = round((total_entry_ready / total_setups_detected * 100) if total_setups_detected > 0 else 0, 1)
+        
+        # 4. CALCULATE RATES
+        total_v3 = v3_stats.get("total", 0)
+        wins = v3_stats.get("wins", 0) + v3_stats.get("partial_wins", 0)
+        losses = v3_stats.get("losses", 0)
+        expired = v3_stats.get("expired", 0)
+        pending = v3_stats.get("pending", 0)
+        
+        closed_signals = wins + losses + expired
+        
+        win_rate = round((wins / closed_signals * 100) if closed_signals > 0 else 0, 1)
+        loss_rate = round((losses / closed_signals * 100) if closed_signals > 0 else 0, 1)
+        expired_rate = round((expired / closed_signals * 100) if closed_signals > 0 else 0, 1)
+        
+        # 5. TIME METRICS (from setup phase history if available)
+        # This would require phase_history in setup_events - simplified for now
+        avg_time_to_entry = "N/A"  # Would need phase timestamps
+        
+        # 6. RECENT V3 SIGNALS
+        recent_v3 = await signal_history_collection.find(
+            {"signal_engine_version": "v3"},
+            {"_id": 0, "signal_id": 1, "direction": 1, "outcome": 1, "timestamp": 1, "btc_price": 1, "setup_type": 1, "confidence": 1}
+        ).sort("timestamp", -1).limit(10).to_list(10)
+        
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "engine_status": "FROZEN - Data Collection Mode",
+            
+            # Setup Metrics
+            "setups": {
+                "total_all_time": total_setups_all,
+                "by_phase": setup_by_phase,
+                "by_event_type": setup_by_event,
+                "by_direction": setup_by_direction,
+                "currently_active": setup_by_phase.get("SETUP_DETECTED", 0) + setup_by_phase.get("WAITING_FOR_RETEST", 0) + setup_by_phase.get("ENTRY_READY", 0)
+            },
+            
+            # Signal Metrics
+            "signals": {
+                "total_entry_ready": total_v3,
+                "wins": wins,
+                "losses": losses,
+                "expired": expired,
+                "pending": pending,
+                "closed": closed_signals
+            },
+            
+            # Conversion
+            "conversion": {
+                "setups_detected": total_setups_detected,
+                "entry_ready_signals": total_entry_ready,
+                "conversion_rate_percent": conversion_rate
+            },
+            
+            # Rates
+            "rates": {
+                "win_rate": win_rate,
+                "loss_rate": loss_rate,
+                "expired_rate": expired_rate,
+                "pending_count": pending
+            },
+            
+            # Direction Breakdown
+            "by_direction": {
+                "long": long_breakdown,
+                "short": short_breakdown
+            },
+            
+            # Quality Metrics
+            "quality": {
+                "avg_confidence": round(v3_stats.get("avg_confidence", 0) or 0, 1),
+                "avg_risk_reward": round(v3_stats.get("avg_rr", 0) or 0, 2)
+            },
+            
+            # Time Metrics
+            "timing": {
+                "avg_setup_to_entry": avg_time_to_entry
+            },
+            
+            # Recent Signals
+            "recent_signals": recent_v3,
+            
+            # Statistical Significance
+            "statistical_significance": {
+                "current_sample_size": total_v3,
+                "minimum_for_preliminary": 20,
+                "minimum_for_reliable": 50,
+                "status": "COLLECTING" if total_v3 < 20 else ("PRELIMINARY" if total_v3 < 50 else "RELIABLE")
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting V3 monitoring metrics: {e}")
+        return {"error": str(e)}
+
+
 def apply_signal_confirmation(
     raw_signal: TradeSignal,
     current_price: float,
