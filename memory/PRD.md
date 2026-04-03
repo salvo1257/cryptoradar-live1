@@ -1,6 +1,32 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-03
 
+## ✅ UX/UI Pass Complete (2026-04-03)
+
+### 1. Language Consistency Fix
+- **V3SignalCard**: Added German (DE) and Polish (PL) translations for all 30+ keys
+- **MarketRegimeCard**: Added DE/PL translations for header, loading states, and tooltips
+- **V3MonitoringPanel**: Added comprehensive translation system with IT/EN/DE/PL support
+- **NewsCard**: Added localized time formatting, sentiment labels, and article counts for all 4 languages
+
+### 2. News Section Activation
+- **Fixed**: Backend `/api/news` endpoint now accepts `lang` parameter
+- **Fixed**: Language-specific cache keys to prevent cross-language contamination
+- **Added**: Multi-language support in `generate_market_news()` with IT/EN/DE/PL translations
+- **News now shows**: Market analysis, order flow analysis, industry reports, technical analysis, network data
+
+### 3. UI Layout Improvements
+- **Dashboard reorganized** with clear visual hierarchy:
+  - Top row: V3 Signal (2/3) + Market Regime (1/3)
+  - V2 Diagnostic collapsed by default
+  - Chart section with header and TradingView badge
+  - Section headers with colored accent bars: Primary Intelligence, Market Dynamics, Technical Context, Tools
+- **Section labels** translated in IT/EN/DE/PL
+- **Improved spacing**: p-5 padding, gap-5 between sections, gap-4 between cards
+- **Color coding**: Green (bullish), Red (bearish), Yellow (caution), Blue (neutral), Purple (V3)
+
+---
+
 ## ✅ NEW: V3 Monitoring Panel UI (2026-04-03)
 
 ### Purpose

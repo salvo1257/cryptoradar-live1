@@ -19,6 +19,96 @@ export function V3MonitoringPanel({ language = 'it' }) {
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(true);
 
+  // Translations
+  const labels = {
+    it: {
+      title: 'Monitoraggio V3',
+      subtitle: 'Metriche di validazione V3 - Solo osservazione, logica congelata',
+      error: 'Errore caricamento metriche V3',
+      statSig: 'Significatività Statistica',
+      totalSetups: 'Setup Totali',
+      active: 'attivi',
+      entryReady: 'Segnali ENTRY_READY',
+      closed: 'chiusi',
+      convRate: 'Tasso Conversione',
+      winRate: 'Win Rate V3',
+      outcomes: 'Distribuzione Outcomes V3',
+      ofTotal: 'del totale',
+      waiting: 'In attesa di outcome',
+      avgConf: 'Confidenza Media',
+      avgRR: 'R:R Medio',
+      setupTime: 'Tempo Setup→Entry',
+      phases: 'Distribuzione Fasi Setup',
+      lastSignals: 'Ultimi 5 Segnali V3',
+      lastUpdate: 'Ultimo aggiornamento'
+    },
+    en: {
+      title: 'V3 Monitoring',
+      subtitle: 'V3 validation metrics - Observation only, logic frozen',
+      error: 'Error loading V3 metrics',
+      statSig: 'Statistical Significance',
+      totalSetups: 'Total Setups',
+      active: 'active',
+      entryReady: 'ENTRY_READY Signals',
+      closed: 'closed',
+      convRate: 'Conversion Rate',
+      winRate: 'V3 Win Rate',
+      outcomes: 'V3 Outcome Distribution',
+      ofTotal: 'of total',
+      waiting: 'Waiting for outcome',
+      avgConf: 'Avg Confidence',
+      avgRR: 'Avg R:R',
+      setupTime: 'Setup→Entry Time',
+      phases: 'Setup Phase Distribution',
+      lastSignals: 'Last 5 V3 Signals',
+      lastUpdate: 'Last updated'
+    },
+    de: {
+      title: 'V3 Überwachung',
+      subtitle: 'V3 Validierungsmetriken - Nur Beobachtung, Logik eingefroren',
+      error: 'Fehler beim Laden der V3-Metriken',
+      statSig: 'Statistische Signifikanz',
+      totalSetups: 'Gesamt Setups',
+      active: 'aktiv',
+      entryReady: 'ENTRY_READY Signale',
+      closed: 'geschlossen',
+      convRate: 'Konversionsrate',
+      winRate: 'V3 Win Rate',
+      outcomes: 'V3 Outcome-Verteilung',
+      ofTotal: 'vom Total',
+      waiting: 'Warte auf Outcome',
+      avgConf: 'Durchschn. Konfidenz',
+      avgRR: 'Durchschn. R:R',
+      setupTime: 'Setup→Entry Zeit',
+      phases: 'Setup-Phasen-Verteilung',
+      lastSignals: 'Letzte 5 V3 Signale',
+      lastUpdate: 'Zuletzt aktualisiert'
+    },
+    pl: {
+      title: 'Monitoring V3',
+      subtitle: 'Metryki walidacji V3 - Tylko obserwacja, logika zamrożona',
+      error: 'Błąd ładowania metryk V3',
+      statSig: 'Istotność Statystyczna',
+      totalSetups: 'Wszystkie Setup',
+      active: 'aktywne',
+      entryReady: 'Sygnały ENTRY_READY',
+      closed: 'zamknięte',
+      convRate: 'Wskaźnik Konwersji',
+      winRate: 'Win Rate V3',
+      outcomes: 'Rozkład Wyników V3',
+      ofTotal: 'z całości',
+      waiting: 'Oczekiwanie na wynik',
+      avgConf: 'Śr. Pewność',
+      avgRR: 'Śr. R:R',
+      setupTime: 'Czas Setup→Entry',
+      phases: 'Rozkład Faz Setup',
+      lastSignals: 'Ostatnie 5 Sygnałów V3',
+      lastUpdate: 'Ostatnia aktualizacja'
+    }
+  };
+
+  const t = labels[language] || labels.en;
+
   const fetchMetrics = useCallback(async () => {
     try {
       setLoading(true);
@@ -57,7 +147,7 @@ export function V3MonitoringPanel({ language = 'it' }) {
       <div className="bg-crypto-card/60 backdrop-blur-sm border border-red-500/30 rounded-sm p-4">
         <div className="flex items-center gap-2 text-red-400">
           <AlertTriangle className="w-5 h-5" />
-          <span>{language === 'it' ? 'Errore caricamento metriche V3' : 'Error loading V3 metrics'}</span>
+          <span>{t.error}</span>
         </div>
       </div>
     );

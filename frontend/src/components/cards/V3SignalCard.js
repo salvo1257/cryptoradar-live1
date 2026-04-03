@@ -244,6 +244,70 @@ export function V3SignalCard({ language = 'it' }) {
         swingLow: 'Swing Low',
         buffer: 'Buffer',
         refreshing: 'Refreshing...'
+      },
+      de: {
+        v3Engine: 'V3 Multi-Timeframe',
+        noSetup: 'Kein Aktives Setup',
+        waitingFor4H: 'Warte auf 4H-Ereignis',
+        marketContext: 'Marktkontext',
+        regime: 'Regime',
+        bias: 'Bias',
+        energy: 'Energie',
+        compression: 'Kompression',
+        liquidity: 'Liquidität',
+        above: 'Über',
+        below: 'Unter',
+        entryZone: 'Einstiegszone',
+        stopLoss: 'Stop Loss',
+        target1: 'Ziel 1',
+        target2: 'Ziel 2',
+        riskReward: 'R:R',
+        quality: 'Qualität',
+        validity: 'Gültigkeit',
+        confirmation5m: '5M Bestätigung',
+        pending: 'Ausstehend',
+        setupType: 'Setup-Typ',
+        direction: 'Richtung',
+        structureBased: 'Struktur',
+        liquidityBased: 'Liquidität',
+        distance: 'Abstand',
+        details: 'Details',
+        swingHigh: 'Swing High',
+        swingLow: 'Swing Low',
+        buffer: 'Puffer',
+        refreshing: 'Aktualisieren...'
+      },
+      pl: {
+        v3Engine: 'V3 Multi-Timeframe',
+        noSetup: 'Brak Aktywnego Setup',
+        waitingFor4H: 'Oczekiwanie na zdarzenie 4H',
+        marketContext: 'Kontekst Rynku',
+        regime: 'Reżim',
+        bias: 'Bias',
+        energy: 'Energia',
+        compression: 'Kompresja',
+        liquidity: 'Płynność',
+        above: 'Powyżej',
+        below: 'Poniżej',
+        entryZone: 'Strefa Wejścia',
+        stopLoss: 'Stop Loss',
+        target1: 'Cel 1',
+        target2: 'Cel 2',
+        riskReward: 'R:R',
+        quality: 'Jakość',
+        validity: 'Ważność',
+        confirmation5m: 'Potwierdzenie 5M',
+        pending: 'Oczekuje',
+        setupType: 'Typ Setup',
+        direction: 'Kierunek',
+        structureBased: 'Struktura',
+        liquidityBased: 'Płynność',
+        distance: 'Odległość',
+        details: 'Szczegóły',
+        swingHigh: 'Swing High',
+        swingLow: 'Swing Low',
+        buffer: 'Bufor',
+        refreshing: 'Odświeżanie...'
       }
     };
     return translations[language]?.[key] || translations.en[key] || key;
@@ -662,12 +726,12 @@ export function V3SignalCard({ language = 'it' }) {
               {expanded ? (
                 <>
                   <ChevronUp className="w-4 h-4" />
-                  {language === 'it' ? 'Nascondi dettagli' : 'Hide details'}
+                  {language === 'it' ? 'Nascondi dettagli' : language === 'de' ? 'Details ausblenden' : language === 'pl' ? 'Ukryj szczegóły' : 'Hide details'}
                 </>
               ) : (
                 <>
                   <ChevronDown className="w-4 h-4" />
-                  {language === 'it' ? 'Mostra dettagli' : 'Show details'}
+                  {language === 'it' ? 'Mostra dettagli' : language === 'de' ? 'Details anzeigen' : language === 'pl' ? 'Pokaż szczegóły' : 'Show details'}
                 </>
               )}
             </button>

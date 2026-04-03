@@ -3384,25 +3384,36 @@ async def get_aggregated_orderbook():
     
     return aggregated
 
-async def fetch_cryptocompare_news():
+async def fetch_cryptocompare_news(lang: str = "en"):
     """
     Fetch BTC news - tries multiple sources.
     Falls back to generating market-aware news if APIs unavailable.
+    
+    Args:
+        lang: Language code (en, it, de, pl)
     """
     try:
-        # Check cache first
-        if market_data_cache["news"] and market_data_cache["news_time"]:
-            if (datetime.now(timezone.utc) - market_data_cache["news_time"]).seconds < NEWS_CACHE_TTL:
-                return market_data_cache["news"]
+        # Use language-specific cache key
+        cache_key = f"news_{lang}"
+        cache_time_key = f"news_time_{lang}"
+        
+        # Check cache first (language-specific)
+        if market_data_cache.get(cache_key) and market_data_cache.get(cache_time_key):
+            if (datetime.now(timezone.utc) - market_data_cache[cache_time_key]).seconds < NEWS_CACHE_TTL:
+                return market_data_cache[cache_key]
         
         news_items = []
+        
+        # Map language codes
+        lang_map = {"it": "IT", "en": "EN", "de": "DE", "pl": "EN"}  # Polish defaults to EN
+        api_lang = lang_map.get(lang, "EN")
         
         # Try CryptoCompare first (may work with some endpoints)
         try:
             async with httpx.AsyncClient(timeout=15.0) as http_client:
                 response = await http_client.get(
                     "https://min-api.cryptocompare.com/data/v2/news/",
-                    params={"lang": "EN", "categories": "BTC"}
+                    params={"lang": api_lang, "categories": "BTC"}
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -3444,26 +3455,111 @@ async def fetch_cryptocompare_news():
         
         # If no news from API, generate market-aware news from current data
         if not news_items:
-            news_items = await generate_market_news()
+            news_items = await generate_market_news(lang)
         
         if news_items:
-            market_data_cache["news"] = news_items
-            market_data_cache["news_time"] = datetime.now(timezone.utc)
-            logger.info(f"News updated: {len(news_items)} items")
+            market_data_cache[cache_key] = news_items
+            market_data_cache[cache_time_key] = datetime.now(timezone.utc)
+            logger.info(f"News updated ({lang}): {len(news_items)} items")
         
         return news_items
     except Exception as e:
         logger.error(f"Error fetching news: {e}")
-        return market_data_cache.get("news") or []
+        return market_data_cache.get(cache_key) or []
 
 
-async def generate_market_news():
+async def generate_market_news(lang: str = "en"):
     """
     Generate intelligent market news based on current market conditions.
     This provides useful context when external news APIs are unavailable.
+    
+    Args:
+        lang: Language code (en, it, de, pl)
     """
     news_items = []
     now = datetime.now(timezone.utc)
+    
+    # Translations
+    t = {
+        "en": {
+            "surges": "surges", "drops": "drops", "gains": "gains", "loses": "loses",
+            "in_24h": "in 24 hours as market volatility increases",
+            "steady": "amid steady institutional interest",
+            "consolidates": "consolidates near",
+            "traders_await": "as traders await next move",
+            "market_analysis": "Market Analysis",
+            "order_flow": "Order Flow Analysis",
+            "industry": "Industry Report",
+            "tech_analysis": "Technical Analysis",
+            "network_data": "Network Data",
+            "derivatives": "Derivatives Analysis",
+            "heavy_pressure": "Heavy {side}-side pressure detected across major exchanges",
+            "buy": "buy", "sell": "sell",
+            "etf_flows": "Bitcoin ETF flows continue to attract institutional capital",
+            "key_levels": "Analysts eye key technical levels for BTC direction",
+            "hashrate": "Bitcoin network hashrate reaches new highs",
+            "derivatives_balanced": "Derivatives market shows balanced positioning"
+        },
+        "it": {
+            "surges": "balza", "drops": "crolla", "gains": "guadagna", "loses": "perde",
+            "in_24h": "in 24 ore con aumento della volatilità",
+            "steady": "con interesse istituzionale costante",
+            "consolidates": "consolida vicino a",
+            "traders_await": "mentre i trader attendono la prossima mossa",
+            "market_analysis": "Analisi Mercato",
+            "order_flow": "Analisi Flusso Ordini",
+            "industry": "Report Settore",
+            "tech_analysis": "Analisi Tecnica",
+            "network_data": "Dati Rete",
+            "derivatives": "Analisi Derivati",
+            "heavy_pressure": "Forte pressione {side} rilevata sui principali exchange",
+            "buy": "acquisto", "sell": "vendita",
+            "etf_flows": "I flussi ETF Bitcoin continuano ad attrarre capitale istituzionale",
+            "key_levels": "Gli analisti monitorano i livelli tecnici chiave per BTC",
+            "hashrate": "L'hashrate della rete Bitcoin raggiunge nuovi massimi",
+            "derivatives_balanced": "Il mercato derivati mostra posizionamento bilanciato"
+        },
+        "de": {
+            "surges": "steigt", "drops": "fällt", "gains": "gewinnt", "loses": "verliert",
+            "in_24h": "in 24 Stunden bei erhöhter Volatilität",
+            "steady": "bei stetigem institutionellen Interesse",
+            "consolidates": "konsolidiert nahe",
+            "traders_await": "während Trader den nächsten Zug abwarten",
+            "market_analysis": "Marktanalyse",
+            "order_flow": "Orderflow-Analyse",
+            "industry": "Branchenbericht",
+            "tech_analysis": "Technische Analyse",
+            "network_data": "Netzwerkdaten",
+            "derivatives": "Derivate-Analyse",
+            "heavy_pressure": "Starker {side}-Druck an großen Börsen erkannt",
+            "buy": "Kauf", "sell": "Verkauf",
+            "etf_flows": "Bitcoin-ETF-Zuflüsse ziehen weiter institutionelles Kapital an",
+            "key_levels": "Analysten beobachten wichtige technische Levels für BTC",
+            "hashrate": "Bitcoin-Netzwerk-Hashrate erreicht neue Höchststände",
+            "derivatives_balanced": "Derivatemarkt zeigt ausgewogene Positionierung"
+        },
+        "pl": {
+            "surges": "rośnie", "drops": "spada", "gains": "zyskuje", "loses": "traci",
+            "in_24h": "w 24 godziny przy zwiększonej zmienności",
+            "steady": "przy stałym zainteresowaniu instytucjonalnym",
+            "consolidates": "konsoliduje się w pobliżu",
+            "traders_await": "gdy traderzy czekają na kolejny ruch",
+            "market_analysis": "Analiza Rynku",
+            "order_flow": "Analiza Przepływu Zleceń",
+            "industry": "Raport Branżowy",
+            "tech_analysis": "Analiza Techniczna",
+            "network_data": "Dane Sieci",
+            "derivatives": "Analiza Derywatów",
+            "heavy_pressure": "Silna presja {side} wykryta na głównych giełdach",
+            "buy": "kupna", "sell": "sprzedaży",
+            "etf_flows": "Napływy do ETF Bitcoin nadal przyciągają kapitał instytucjonalny",
+            "key_levels": "Analitycy obserwują kluczowe poziomy techniczne BTC",
+            "hashrate": "Hashrate sieci Bitcoin osiąga nowe rekordy",
+            "derivatives_balanced": "Rynek derywatów pokazuje zrównoważone pozycjonowanie"
+        }
+    }
+    
+    tr = t.get(lang, t["en"])
     
     try:
         # Fetch current market data for context
@@ -3481,59 +3577,59 @@ async def generate_market_news():
         
         # 1. Price movement news
         if abs(change_24h) > 3:
-            direction = "surges" if change_24h > 0 else "drops"
+            direction = tr["surges"] if change_24h > 0 else tr["drops"]
             sentiment = "bullish" if change_24h > 0 else "bearish"
             news_items.append({
                 "id": str(uuid.uuid4()),
-                "title": f"Bitcoin {direction} {abs(change_24h):.1f}% in 24 hours as market volatility increases",
-                "source": "Market Analysis",
+                "title": f"Bitcoin {direction} {abs(change_24h):.1f}% {tr['in_24h']}",
+                "source": tr["market_analysis"],
                 "url": "",
                 "timestamp": now - timedelta(minutes=15),
                 "sentiment": sentiment,
                 "importance": "high",
-                "description": f"BTC/USD has moved significantly over the past 24 hours, currently trading at ${current_price:,.0f}. Traders are closely watching key support and resistance levels.",
+                "description": f"BTC/USD ${current_price:,.0f}",
                 "image_url": None
             })
         elif abs(change_24h) > 1:
-            direction = "gains" if change_24h > 0 else "loses"
+            direction = tr["gains"] if change_24h > 0 else tr["loses"]
             sentiment = "bullish" if change_24h > 0 else "bearish"
             news_items.append({
                 "id": str(uuid.uuid4()),
-                "title": f"Bitcoin {direction} {abs(change_24h):.1f}% amid steady institutional interest",
-                "source": "Market Analysis",
+                "title": f"Bitcoin {direction} {abs(change_24h):.1f}% {tr['steady']}",
+                "source": tr["market_analysis"],
                 "url": "",
                 "timestamp": now - timedelta(minutes=30),
                 "sentiment": sentiment,
                 "importance": "medium",
-                "description": f"Bitcoin continues its price action at ${current_price:,.0f} as the market digests recent developments.",
+                "description": f"BTC/USD ${current_price:,.0f}",
                 "image_url": None
             })
         else:
             news_items.append({
                 "id": str(uuid.uuid4()),
-                "title": f"Bitcoin consolidates near ${current_price:,.0f} as traders await next move",
-                "source": "Market Analysis",
+                "title": f"Bitcoin {tr['consolidates']} ${current_price:,.0f} {tr['traders_await']}",
+                "source": tr["market_analysis"],
                 "url": "",
                 "timestamp": now - timedelta(minutes=45),
                 "sentiment": "neutral",
                 "importance": "low",
-                "description": "BTC/USD trades in a tight range as market participants evaluate the current macro environment.",
+                "description": f"BTC/USD ${current_price:,.0f}",
                 "image_url": None
             })
         
         # 2. Order book news
         if abs(imbalance) > 15:
-            side = "buy" if imbalance > 0 else "sell"
+            side = tr["buy"] if imbalance > 0 else tr["sell"]
             sentiment = "bullish" if imbalance > 0 else "bearish"
             news_items.append({
                 "id": str(uuid.uuid4()),
-                "title": f"Heavy {side}-side pressure detected across major exchanges",
-                "source": "Order Flow Analysis",
+                "title": tr["heavy_pressure"].format(side=side),
+                "source": tr["order_flow"],
                 "url": "",
                 "timestamp": now - timedelta(hours=1),
                 "sentiment": sentiment,
                 "importance": "medium",
-                "description": f"Aggregated order book data shows {abs(imbalance):.1f}% imbalance toward {side} orders across Kraken, Coinbase, and Bitstamp.",
+                "description": f"{abs(imbalance):.1f}% imbalance",
                 "image_url": None
             })
         
@@ -3541,46 +3637,46 @@ async def generate_market_news():
         static_news = [
             {
                 "id": str(uuid.uuid4()),
-                "title": "Bitcoin ETF flows continue to attract institutional capital",
-                "source": "Industry Report",
+                "title": tr["etf_flows"],
+                "source": tr["industry"],
                 "url": "",
                 "timestamp": now - timedelta(hours=2),
                 "sentiment": "bullish",
                 "importance": "medium",
-                "description": "Spot Bitcoin ETFs have seen consistent inflows as traditional finance increases crypto exposure.",
+                "description": None,
                 "image_url": None
             },
             {
                 "id": str(uuid.uuid4()),
-                "title": "Analysts eye key technical levels for BTC direction",
-                "source": "Technical Analysis",
+                "title": tr["key_levels"],
+                "source": tr["tech_analysis"],
                 "url": "",
                 "timestamp": now - timedelta(hours=3),
                 "sentiment": "neutral",
                 "importance": "low",
-                "description": f"Market technicians are watching the ${current_price - 1000:,.0f} support and ${current_price + 1000:,.0f} resistance for breakout signals.",
+                "description": f"S: ${current_price - 1000:,.0f} / R: ${current_price + 1000:,.0f}",
                 "image_url": None
             },
             {
                 "id": str(uuid.uuid4()),
-                "title": "Bitcoin network hashrate reaches new highs as mining competition intensifies",
-                "source": "Network Data",
+                "title": tr["hashrate"],
+                "source": tr["network_data"],
                 "url": "",
                 "timestamp": now - timedelta(hours=4),
                 "sentiment": "bullish",
                 "importance": "low",
-                "description": "The Bitcoin network continues to strengthen with record hashrate levels, indicating robust miner confidence.",
+                "description": None,
                 "image_url": None
             },
             {
                 "id": str(uuid.uuid4()),
-                "title": "Derivatives market shows balanced positioning ahead of key events",
-                "source": "Derivatives Analysis",
+                "title": tr["derivatives_balanced"],
+                "source": tr["derivatives"],
                 "url": "",
                 "timestamp": now - timedelta(hours=5),
                 "sentiment": "neutral",
                 "importance": "low",
-                "description": "Open interest and funding rates suggest traders are maintaining cautious positions.",
+                "description": None,
                 "image_url": None
             }
         ]

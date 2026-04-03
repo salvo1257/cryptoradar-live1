@@ -39,7 +39,7 @@ const MarketRegimeCard = ({ language = 'it' }) => {
         <div className="flex items-center gap-2 mb-3">
           <Activity className="w-4 h-4 text-crypto-accent" />
           <h3 className="text-sm font-semibold">
-            {language === 'it' ? 'Regime di Mercato' : 'Market Regime'}
+            {language === 'it' ? 'Regime di Mercato' : language === 'de' ? 'Marktregime' : language === 'pl' ? 'Reżim Rynku' : 'Market Regime'}
           </h3>
         </div>
         <div className="h-40 bg-crypto-surface/30 rounded-sm"></div>
@@ -53,11 +53,11 @@ const MarketRegimeCard = ({ language = 'it' }) => {
         <div className="flex items-center gap-2 mb-3">
           <Activity className="w-4 h-4 text-crypto-accent" />
           <h3 className="text-sm font-semibold">
-            {language === 'it' ? 'Regime di Mercato' : 'Market Regime'}
+            {language === 'it' ? 'Regime di Mercato' : language === 'de' ? 'Marktregime' : language === 'pl' ? 'Reżim Rynku' : 'Market Regime'}
           </h3>
         </div>
         <div className="text-center py-4 text-zinc-500 text-sm">
-          {language === 'it' ? 'Dati non disponibili' : 'Data not available'}
+          {language === 'it' ? 'Dati non disponibili' : language === 'de' ? 'Keine Daten verfügbar' : language === 'pl' ? 'Brak danych' : 'Data not available'}
         </div>
       </div>
     );
@@ -165,6 +165,21 @@ const MarketRegimeCard = ({ language = 'it' }) => {
 
   const t = labels[language] || labels.en;
 
+  // Header title translations
+  const headerTitle = {
+    it: 'Regime di Mercato',
+    en: 'Market Regime',
+    de: 'Marktregime',
+    pl: 'Reżim Rynku'
+  };
+
+  const tooltipText = {
+    it: 'Classifica il contesto di mercato attuale per aiutarti a interpretare i segnali.',
+    en: 'Classifies current market context to help you interpret signals.',
+    de: 'Klassifiziert den aktuellen Marktkontext, um Ihnen bei der Interpretation von Signalen zu helfen.',
+    pl: 'Klasyfikuje aktualny kontekst rynku, aby pomóc w interpretacji sygnałów.'
+  };
+
   return (
     <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
       {/* Header */}
@@ -172,7 +187,7 @@ const MarketRegimeCard = ({ language = 'it' }) => {
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-crypto-accent" />
           <h3 className="text-sm font-semibold">
-            {language === 'it' ? 'Regime di Mercato' : 'Market Regime'}
+            {headerTitle[language] || headerTitle.en}
           </h3>
         </div>
         <TooltipProvider>
@@ -182,9 +197,7 @@ const MarketRegimeCard = ({ language = 'it' }) => {
             </TooltipTrigger>
             <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
               <p className="text-xs">
-                {language === 'it' 
-                  ? 'Classifica il contesto di mercato attuale per aiutarti a interpretare i segnali.'
-                  : 'Classifies current market context to help you interpret signals.'}
+                {tooltipText[language] || tooltipText.en}
               </p>
             </TooltipContent>
           </Tooltip>
