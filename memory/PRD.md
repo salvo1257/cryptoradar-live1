@@ -1,5 +1,46 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-04-01
+**Last Updated:** 2026-04-03
+
+## ✅ NEW: V3 Monitoring Panel UI (2026-04-03)
+
+### Purpose
+Added a dedicated V3 monitoring dashboard to the Signal History page for tracking and validating the V3 Multi-Timeframe engine performance over time.
+
+### Implementation
+- **Component**: `/app/frontend/src/components/cards/V3MonitoringPanel.js`
+- **Integrated in**: `AlertHistoryPage.js` (after Performance Trading panel)
+- **Data source**: `/api/v3/monitoring-metrics` (GET, read-only)
+
+### Features Displayed
+| Metric | Description |
+|--------|-------------|
+| **Statistical Significance** | Progress bar showing 5/50 (minimum for reliable data) |
+| **Setup Totali** | Total V3 setups detected (all phases) |
+| **Segnali ENTRY_READY** | Total V3 signals that reached tradeable state |
+| **Tasso Conversione** | Setup → Entry conversion rate % |
+| **Win Rate V3** | Overall win rate for V3 signals |
+| **Distribuzione Outcomes V3** | WIN/LOSS/EXPIRED/PENDING/TOTAL breakdown |
+| **LONG/SHORT Breakdown** | Per-direction win/loss/expired/pending with individual win rates |
+| **Confidenza Media** | Average confidence of V3 signals |
+| **R:R Medio** | Average risk/reward ratio |
+| **Tempo Setup→Entry** | Average time from setup detection to entry signal |
+| **Distribuzione Fasi Setup** | Phase distribution (ENTRY_READY, WAITING_FOR_RETEST, etc.) |
+| **Ultimi 5 Segnali V3** | Recent signals list with outcome |
+
+### Design
+- Purple gradient theme (V3 branding)
+- Collapsible panel (expanded by default)
+- Auto-refresh every 5 minutes
+- Badge indicators: "MTF ENGINE", "COLLECTING"/"PRELIMINARY"/"RELIABLE"
+- Fully read-only, no side effects
+
+### Constraints Applied
+- ✅ NO backend logic changes
+- ✅ NO trading logic modifications
+- ✅ Pure observability layer
+- ✅ Uses existing `/api/v3/monitoring-metrics` endpoint
+
+---
 
 ## ✅ FIX: Regression Fix - Separated View Modes (2026-04-01)
 

@@ -10,6 +10,7 @@ import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 import { useApp } from '../../contexts/AppContext';
+import { V3MonitoringPanel } from '../cards/V3MonitoringPanel';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -442,6 +443,9 @@ export function AlertHistoryPage() {
         </div>
       )}
       
+      {/* V3 Monitoring Panel - Primary Validation Dashboard */}
+      <V3MonitoringPanel language={language} />
+
       {/* V2 vs V3 Engine Comparison Panel */}
       {performanceStats?.by_engine && (
         <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm p-4">
