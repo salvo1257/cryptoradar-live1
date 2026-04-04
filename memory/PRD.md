@@ -1,6 +1,30 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-03
 
+## ✅ V2 Telegram Alerts Disabled (2026-04-03)
+
+### Changes Made
+- `notify_operational_signal()`: Added V2 block - only V3 signals can trigger (never happens as V3 uses `send_v3_entry_alert`)
+- `notify_signal_outcome()`: Added V2 block - outcome alerts blocked for V2 signals
+- Added `engine_version` field to outcome notification data in 2 scheduler locations
+
+### Alert Status
+| Alert Type | V2 | V3 |
+|------------|----|----|
+| OPERATIONAL Signal | ❌ BLOCKED | N/A (uses different function) |
+| ENTRY_READY | N/A | ✅ ACTIVE |
+| WIN/LOSS/EXPIRED | ❌ BLOCKED | ❌ BLOCKED (not implemented for V3) |
+
+### Active Alert Points
+- `send_v3_entry_alert()` @ line 6528 - V3 ENTRY_READY only
+
+### Blocked Alert Points
+- `notify_operational_signal()` @ line 11161 - V2 operational signals
+- `notify_signal_outcome()` @ line 11947 - V2 outcome scheduler
+- `notify_signal_outcome()` @ line 13220 - V2 hourly outcome engine
+
+---
+
 ## ✅ UX/UI Pass Complete (2026-04-03)
 
 ### 1. Language Consistency Fix

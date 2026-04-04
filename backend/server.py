@@ -1193,9 +1193,21 @@ async def notify_operational_signal(signal_data: dict):
     """
     Send Telegram notification for a new operational signal.
     
+    NOTE: V2 ALERTS ARE DISABLED as of v3.0.0
+    All V2 operational signals are blocked. Only V3 ENTRY_READY alerts are active.
+    
     Args:
         signal_data: Dictionary containing signal information
     """
+    # ═══════════════════════════════════════════════════════════════════
+    # V2 TELEGRAM ALERTS DISABLED - Only V3 ENTRY_READY alerts are active
+    # This function is kept for backwards compatibility but returns False
+    # ═══════════════════════════════════════════════════════════════════
+    engine_version = signal_data.get("signal_engine_version", "v2")
+    if engine_version != "v3":
+        logger.debug(f"V2 Telegram alert blocked (V2 alerts disabled): {signal_data.get('direction', 'UNKNOWN')}")
+        return False
+    
     try:
         # Only notify for LONG or SHORT signals
         direction = signal_data.get("direction", "")
@@ -1240,9 +1252,21 @@ async def notify_signal_outcome(outcome_data: dict):
     """
     Send Telegram notification for a signal outcome (WIN/LOSS/PARTIAL/EXPIRED).
     
+    NOTE: V2 OUTCOME ALERTS ARE DISABLED as of v3.0.0
+    Only V3 outcomes would trigger alerts (if implemented in future).
+    
     Args:
         outcome_data: Dictionary containing outcome information
     """
+    # ═══════════════════════════════════════════════════════════════════
+    # V2 TELEGRAM OUTCOME ALERTS DISABLED
+    # Only V3 ENTRY_READY alerts are active. Outcome alerts are disabled.
+    # ═══════════════════════════════════════════════════════════════════
+    engine_version = outcome_data.get("engine_version", "v2")
+    if engine_version != "v3":
+        logger.debug(f"V2 outcome alert blocked: {outcome_data.get('outcome', 'UNKNOWN')}")
+        return False
+    
     try:
         outcome = outcome_data.get("outcome", "")
         
@@ -11917,7 +11941,8 @@ async def check_signal_outcomes():
                         "exit_price": ohlc_result.get("outcome_price", current_price),
                         "pnl_percent": ohlc_result.get("pnl_percent", 0),
                         "outcome_notes": ohlc_result.get("outcome_notes", ""),
-                        "outcome": outcome
+                        "outcome": outcome,
+                        "engine_version": signal.get("engine_version", "v2")  # V2 alerts are blocked
                     }
                     asyncio.create_task(notify_signal_outcome(outcome_notification_data))
                     logger.info(f"Telegram notification queued for outcome: {outcome} ({direction})")
@@ -13189,7 +13214,8 @@ async def background_check_outcomes():
                         "exit_price": ohlc_result.get("outcome_price", current_price),
                         "pnl_percent": pnl,
                         "outcome_notes": ohlc_result.get("outcome_notes", ""),
-                        "outcome": outcome
+                        "outcome": outcome,
+                        "engine_version": signal.get("engine_version", "v2")  # V2 alerts are blocked
                     }
                     asyncio.create_task(notify_signal_outcome(outcome_notification_data))
                     logger.info(f"   📱 Telegram notification queued for outcome: {outcome}")
