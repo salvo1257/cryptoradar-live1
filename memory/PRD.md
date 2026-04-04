@@ -1,6 +1,41 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-04
 
+## ✅ Didactic/Help Mode UX Improvement (2026-04-04)
+
+### What Changed
+All HelpOverlay texts across 12+ cards have been rewritten to be:
+- **Practical**: Focus on what to DO, not theory
+- **Trading-oriented**: Every explanation relates to trading decisions  
+- **Easy to understand**: Max 2-3 lines per section, human language
+
+### Structure Per Card
+1. **Cos'è**: Simple explanation of what this data represents
+2. **Ora**: Context-aware description of current market state
+3. **Come leggerlo**: Actionable advice on how to use this information
+
+### Cards Updated
+- V3SignalCard, MarketRegimeCard, QualityGate, WhaleActivity
+- LiquidityLadder, LiquidityMagnet, MarketBias, OpenInterest
+- FundingRate, ShadowTargets, V3Monitoring, SignalHistory, MarketEnergy
+
+### File Modified
+- `/app/frontend/src/components/ui/HelpOverlay.js`
+
+### Example (V3 Signal Card)
+```
+Cos'è: Il tuo segnale di trading. Ti dice quando entrare, dove mettere lo stop e dove prendere profitto.
+Ora: Segnale LONG ATTIVO! Puoi entrare ora con stop e target già definiti.
+Come leggerlo: Verde = puoi entrare ora. Giallo = aspetta, non è ancora il momento. Grigio = non fare nulla.
+```
+
+### What is NOT Changed
+- ✅ Trading logic (unchanged)
+- ✅ V3 thresholds (unchanged)
+- ✅ Backend calculations (unchanged)
+
+---
+
 ## ✅ NEW: Shadow Liquidity Target Engine v0.1 (2026-04-04)
 
 ### Purpose
