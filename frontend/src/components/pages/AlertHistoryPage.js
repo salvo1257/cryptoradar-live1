@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 import { useApp } from '../../contexts/AppContext';
 import { V3MonitoringPanel } from '../cards/V3MonitoringPanel';
+import { ShadowTargetInspector } from '../cards/ShadowTargetInspector';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -445,6 +446,9 @@ export function AlertHistoryPage() {
       
       {/* V3 Monitoring Panel - Primary Validation Dashboard */}
       <V3MonitoringPanel language={language} />
+
+      {/* Shadow Liquidity Target Inspector - Analysis Dashboard */}
+      <ShadowTargetInspector language={language} />
 
       {/* V2 vs V3 Engine Comparison Panel */}
       {performanceStats?.by_engine && (
