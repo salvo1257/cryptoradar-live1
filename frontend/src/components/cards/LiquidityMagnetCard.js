@@ -4,6 +4,7 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -283,6 +284,18 @@ export function LiquidityMagnetCard({ compact = false }) {
           </div>
         )}
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="liquidity_magnet"
+        language={language}
+        contextData={{
+          magnetDirection: magnetData?.sweep_expectation,
+          direction: magnetData?.sweep_expectation,
+          score: magnetData?.confidence || 0
+        }}
+      />
     </div>
   );
 }

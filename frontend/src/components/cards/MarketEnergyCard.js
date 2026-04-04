@@ -4,6 +4,7 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -319,6 +320,18 @@ export function MarketEnergyCard({ compact = false }) {
           </div>
         )}
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="market_energy"
+        language={language}
+        contextData={{
+          level: energyData?.energy_level,
+          energy: energyData?.energy_level,
+          score: energyData?.energy_score || 50
+        }}
+      />
     </div>
   );
 }

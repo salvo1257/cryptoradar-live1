@@ -4,9 +4,10 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function OpenInterestCard() {
-  const { openInterest, learnMode, t } = useApp();
+  const { openInterest, learnMode, t, language } = useApp();
 
   if (!openInterest) {
     return (
@@ -120,6 +121,17 @@ export function OpenInterestCard() {
           <p className="text-xs text-zinc-400 leading-relaxed">{signal}</p>
         </div>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="open_interest"
+        language={language}
+        contextData={{
+          change24h: openInterest.change_24h,
+          trend: openInterest.trend
+        }}
+      />
     </div>
   );
 }

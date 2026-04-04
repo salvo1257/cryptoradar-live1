@@ -9,6 +9,8 @@ import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { HelpOverlay } from '../ui/HelpOverlay';
+import { useApp } from '../../contexts/AppContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -126,6 +128,7 @@ const REGIME_CONFIG = {
 };
 
 export function V3SignalCard({ language = 'it' }) {
+  const { learnMode } = useApp();
   const [v3Data, setV3Data] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -753,6 +756,18 @@ export function V3SignalCard({ language = 'it' }) {
             </span>
           )}
         </div>
+
+        {/* Help Overlay - Learn Mode */}
+        <HelpOverlay 
+          show={learnMode}
+          cardType="v3_signal"
+          language={language}
+          contextData={{
+            phase: setup?.phase || setup?.status,
+            direction: setup?.direction,
+            sentiment: setup?.direction
+          }}
+        />
       </div>
     </TooltipProvider>
   );

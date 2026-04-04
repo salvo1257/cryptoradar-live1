@@ -3,9 +3,10 @@ import { Percent, TrendingUp, TrendingDown, AlertTriangle, HelpCircle } from 'lu
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function FundingRateCard() {
-  const { fundingRate, learnMode, t } = useApp();
+  const { fundingRate, learnMode, t, language } = useApp();
 
   if (!fundingRate) {
     return (
@@ -105,6 +106,17 @@ export function FundingRateCard() {
           <p className="text-xs text-zinc-400 leading-relaxed">{signal_text}</p>
         </div>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="funding_rate"
+        language={language}
+        contextData={{
+          rate: fundingRate.rate,
+          funding: fundingRate.rate
+        }}
+      />
     </div>
   );
 }

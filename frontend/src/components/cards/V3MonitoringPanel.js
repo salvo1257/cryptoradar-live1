@@ -10,10 +10,13 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { HelpOverlay } from '../ui/HelpOverlay';
+import { useApp } from '../../contexts/AppContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function V3MonitoringPanel({ language = 'it' }) {
+  const { learnMode } = useApp();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -622,6 +625,17 @@ export function V3MonitoringPanel({ language = 'it' }) {
           </div>
         </div>
       )}
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="v3_monitoring"
+        language={language}
+        contextData={{
+          winRate: rates?.win_rate,
+          sampleSize: statistical_significance?.current_sample_size
+        }}
+      />
     </div>
   );
 }

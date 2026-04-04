@@ -9,6 +9,8 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
+import { HelpOverlay } from '../ui/HelpOverlay';
+import { useApp } from '../../contexts/AppContext';
 import {
   Tooltip,
   TooltipContent,
@@ -19,6 +21,7 @@ import {
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function ShadowTargetInspector({ language = 'it' }) {
+  const { learnMode } = useApp();
   const [shadowData, setShadowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -675,6 +678,14 @@ export function ShadowTargetInspector({ language = 'it' }) {
           </Badge>
         </div>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="shadow_targets"
+        language={language}
+        contextData={{}}
+      />
     </div>
   );
 }

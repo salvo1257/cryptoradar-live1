@@ -4,6 +4,7 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -301,6 +302,17 @@ export function WhaleAlertCard({ compact = false }) {
           </div>
         )}
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="whale_activity"
+        language={language}
+        contextData={{
+          direction: whaleData?.dominant_direction,
+          count: whaleData?.signals?.length || 0
+        }}
+      />
     </div>
   );
 }

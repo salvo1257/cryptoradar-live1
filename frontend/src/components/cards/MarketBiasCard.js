@@ -4,9 +4,10 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function MarketBiasCard() {
-  const { t, marketBias, learnMode } = useApp();
+  const { t, marketBias, learnMode, language } = useApp();
 
   if (!marketBias) {
     return (
@@ -216,6 +217,17 @@ export function MarketBiasCard() {
           </div>
         )}
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="market_bias"
+        language={language}
+        contextData={{
+          bias,
+          strength: confidence
+        }}
+      />
     </div>
   );
 }
