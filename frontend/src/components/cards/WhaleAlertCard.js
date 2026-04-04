@@ -303,14 +303,31 @@ export function WhaleAlertCard({ compact = false }) {
         )}
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="whale_activity"
         language={language}
         contextData={{
-          direction: whaleData?.dominant_direction,
-          count: whaleData?.signals?.length || 0
+          direction: whaleData?.direction,
+          strength: whaleData?.strength,
+          // Pressure analysis
+          buyPressure: whaleData?.buy_pressure,
+          sellPressure: whaleData?.sell_pressure,
+          // Behavior patterns
+          whaleBehavior: whaleData?.whale_behavior,
+          oiDivergence: whaleData?.oi_divergence,
+          oiDivergenceStrength: whaleData?.oi_divergence_strength,
+          // Market mechanics
+          absorptionDetected: whaleData?.absorption_detected,
+          accumulationDistribution: whaleData?.accumulation_distribution,
+          volumeSpike: whaleData?.volume_spike,
+          volumeRatio: whaleData?.volume_ratio,
+          // Liquidation context
+          liquidationBias: whaleData?.liquidation_bias,
+          orderbookAggression: whaleData?.orderbook_aggression,
+          // Signals count
+          signalsCount: whaleData?.signals?.length || 0
         }}
       />
     </div>

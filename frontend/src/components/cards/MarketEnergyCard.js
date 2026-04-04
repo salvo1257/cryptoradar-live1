@@ -321,15 +321,26 @@ export function MarketEnergyCard({ compact = false }) {
         )}
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="market_energy"
         language={language}
         contextData={{
           level: energyData?.energy_level,
-          energy: energyData?.energy_level,
-          score: energyData?.energy_score || 50
+          score: energyData?.energy_score || 50,
+          // Compression analysis
+          compressionLevel: energyData?.compression_level,
+          compressionScore: energyData?.compression_score,
+          // Volume & volatility
+          volumeProfile: energyData?.volume_profile,
+          volatilityState: energyData?.volatility_state,
+          // Breakout potential
+          breakoutPotential: energyData?.breakout_potential,
+          expectedDirection: energyData?.expected_direction,
+          // Range info
+          rangeHigh: energyData?.range_high,
+          rangeLow: energyData?.range_low
         }}
       />
     </div>

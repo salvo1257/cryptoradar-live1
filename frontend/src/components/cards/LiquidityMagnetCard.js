@@ -285,7 +285,7 @@ export function LiquidityMagnetCard({ compact = false }) {
         )}
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="liquidity_magnet"
@@ -293,7 +293,17 @@ export function LiquidityMagnetCard({ compact = false }) {
         contextData={{
           magnetDirection: magnetData?.sweep_expectation,
           direction: magnetData?.sweep_expectation,
-          score: magnetData?.confidence || 0
+          confidence: magnetData?.confidence || 0,
+          // Liquidity distribution
+          liquidityAbove: magnetData?.liquidity_above,
+          liquidityBelow: magnetData?.liquidity_below,
+          imbalanceRatio: magnetData?.imbalance_ratio,
+          // Key levels
+          nearestLiquidityUp: magnetData?.nearest_liquidity_up,
+          nearestLiquidityDown: magnetData?.nearest_liquidity_down,
+          // Attractors
+          strongestAttractor: magnetData?.strongest_attractor,
+          attractorPrice: magnetData?.attractor_price
         }}
       />
     </div>

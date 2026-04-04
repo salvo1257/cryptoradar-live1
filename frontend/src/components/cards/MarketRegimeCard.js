@@ -369,14 +369,32 @@ const MarketRegimeCard = ({ language = 'it' }) => {
         </div>
       )}
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="market_regime"
         language={language}
         contextData={{
-          regime: regime?.regime_type,
-          confidence: regime?.confidence
+          regime: regime?.regime,
+          regimeStrength: regime?.regime_strength,
+          confidence: regime?.confidence,
+          // Directional context
+          directionalBias: regime?.directional_bias,
+          biasAlignment: regime?.bias_alignment,
+          // Whale & liquidity alignment
+          whaleAlignment: regime?.whale_alignment,
+          liquidityAlignment: regime?.liquidity_alignment,
+          oiSupportive: regime?.oi_supportive,
+          // Risk factors
+          trapRisk: regime?.trap_risk,
+          distanceToSR: regime?.distance_to_sr,
+          // Scores
+          trendScore: regime?.trend_score,
+          rangeScore: regime?.range_score,
+          compressionScore: regime?.compression_score,
+          expansionScore: regime?.expansion_score,
+          // Setup suggestion
+          suggestedSetup: regime?.suggested_setup
         }}
       />
     </div>

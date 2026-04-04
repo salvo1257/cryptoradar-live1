@@ -218,14 +218,23 @@ export function MarketBiasCard() {
         )}
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="market_bias"
         language={language}
         contextData={{
           bias,
-          strength: confidence
+          confidence,
+          biasScore: bias_score,
+          // Risk factors
+          trapRisk: trap_risk,
+          squeezeProbability: squeeze_probability,
+          // Targets & projections
+          nextTarget: next_target,
+          estimatedMove: estimated_move,
+          // Exchange consensus
+          exchangeConsensus: exchange_consensus
         }}
       />
     </div>

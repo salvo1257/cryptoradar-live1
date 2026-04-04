@@ -1,15 +1,15 @@
 import React from 'react';
-import { Lightbulb, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { Lightbulb, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle, Info, Zap, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 /**
- * HelpOverlay - Didactic help overlay for CryptoRadar cards
+ * HelpOverlay v2.0 - Context-Aware Market Reading Assistant
  * 
- * Shows contextual explanations when Learn Mode is enabled.
+ * Explains WHY the market behaves this way, not just WHAT to do.
  * Each explanation includes:
- * 1. What this card is
- * 2. What it means now (context-aware)
- * 3. How to read it
+ * 1. What this data reveals about market dynamics
+ * 2. What's happening behind the scenes (liquidity, whales, flow)
+ * 3. Risk assessment and action guidance
  */
 export function HelpOverlay({ 
   show, 
@@ -23,16 +23,27 @@ export function HelpOverlay({
   const content = getHelpContent(cardType, language, contextData);
   if (!content) return null;
 
+  // Determine risk level indicator
+  const getRiskIndicator = () => {
+    const trapRisk = contextData.trapRisk;
+    const overcrowded = contextData.overcrowded;
+    
+    if (trapRisk === 'HIGH' || overcrowded) {
+      return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+    }
+    return null;
+  };
+
   // Determine sentiment color based on context
   const getSentimentIndicator = () => {
     const sentiment = contextData.sentiment || contextData.direction || contextData.bias;
     if (!sentiment) return null;
     
     const lower = String(sentiment).toLowerCase();
-    if (lower.includes('bull') || lower.includes('long') || lower === 'positive') {
+    if (lower.includes('bull') || lower.includes('long') || lower.includes('up') || lower === 'positive' || lower === 'buy') {
       return <TrendingUp className="w-4 h-4 text-bullish" />;
     }
-    if (lower.includes('bear') || lower.includes('short') || lower === 'negative') {
+    if (lower.includes('bear') || lower.includes('short') || lower.includes('down') || lower === 'negative' || lower === 'sell') {
       return <TrendingDown className="w-4 h-4 text-bearish" />;
     }
     return <Minus className="w-4 h-4 text-zinc-400" />;
@@ -47,29 +58,30 @@ export function HelpOverlay({
       <div className="flex items-start gap-2">
         <Lightbulb className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
         <div className="space-y-2 text-xs">
-          {/* What it is */}
+          {/* What's happening */}
           <div>
             <span className="text-amber-400 font-semibold">
-              {language === 'it' ? 'Cos\'è: ' : 'What it is: '}
+              {language === 'it' ? 'Cosa succede: ' : 'What\'s happening: '}
             </span>
             <span className="text-zinc-300">{content.whatItIs}</span>
           </div>
           
-          {/* What it means now */}
+          {/* Why - Market mechanics */}
           <div className="flex items-start gap-1.5">
             <span className="text-amber-400 font-semibold flex-shrink-0">
-              {language === 'it' ? 'Ora: ' : 'Now: '}
+              {language === 'it' ? 'Perché: ' : 'Why: '}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {getSentimentIndicator()}
-              <span className="text-zinc-200">{content.whatItMeansNow}</span>
+              {getRiskIndicator()}
+              <span className="text-zinc-200">{content.whyItHappens}</span>
             </div>
           </div>
           
-          {/* How to read it */}
+          {/* Action */}
           <div>
             <span className="text-amber-400 font-semibold">
-              {language === 'it' ? 'Come leggerlo: ' : 'How to read: '}
+              {language === 'it' ? 'Azione: ' : 'Action: '}
             </span>
             <span className="text-zinc-400">{content.howToRead}</span>
           </div>
@@ -80,186 +92,170 @@ export function HelpOverlay({
 }
 
 /**
- * Get help content for each card type
- * STYLE: Practical, trading-oriented, decision-focused. Max 2-3 lines each.
+ * Get intelligent, context-aware help content
+ * Explains market mechanics, not just signals
  */
-function getHelpContent(cardType, language, context) {
+function getHelpContent(cardType, language, ctx) {
   const isIt = language === 'it';
   
   const helpTexts = {
     // ═══════════════════════════════════════════════════════════════════
-    // V3 SIGNAL CARD
+    // V3 SIGNAL CARD - Market Reading Focus
     // ═══════════════════════════════════════════════════════════════════
     v3_signal: {
       it: {
-        whatItIs: "Il tuo segnale di trading. Ti dice quando entrare, dove mettere lo stop e dove prendere profitto.",
-        whatItMeansNow: getV3SignalContext(context, 'it'),
-        howToRead: "Verde = puoi entrare ora. Giallo = aspetta, non è ancora il momento. Grigio = non fare nulla."
+        whatItIs: getV3WhatItIs(ctx, 'it'),
+        whyItHappens: getV3WhyItHappens(ctx, 'it'),
+        howToRead: getV3Action(ctx, 'it')
       },
       en: {
-        whatItIs: "Your trading signal. Tells you when to enter, where to place stop, and where to take profit.",
-        whatItMeansNow: getV3SignalContext(context, 'en'),
-        howToRead: "Green = you can enter now. Yellow = wait, not yet. Gray = do nothing."
+        whatItIs: getV3WhatItIs(ctx, 'en'),
+        whyItHappens: getV3WhyItHappens(ctx, 'en'),
+        howToRead: getV3Action(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // MARKET REGIME
+    // MARKET REGIME - Flow Analysis
     // ═══════════════════════════════════════════════════════════════════
     market_regime: {
       it: {
-        whatItIs: "Come si sta muovendo il mercato. Trend = direzione chiara. Range = su e giù senza direzione.",
-        whatItMeansNow: getRegimeContext(context, 'it'),
-        howToRead: "Trend = segui la direzione. Range = aspetta i bordi. Compressione = esplosione imminente, preparati."
+        whatItIs: getRegimeWhatItIs(ctx, 'it'),
+        whyItHappens: getRegimeWhyItHappens(ctx, 'it'),
+        howToRead: getRegimeAction(ctx, 'it')
       },
       en: {
-        whatItIs: "How the market is moving. Trend = clear direction. Range = bouncing without direction.",
-        whatItMeansNow: getRegimeContext(context, 'en'),
-        howToRead: "Trend = follow direction. Range = wait for edges. Compression = explosion coming, get ready."
+        whatItIs: getRegimeWhatItIs(ctx, 'en'),
+        whyItHappens: getRegimeWhyItHappens(ctx, 'en'),
+        howToRead: getRegimeAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // QUALITY GATE
-    // ═══════════════════════════════════════════════════════════════════
-    quality_gate: {
-      it: {
-        whatItIs: "Quanto è affidabile questo segnale. Più alto = più sicuro da seguire.",
-        whatItMeansNow: getQualityContext(context, 'it'),
-        howToRead: "80+ = segnale forte, entra. 60-79 = ok ma riduci la size. Sotto 60 = meglio saltare."
-      },
-      en: {
-        whatItIs: "How reliable this signal is. Higher = safer to follow.",
-        whatItMeansNow: getQualityContext(context, 'en'),
-        howToRead: "80+ = strong signal, enter. 60-79 = ok but reduce size. Below 60 = better skip."
-      }
-    },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // WHALE ACTIVITY
+    // WHALE ACTIVITY - Institutional Flow
     // ═══════════════════════════════════════════════════════════════════
     whale_activity: {
       it: {
-        whatItIs: "Cosa stanno facendo i 'pesci grossi' - fondi e trader con milioni.",
-        whatItMeansNow: getWhaleContext(context, 'it'),
-        howToRead: "Balene comprano = il prezzo probabilmente sale. Balene vendono = attenzione, potrebbe scendere."
+        whatItIs: getWhaleWhatItIs(ctx, 'it'),
+        whyItHappens: getWhaleWhyItHappens(ctx, 'it'),
+        howToRead: getWhaleAction(ctx, 'it')
       },
       en: {
-        whatItIs: "What the 'big fish' are doing - funds and traders with millions.",
-        whatItMeansNow: getWhaleContext(context, 'en'),
-        howToRead: "Whales buying = price likely goes up. Whales selling = careful, might drop."
+        whatItIs: getWhaleWhatItIs(ctx, 'en'),
+        whyItHappens: getWhaleWhyItHappens(ctx, 'en'),
+        howToRead: getWhaleAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // LIQUIDITY LADDER
-    // ═══════════════════════════════════════════════════════════════════
-    liquidity_ladder: {
-      it: {
-        whatItIs: "Dove sono piazzati gli stop loss degli altri trader. Il prezzo va a 'cacciarli'.",
-        whatItMeansNow: getLiquidityContext(context, 'it'),
-        howToRead: "Il prezzo si muove verso le zone rosse per liquidare le posizioni. Usale come target."
-      },
-      en: {
-        whatItIs: "Where other traders have their stop losses. Price hunts them.",
-        whatItMeansNow: getLiquidityContext(context, 'en'),
-        howToRead: "Price moves toward red zones to liquidate positions. Use them as targets."
-      }
-    },
-
-    // ═══════════════════════════════════════════════════════════════════
-    // LIQUIDITY MAGNET
+    // LIQUIDITY MAGNET - Price Attraction
     // ═══════════════════════════════════════════════════════════════════
     liquidity_magnet: {
       it: {
-        whatItIs: "Dove è probabile che vada il prezzo a breve. Come una calamita.",
-        whatItMeansNow: getMagnetContext(context, 'it'),
-        howToRead: "Freccia su = prezzo attratto verso l'alto. Freccia giù = attratto verso il basso. Segui la freccia."
+        whatItIs: getMagnetWhatItIs(ctx, 'it'),
+        whyItHappens: getMagnetWhyItHappens(ctx, 'it'),
+        howToRead: getMagnetAction(ctx, 'it')
       },
       en: {
-        whatItIs: "Where price is likely to go soon. Like a magnet.",
-        whatItMeansNow: getMagnetContext(context, 'en'),
-        howToRead: "Arrow up = price pulled upward. Arrow down = pulled downward. Follow the arrow."
+        whatItIs: getMagnetWhatItIs(ctx, 'en'),
+        whyItHappens: getMagnetWhyItHappens(ctx, 'en'),
+        howToRead: getMagnetAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // MARKET BIAS
+    // MARKET BIAS - Directional Flow
     // ═══════════════════════════════════════════════════════════════════
     market_bias: {
       it: {
-        whatItIs: "La direzione generale del mercato in questo momento.",
-        whatItMeansNow: getBiasContext(context, 'it'),
-        howToRead: "Bullish = cerca solo long. Bearish = cerca solo short. Neutrale = non forzare, aspetta."
+        whatItIs: getBiasWhatItIs(ctx, 'it'),
+        whyItHappens: getBiasWhyItHappens(ctx, 'it'),
+        howToRead: getBiasAction(ctx, 'it')
       },
       en: {
-        whatItIs: "The overall market direction right now.",
-        whatItMeansNow: getBiasContext(context, 'en'),
-        howToRead: "Bullish = only look for longs. Bearish = only look for shorts. Neutral = don't force, wait."
+        whatItIs: getBiasWhatItIs(ctx, 'en'),
+        whyItHappens: getBiasWhyItHappens(ctx, 'en'),
+        howToRead: getBiasAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // OPEN INTEREST
+    // OPEN INTEREST - Position Analysis
     // ═══════════════════════════════════════════════════════════════════
     open_interest: {
       it: {
-        whatItIs: "Quanti soldi sono in gioco. Più OI = più carburante per il movimento.",
-        whatItMeansNow: getOIContext(context, 'it'),
-        howToRead: "OI sale = nuovo denaro entra, trend più forte. OI scende = trader escono, movimento in esaurimento."
+        whatItIs: getOIWhatItIs(ctx, 'it'),
+        whyItHappens: getOIWhyItHappens(ctx, 'it'),
+        howToRead: getOIAction(ctx, 'it')
       },
       en: {
-        whatItIs: "How much money is in play. More OI = more fuel for the move.",
-        whatItMeansNow: getOIContext(context, 'en'),
-        howToRead: "OI rising = new money entering, stronger trend. OI falling = traders exiting, move exhausting."
+        whatItIs: getOIWhatItIs(ctx, 'en'),
+        whyItHappens: getOIWhyItHappens(ctx, 'en'),
+        howToRead: getOIAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // FUNDING RATE
+    // FUNDING RATE - Crowding Analysis
     // ═══════════════════════════════════════════════════════════════════
     funding_rate: {
       it: {
-        whatItIs: "Chi sta pagando chi. Mostra se tutti scommettono nella stessa direzione.",
-        whatItMeansNow: getFundingContext(context, 'it'),
-        howToRead: "Molto positivo = troppi long, rischio di crollo. Molto negativo = troppi short, rischio squeeze."
+        whatItIs: getFundingWhatItIs(ctx, 'it'),
+        whyItHappens: getFundingWhyItHappens(ctx, 'it'),
+        howToRead: getFundingAction(ctx, 'it')
       },
       en: {
-        whatItIs: "Who's paying whom. Shows if everyone is betting the same way.",
-        whatItMeansNow: getFundingContext(context, 'en'),
-        howToRead: "Very positive = too many longs, crash risk. Very negative = too many shorts, squeeze risk."
+        whatItIs: getFundingWhatItIs(ctx, 'en'),
+        whyItHappens: getFundingWhyItHappens(ctx, 'en'),
+        howToRead: getFundingAction(ctx, 'en')
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // SHADOW TARGET INSPECTOR
+    // MARKET ENERGY - Breakout Potential
+    // ═══════════════════════════════════════════════════════════════════
+    market_energy: {
+      it: {
+        whatItIs: getEnergyWhatItIs(ctx, 'it'),
+        whyItHappens: getEnergyWhyItHappens(ctx, 'it'),
+        howToRead: getEnergyAction(ctx, 'it')
+      },
+      en: {
+        whatItIs: getEnergyWhatItIs(ctx, 'en'),
+        whyItHappens: getEnergyWhyItHappens(ctx, 'en'),
+        howToRead: getEnergyAction(ctx, 'en')
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SHADOW TARGETS - Experimental Analysis
     // ═══════════════════════════════════════════════════════════════════
     shadow_targets: {
       it: {
-        whatItIs: "Target sperimentali basati su dove si trova la liquidità reale. Solo osservazione.",
-        whatItMeansNow: "Stiamo testando se questi target funzionano meglio di quelli standard.",
-        howToRead: "Se shadow < standard = più conservativo, forse più sicuro. Osserva quale viene raggiunto prima."
+        whatItIs: "Target sperimentali calcolati dalla liquidità reale, non da formule teoriche.",
+        whyItHappens: "La liquidità attrae il prezzo. Questi target mostrano dove sono realmente gli stop da 'cacciare'.",
+        howToRead: "Confronta: se shadow < standard → più conservativo. Osserva quale viene raggiunto prima."
       },
       en: {
-        whatItIs: "Experimental targets based on real liquidity locations. Observation only.",
-        whatItMeansNow: "We're testing if these targets work better than standard ones.",
-        howToRead: "If shadow < standard = more conservative, maybe safer. Watch which gets hit first."
+        whatItIs: "Experimental targets calculated from real liquidity, not theoretical formulas.",
+        whyItHappens: "Liquidity attracts price. These targets show where stops really are to be 'hunted'.",
+        howToRead: "Compare: if shadow < standard → more conservative. Watch which gets hit first."
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // V3 MONITORING
+    // V3 MONITORING - System Performance
     // ═══════════════════════════════════════════════════════════════════
     v3_monitoring: {
       it: {
-        whatItIs: "Come sta performando il sistema. Più vince = più puoi fidarti.",
-        whatItMeansNow: getV3MonitoringContext(context, 'it'),
-        howToRead: "Win Rate > 50% = il sistema funziona. Sotto 50% = qualcosa non va, riduci size."
+        whatItIs: getV3MonitoringWhatItIs(ctx, 'it'),
+        whyItHappens: getV3MonitoringWhyItHappens(ctx, 'it'),
+        howToRead: getV3MonitoringAction(ctx, 'it')
       },
       en: {
-        whatItIs: "How the system is performing. More wins = more you can trust it.",
-        whatItMeansNow: getV3MonitoringContext(context, 'en'),
-        howToRead: "Win Rate > 50% = system works. Below 50% = something's off, reduce size."
+        whatItIs: getV3MonitoringWhatItIs(ctx, 'en'),
+        whyItHappens: getV3MonitoringWhyItHappens(ctx, 'en'),
+        howToRead: getV3MonitoringAction(ctx, 'en')
       }
     },
 
@@ -268,30 +264,46 @@ function getHelpContent(cardType, language, context) {
     // ═══════════════════════════════════════════════════════════════════
     signal_history: {
       it: {
-        whatItIs: "Lo storico di tutti i segnali passati. Impara dai vincenti e dai perdenti.",
-        whatItMeansNow: "Guarda quali setup hanno funzionato e in quali condizioni.",
-        howToRead: "Cerca pattern: il sistema performa meglio in trend o in range? Di giorno o di notte?"
+        whatItIs: "Storico segnali con outcome verificato. Mostra pattern di successo e fallimento.",
+        whyItHappens: "Il sistema performa diversamente in base a regime, orario e volatilità.",
+        howToRead: "Cerca pattern: quando vince e quando perde? Adatta la size ai contesti favorevoli."
       },
       en: {
-        whatItIs: "History of all past signals. Learn from winners and losers.",
-        whatItMeansNow: "See which setups worked and under what conditions.",
-        howToRead: "Look for patterns: does the system perform better in trend or range? Day or night?"
+        whatItIs: "Signal history with verified outcomes. Shows success and failure patterns.",
+        whyItHappens: "System performs differently based on regime, timing and volatility.",
+        howToRead: "Look for patterns: when does it win vs lose? Adapt size to favorable contexts."
       }
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // MARKET ENERGY
+    // LIQUIDITY LADDER (fallback)
     // ═══════════════════════════════════════════════════════════════════
-    market_energy: {
+    liquidity_ladder: {
       it: {
-        whatItIs: "Quanta 'benzina' ha il mercato per muoversi. Alta energia = movimenti violenti.",
-        whatItMeansNow: getEnergyContext(context, 'it'),
-        howToRead: "Alta = movimenti forti, segui il momentum. Bassa = mercato stanco, aspetta o riduci size."
+        whatItIs: "Mappa degli stop loss piazzati. Dove c'è liquidità = dove il prezzo andrà.",
+        whyItHappens: getLiquidityWhyItHappens(ctx, 'it'),
+        howToRead: "Il prezzo 'caccia' la liquidità. Zone dense = probabile target. Usale per uscire, non entrare."
       },
       en: {
-        whatItIs: "How much 'fuel' the market has to move. High energy = violent moves.",
-        whatItMeansNow: getEnergyContext(context, 'en'),
-        howToRead: "High = strong moves, follow momentum. Low = tired market, wait or reduce size."
+        whatItIs: "Map of placed stop losses. Where there's liquidity = where price will go.",
+        whyItHappens: getLiquidityWhyItHappens(ctx, 'en'),
+        howToRead: "Price 'hunts' liquidity. Dense zones = likely target. Use them to exit, not enter."
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
+    // QUALITY GATE
+    // ═══════════════════════════════════════════════════════════════════
+    quality_gate: {
+      it: {
+        whatItIs: getQualityWhatItIs(ctx, 'it'),
+        whyItHappens: getQualityWhyItHappens(ctx, 'it'),
+        howToRead: "80+ = confluenze forti, entry pulito. 60-79 = rischio medio. <60 = salta, troppi segnali contrastanti."
+      },
+      en: {
+        whatItIs: getQualityWhatItIs(ctx, 'en'),
+        whyItHappens: getQualityWhyItHappens(ctx, 'en'),
+        howToRead: "80+ = strong confluences, clean entry. 60-79 = medium risk. <60 = skip, too many mixed signals."
       }
     }
   };
@@ -302,187 +314,982 @@ function getHelpContent(cardType, language, context) {
   return isIt ? content.it : content.en;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// CONTEXT-AWARE HELPER FUNCTIONS
-// Practical, trading-focused language
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// V3 SIGNAL - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
 
-function getV3SignalContext(ctx, lang) {
-  const phase = ctx.phase || ctx.status;
+function getV3WhatItIs(ctx, lang) {
+  const phase = ctx.phase;
   const direction = ctx.direction;
+  const regime = ctx.regime;
   
   if (lang === 'it') {
-    if (phase === 'ENTRY_READY') return `Segnale ${direction} ATTIVO! Puoi entrare ora con stop e target già definiti.`;
-    if (phase === 'WAITING_FOR_RETEST') return `Setup ${direction} in corso. Il prezzo sta tornando verso la zona entry. Aspetta.`;
-    if (phase === 'SETUP_DETECTED') return `Possibile ${direction} individuato. Non entrare ancora, aspetta conferma.`;
-    return 'Niente da fare. Quando appare un segnale, te lo mostro qui.';
+    if (phase === 'ENTRY_READY') {
+      return `Segnale ${direction} confermato. Struttura 4H + trigger 5M allineati. Il mercato sta offrendo un'opportunità.`;
+    }
+    if (phase === 'WAITING_FOR_RETEST') {
+      return `Setup ${direction} in formazione. Il prezzo deve tornare nella zona entry per conferma.`;
+    }
+    if (phase === 'SETUP_DETECTED') {
+      return `Potenziale ${direction} individuato su 4H. Serve ancora la conferma del timeframe basso.`;
+    }
+    return `Il mercato è in fase ${regime || 'neutrale'}. Nessuna struttura operativa al momento.`;
   }
   
-  if (phase === 'ENTRY_READY') return `${direction} signal ACTIVE! You can enter now with stop and targets set.`;
-  if (phase === 'WAITING_FOR_RETEST') return `${direction} setup in progress. Price returning to entry zone. Wait.`;
-  if (phase === 'SETUP_DETECTED') return `Possible ${direction} spotted. Don't enter yet, wait for confirmation.`;
-  return 'Nothing to do. When a signal appears, I\'ll show you here.';
+  if (phase === 'ENTRY_READY') {
+    return `${direction} signal confirmed. 4H structure + 5M trigger aligned. Market offering an opportunity.`;
+  }
+  if (phase === 'WAITING_FOR_RETEST') {
+    return `${direction} setup forming. Price must return to entry zone for confirmation.`;
+  }
+  if (phase === 'SETUP_DETECTED') {
+    return `Potential ${direction} spotted on 4H. Still needs lower timeframe confirmation.`;
+  }
+  return `Market in ${regime || 'neutral'} phase. No operative structure at the moment.`;
 }
 
-function getRegimeContext(ctx, lang) {
-  const regime = ctx.regime || ctx.type;
-  const confidence = ctx.confidence || 0;
+function getV3WhyItHappens(ctx, lang) {
+  const direction = ctx.direction;
+  const bias = ctx.bias;
+  const liquidityAbove = ctx.liquidityAbove || 0;
+  const liquidityBelow = ctx.liquidityBelow || 0;
+  const whaleDirection = ctx.whaleDirection;
+  const qualityScore = ctx.qualityScore || 0;
+  
+  // Build intelligent explanation
+  const liqRatio = liquidityAbove > 0 && liquidityBelow > 0 
+    ? (liquidityAbove / liquidityBelow).toFixed(1) 
+    : null;
   
   if (lang === 'it') {
-    if (regime === 'TRENDING') return `Direzione chiara! Entra nella direzione del trend, non contro.`;
-    if (regime === 'RANGE') return `Mercato bloccato tra supporto e resistenza. Compra in basso, vendi in alto.`;
-    if (regime === 'VOLATILE') return `Movimenti imprevedibili. Riduci la size o stai fuori.`;
-    if (regime === 'COMPRESSION') return `Energia in accumulo. Il prezzo esploderà presto - preparati!`;
-    return 'Situazione poco chiara. Meglio aspettare prima di operare.';
+    let parts = [];
+    
+    // Liquidity explanation
+    if (liquidityAbove > liquidityBelow * 1.3) {
+      parts.push(`Liquidità maggiore sopra (${liqRatio}x) → prezzo attratto verso l'alto`);
+    } else if (liquidityBelow > liquidityAbove * 1.3) {
+      parts.push(`Liquidità maggiore sotto → prezzo attratto verso il basso`);
+    }
+    
+    // Whale alignment
+    if (whaleDirection) {
+      const whaleAligned = (direction === 'LONG' && whaleDirection === 'BUY') || 
+                          (direction === 'SHORT' && whaleDirection === 'SELL');
+      if (whaleAligned) {
+        parts.push(`balene allineate con ${direction}`);
+      } else if (whaleDirection !== 'NEUTRAL') {
+        parts.push(`⚠️ balene in direzione opposta`);
+      }
+    }
+    
+    // Quality explanation
+    if (qualityScore >= 80) {
+      parts.push(`confluenze forti (${qualityScore}/100)`);
+    } else if (qualityScore >= 60) {
+      parts.push(`confluenze medie`);
+    }
+    
+    return parts.length > 0 ? parts.join(' • ') : 'Struttura tecnica in formazione.';
   }
   
-  if (regime === 'TRENDING') return `Clear direction! Enter with the trend, not against it.`;
-  if (regime === 'RANGE') return `Market stuck between support and resistance. Buy low, sell high.`;
-  if (regime === 'VOLATILE') return `Unpredictable moves. Reduce size or stay out.`;
-  if (regime === 'COMPRESSION') return `Energy building up. Price will explode soon - get ready!`;
-  return 'Unclear situation. Better wait before trading.';
+  // English
+  let parts = [];
+  
+  if (liquidityAbove > liquidityBelow * 1.3) {
+    parts.push(`More liquidity above (${liqRatio}x) → price attracted upward`);
+  } else if (liquidityBelow > liquidityAbove * 1.3) {
+    parts.push(`More liquidity below → price attracted downward`);
+  }
+  
+  if (whaleDirection) {
+    const whaleAligned = (direction === 'LONG' && whaleDirection === 'BUY') || 
+                        (direction === 'SHORT' && whaleDirection === 'SELL');
+    if (whaleAligned) {
+      parts.push(`whales aligned with ${direction}`);
+    } else if (whaleDirection !== 'NEUTRAL') {
+      parts.push(`⚠️ whales opposing`);
+    }
+  }
+  
+  if (qualityScore >= 80) {
+    parts.push(`strong confluences (${qualityScore}/100)`);
+  } else if (qualityScore >= 60) {
+    parts.push(`medium confluences`);
+  }
+  
+  return parts.length > 0 ? parts.join(' • ') : 'Technical structure forming.';
 }
 
-function getQualityContext(ctx, lang) {
-  const score = ctx.score || ctx.quality || 0;
+function getV3Action(ctx, lang) {
+  const phase = ctx.phase;
+  const qualityScore = ctx.qualityScore || 0;
+  const riskReward = ctx.riskReward || 0;
   
   if (lang === 'it') {
-    if (score >= 80) return `Segnale FORTE (${score}/100). Molte conferme, puoi entrare con fiducia.`;
-    if (score >= 60) return `Segnale OK (${score}/100). Entra ma con size ridotta.`;
-    if (score >= 40) return `Segnale DEBOLE (${score}/100). Poche conferme. Meglio aspettare uno migliore.`;
-    return `Segnale SCADENTE (${score}/100). Non entrare.`;
+    if (phase === 'ENTRY_READY') {
+      if (qualityScore >= 80 && riskReward >= 1.5) {
+        return `Entry valido con size normale. R:R ${riskReward?.toFixed(1)} favorevole.`;
+      }
+      if (qualityScore >= 60) {
+        return `Entry ok ma riduci size. Qualità ${qualityScore}/100 non ottimale.`;
+      }
+      return `Entry rischioso. Valuta se saltare questo trade.`;
+    }
+    if (phase === 'WAITING_FOR_RETEST') {
+      return `NON entrare ancora. Aspetta che il prezzo torni nella zona entry.`;
+    }
+    return `Nessuna azione. Aspetta un segnale valido.`;
   }
   
-  if (score >= 80) return `STRONG signal (${score}/100). Many confirmations, enter with confidence.`;
-  if (score >= 60) return `OK signal (${score}/100). Enter but with reduced size.`;
-  if (score >= 40) return `WEAK signal (${score}/100). Few confirmations. Better wait for a stronger one.`;
-  return `POOR signal (${score}/100). Don't enter.`;
+  if (phase === 'ENTRY_READY') {
+    if (qualityScore >= 80 && riskReward >= 1.5) {
+      return `Valid entry with normal size. R:R ${riskReward?.toFixed(1)} favorable.`;
+    }
+    if (qualityScore >= 60) {
+      return `Entry ok but reduce size. Quality ${qualityScore}/100 not optimal.`;
+    }
+    return `Risky entry. Consider skipping this trade.`;
+  }
+  if (phase === 'WAITING_FOR_RETEST') {
+    return `DON'T enter yet. Wait for price to return to entry zone.`;
+  }
+  return `No action. Wait for a valid signal.`;
 }
 
-function getWhaleContext(ctx, lang) {
-  const direction = ctx.direction || ctx.dominant;
-  const count = ctx.count || 0;
+// ═══════════════════════════════════════════════════════════════════════════
+// MARKET REGIME - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getRegimeWhatItIs(ctx, lang) {
+  const regime = ctx.regime;
+  const strength = ctx.regimeStrength || 0;
   
   if (lang === 'it') {
-    if (direction === 'BUY' || direction === 'LONG') return `I big player stanno COMPRANDO. Buon segno per i long.`;
-    if (direction === 'SELL' || direction === 'SHORT') return `I big player stanno VENDENDO. Attenzione ai long, favoriti i short.`;
-    return 'I big player non si stanno muovendo. Nessun segnale da loro.';
+    if (regime === 'TREND') {
+      return `Mercato in TREND (${strength}%). Il prezzo ha una direzione chiara, non sta oscillando.`;
+    }
+    if (regime === 'RANGE') {
+      return `Mercato in RANGE (${strength}%). Il prezzo rimbalza tra supporto e resistenza senza direzione.`;
+    }
+    if (regime === 'COMPRESSION') {
+      return `Mercato in COMPRESSIONE (${strength}%). Volatilità bassa = energia accumulata = esplosione imminente.`;
+    }
+    if (regime === 'EXPANSION') {
+      return `Mercato in ESPANSIONE (${strength}%). Movimento forte in corso, alta volatilità.`;
+    }
+    return `Regime non definito. Mercato indeciso.`;
   }
   
-  if (direction === 'BUY' || direction === 'LONG') return `Big players are BUYING. Good sign for longs.`;
-  if (direction === 'SELL' || direction === 'SHORT') return `Big players are SELLING. Careful with longs, shorts favored.`;
-  return 'Big players not moving. No signal from them.';
+  if (regime === 'TREND') {
+    return `Market in TREND (${strength}%). Price has clear direction, not oscillating.`;
+  }
+  if (regime === 'RANGE') {
+    return `Market in RANGE (${strength}%). Price bouncing between support and resistance without direction.`;
+  }
+  if (regime === 'COMPRESSION') {
+    return `Market in COMPRESSION (${strength}%). Low volatility = accumulated energy = explosion coming.`;
+  }
+  if (regime === 'EXPANSION') {
+    return `Market in EXPANSION (${strength}%). Strong move in progress, high volatility.`;
+  }
+  return `Undefined regime. Market undecided.`;
 }
 
-function getLiquidityContext(ctx, lang) {
-  const above = ctx.liquidityAbove || ctx.above || 0;
-  const below = ctx.liquidityBelow || ctx.below || 0;
+function getRegimeWhyItHappens(ctx, lang) {
+  const whaleAlignment = ctx.whaleAlignment;
+  const liquidityAlignment = ctx.liquidityAlignment;
+  const trapRisk = ctx.trapRisk;
+  const oiSupportive = ctx.oiSupportive;
   
   if (lang === 'it') {
-    if (above > below * 1.5) return `Molti stop loss SOPRA il prezzo. Il prezzo probabilmente salirà per 'cacciarli'.`;
-    if (below > above * 1.5) return `Molti stop loss SOTTO il prezzo. Il prezzo probabilmente scenderà per 'cacciarli'.`;
-    return 'Stop bilanciati sopra e sotto. Direzione incerta.';
+    let parts = [];
+    
+    if (whaleAlignment) parts.push('balene allineate con il flusso');
+    if (liquidityAlignment) parts.push('liquidità supporta la direzione');
+    if (oiSupportive) parts.push('OI conferma posizioni nuove');
+    
+    if (trapRisk === 'HIGH') {
+      parts.push('⚠️ ALTO rischio trappola');
+    } else if (trapRisk === 'MEDIUM') {
+      parts.push('rischio trappola medio');
+    }
+    
+    return parts.length > 0 ? parts.join(' • ') : 'Analisi in corso.';
   }
   
-  if (above > below * 1.5) return `Many stop losses ABOVE price. Price will likely rise to hunt them.`;
-  if (below > above * 1.5) return `Many stop losses BELOW price. Price will likely drop to hunt them.`;
-  return 'Stops balanced above and below. Direction unclear.';
+  let parts = [];
+  
+  if (whaleAlignment) parts.push('whales aligned with flow');
+  if (liquidityAlignment) parts.push('liquidity supports direction');
+  if (oiSupportive) parts.push('OI confirms new positions');
+  
+  if (trapRisk === 'HIGH') {
+    parts.push('⚠️ HIGH trap risk');
+  } else if (trapRisk === 'MEDIUM') {
+    parts.push('medium trap risk');
+  }
+  
+  return parts.length > 0 ? parts.join(' • ') : 'Analysis in progress.';
 }
 
-function getMagnetContext(ctx, lang) {
-  const direction = ctx.magnetDirection || ctx.direction;
-  const score = ctx.score || 0;
+function getRegimeAction(ctx, lang) {
+  const regime = ctx.regime;
+  const trapRisk = ctx.trapRisk;
+  const suggestedSetup = ctx.suggestedSetup;
   
   if (lang === 'it') {
-    if (direction === 'UP' || direction === 'LONG') return `Il prezzo è 'attratto' verso ALTO. Favoriti i LONG.`;
-    if (direction === 'DOWN' || direction === 'SHORT') return `Il prezzo è 'attratto' verso BASSO. Favoriti i SHORT.`;
-    return 'Nessuna direzione dominante. Aspetta che si decida.';
+    if (trapRisk === 'HIGH') {
+      return `⚠️ Attenzione: alto rischio di falsi breakout. Aspetta conferma chiara.`;
+    }
+    if (regime === 'TREND') {
+      return `Segui il trend, non metterti contro. Cerca pullback per entry.`;
+    }
+    if (regime === 'RANGE') {
+      return `Opera sui bordi: compra vicino al supporto, vendi vicino alla resistenza.`;
+    }
+    if (regime === 'COMPRESSION') {
+      return `Preparati al breakout. Non entrare nel mezzo del range.`;
+    }
+    return suggestedSetup || 'Aspetta chiarezza prima di operare.';
   }
   
-  if (direction === 'UP' || direction === 'LONG') return `Price is 'pulled' UPWARD. LONGS favored.`;
-  if (direction === 'DOWN' || direction === 'SHORT') return `Price is 'pulled' DOWNWARD. SHORTS favored.`;
-  return 'No dominant direction. Wait for it to decide.';
+  if (trapRisk === 'HIGH') {
+    return `⚠️ Caution: high risk of false breakouts. Wait for clear confirmation.`;
+  }
+  if (regime === 'TREND') {
+    return `Follow the trend, don't fight it. Look for pullbacks to enter.`;
+  }
+  if (regime === 'RANGE') {
+    return `Trade the edges: buy near support, sell near resistance.`;
+  }
+  if (regime === 'COMPRESSION') {
+    return `Prepare for breakout. Don't enter in the middle of range.`;
+  }
+  return suggestedSetup || 'Wait for clarity before trading.';
 }
 
-function getBiasContext(ctx, lang) {
-  const bias = ctx.bias || ctx.direction;
+// ═══════════════════════════════════════════════════════════════════════════
+// WHALE ACTIVITY - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getWhaleWhatItIs(ctx, lang) {
+  const direction = ctx.direction;
+  const strength = ctx.strength || 0;
+  const behavior = ctx.whaleBehavior;
+  
+  if (lang === 'it') {
+    if (direction === 'BUY') {
+      return `Le balene stanno COMPRANDO (${strength}% forza). Flusso istituzionale rialzista.`;
+    }
+    if (direction === 'SELL') {
+      return `Le balene stanno VENDENDO (${strength}% forza). Flusso istituzionale ribassista.`;
+    }
+    return `Attività whale bilanciata. Nessuna pressione dominante.`;
+  }
+  
+  if (direction === 'BUY') {
+    return `Whales are BUYING (${strength}% strength). Bullish institutional flow.`;
+  }
+  if (direction === 'SELL') {
+    return `Whales are SELLING (${strength}% strength). Bearish institutional flow.`;
+  }
+  return `Balanced whale activity. No dominant pressure.`;
+}
+
+function getWhaleWhyItHappens(ctx, lang) {
+  const behavior = ctx.whaleBehavior;
+  const absorption = ctx.absorptionDetected;
+  const oiDivergence = ctx.oiDivergence;
+  const liquidationBias = ctx.liquidationBias;
+  
+  if (lang === 'it') {
+    let parts = [];
+    
+    if (behavior === 'accumulating') {
+      parts.push('fase di accumulo → preparano un movimento');
+    } else if (behavior === 'distributing') {
+      parts.push('fase di distribuzione → stanno uscendo');
+    } else if (behavior === 'hunting_stops') {
+      parts.push('⚠️ caccia agli stop → movimento ingannevole');
+    }
+    
+    if (absorption) {
+      parts.push('assorbimento rilevato');
+    }
+    
+    if (liquidationBias === 'shorts_liquidated') {
+      parts.push('short squeeze in corso');
+    } else if (liquidationBias === 'longs_liquidated') {
+      parts.push('long cascade in corso');
+    }
+    
+    return parts.length > 0 ? parts.join(' • ') : 'Monitoraggio flussi istituzionali.';
+  }
+  
+  let parts = [];
+  
+  if (behavior === 'accumulating') {
+    parts.push('accumulation phase → preparing a move');
+  } else if (behavior === 'distributing') {
+    parts.push('distribution phase → exiting positions');
+  } else if (behavior === 'hunting_stops') {
+    parts.push('⚠️ stop hunting → deceptive move');
+  }
+  
+  if (absorption) {
+    parts.push('absorption detected');
+  }
+  
+  if (liquidationBias === 'shorts_liquidated') {
+    parts.push('short squeeze in progress');
+  } else if (liquidationBias === 'longs_liquidated') {
+    parts.push('long cascade in progress');
+  }
+  
+  return parts.length > 0 ? parts.join(' • ') : 'Monitoring institutional flows.';
+}
+
+function getWhaleAction(ctx, lang) {
+  const direction = ctx.direction;
+  const behavior = ctx.whaleBehavior;
   const strength = ctx.strength || 0;
   
   if (lang === 'it') {
-    if (bias === 'BULLISH') return `Il mercato vuole salire. Cerca solo LONG, ignora i short.`;
-    if (bias === 'BEARISH') return `Il mercato vuole scendere. Cerca solo SHORT, ignora i long.`;
-    return 'Mercato indeciso. Non forzare, aspetta una direzione chiara.';
+    if (behavior === 'hunting_stops') {
+      return `⚠️ Non seguire questo movimento! Le balene stanno creando una trappola.`;
+    }
+    if (strength >= 70) {
+      return `Flusso whale forte. Allinea i tuoi trade con la direzione ${direction}.`;
+    }
+    if (strength >= 40) {
+      return `Flusso whale moderato. Può supportare un trade allineato.`;
+    }
+    return `Flusso whale debole. Non basare il trade solo su questo.`;
   }
   
-  if (bias === 'BULLISH') return `Market wants to go up. Only look for LONGS, ignore shorts.`;
-  if (bias === 'BEARISH') return `Market wants to go down. Only look for SHORTS, ignore longs.`;
-  return 'Market undecided. Don\'t force it, wait for clear direction.';
+  if (behavior === 'hunting_stops') {
+    return `⚠️ Don't follow this move! Whales creating a trap.`;
+  }
+  if (strength >= 70) {
+    return `Strong whale flow. Align your trades with ${direction} direction.`;
+  }
+  if (strength >= 40) {
+    return `Moderate whale flow. Can support an aligned trade.`;
+  }
+  return `Weak whale flow. Don't base trade only on this.`;
 }
 
-function getOIContext(ctx, lang) {
-  const change = ctx.change24h || ctx.change || 0;
+// ═══════════════════════════════════════════════════════════════════════════
+// LIQUIDITY MAGNET - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getMagnetWhatItIs(ctx, lang) {
+  const direction = ctx.magnetDirection || ctx.direction;
+  const confidence = ctx.confidence || 0;
+  
+  if (lang === 'it') {
+    if (direction === 'UP') {
+      return `Attrazione verso ALTO (${confidence}% conf.). Più stop loss sopra il prezzo attuale.`;
+    }
+    if (direction === 'DOWN') {
+      return `Attrazione verso BASSO (${confidence}% conf.). Più stop loss sotto il prezzo attuale.`;
+    }
+    return `Nessuna attrazione dominante. Liquidità bilanciata sopra e sotto.`;
+  }
+  
+  if (direction === 'UP') {
+    return `Attraction UPWARD (${confidence}% conf.). More stop losses above current price.`;
+  }
+  if (direction === 'DOWN') {
+    return `Attraction DOWNWARD (${confidence}% conf.). More stop losses below current price.`;
+  }
+  return `No dominant attraction. Liquidity balanced above and below.`;
+}
+
+function getMagnetWhyItHappens(ctx, lang) {
+  const liquidityAbove = ctx.liquidityAbove || 0;
+  const liquidityBelow = ctx.liquidityBelow || 0;
+  const imbalanceRatio = ctx.imbalanceRatio || 0;
+  
+  const aboveM = (liquidityAbove / 1e6).toFixed(1);
+  const belowM = (liquidityBelow / 1e6).toFixed(1);
+  
+  if (lang === 'it') {
+    if (liquidityAbove > liquidityBelow * 1.3) {
+      return `$${aboveM}M sopra vs $${belowM}M sotto → il prezzo "caccia" la liquidità maggiore.`;
+    }
+    if (liquidityBelow > liquidityAbove * 1.3) {
+      return `$${belowM}M sotto vs $${aboveM}M sopra → il prezzo "caccia" la liquidità maggiore.`;
+    }
+    return `Liquidità bilanciata ($${aboveM}M sopra / $${belowM}M sotto). Direzione incerta.`;
+  }
+  
+  if (liquidityAbove > liquidityBelow * 1.3) {
+    return `$${aboveM}M above vs $${belowM}M below → price "hunts" the bigger liquidity.`;
+  }
+  if (liquidityBelow > liquidityAbove * 1.3) {
+    return `$${belowM}M below vs $${aboveM}M above → price "hunts" the bigger liquidity.`;
+  }
+  return `Balanced liquidity ($${aboveM}M above / $${belowM}M below). Direction uncertain.`;
+}
+
+function getMagnetAction(ctx, lang) {
+  const direction = ctx.magnetDirection || ctx.direction;
+  const confidence = ctx.confidence || 0;
+  
+  if (lang === 'it') {
+    if (confidence >= 70) {
+      return `Alta probabilità di movimento verso ${direction === 'UP' ? 'alto' : 'basso'}. Usa come target, non come entry.`;
+    }
+    if (confidence >= 50) {
+      return `Probabilità media di sweep ${direction}. Considera per posizionamento target.`;
+    }
+    return `Direzione incerta. Non basare il trade solo su questo indicatore.`;
+  }
+  
+  if (confidence >= 70) {
+    return `High probability of move ${direction === 'UP' ? 'upward' : 'downward'}. Use as target, not entry.`;
+  }
+  if (confidence >= 50) {
+    return `Medium probability of ${direction} sweep. Consider for target positioning.`;
+  }
+  return `Direction uncertain. Don't base trade only on this indicator.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARKET BIAS - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getBiasWhatItIs(ctx, lang) {
+  const bias = ctx.bias;
+  const confidence = ctx.confidence || 0;
+  
+  if (lang === 'it') {
+    if (bias === 'BULLISH') {
+      return `Bias RIALZISTA (${confidence}% conf.). Il mercato vuole salire basandosi su multiple confluenze.`;
+    }
+    if (bias === 'BEARISH') {
+      return `Bias RIBASSISTA (${confidence}% conf.). Il mercato vuole scendere basandosi su multiple confluenze.`;
+    }
+    return `Bias NEUTRALE. Il mercato è indeciso, nessuna direzione chiara.`;
+  }
+  
+  if (bias === 'BULLISH') {
+    return `BULLISH bias (${confidence}% conf.). Market wants to go up based on multiple confluences.`;
+  }
+  if (bias === 'BEARISH') {
+    return `BEARISH bias (${confidence}% conf.). Market wants to go down based on multiple confluences.`;
+  }
+  return `NEUTRAL bias. Market undecided, no clear direction.`;
+}
+
+function getBiasWhyItHappens(ctx, lang) {
+  const trapRisk = ctx.trapRisk;
+  const squeezeProbability = ctx.squeezeProbability || 0;
+  const exchangeConsensus = ctx.exchangeConsensus;
+  
+  if (lang === 'it') {
+    let parts = [];
+    
+    if (exchangeConsensus) {
+      parts.push(`consensus exchange: ${exchangeConsensus}`);
+    }
+    
+    if (squeezeProbability >= 60) {
+      parts.push(`⚠️ ${squeezeProbability}% probabilità squeeze`);
+    }
+    
+    if (trapRisk === 'HIGH') {
+      parts.push('⚠️ alto rischio trappola');
+    }
+    
+    return parts.length > 0 ? parts.join(' • ') : 'Analisi multi-fattore.';
+  }
+  
+  let parts = [];
+  
+  if (exchangeConsensus) {
+    parts.push(`exchange consensus: ${exchangeConsensus}`);
+  }
+  
+  if (squeezeProbability >= 60) {
+    parts.push(`⚠️ ${squeezeProbability}% squeeze probability`);
+  }
+  
+  if (trapRisk === 'HIGH') {
+    parts.push('⚠️ high trap risk');
+  }
+  
+  return parts.length > 0 ? parts.join(' • ') : 'Multi-factor analysis.';
+}
+
+function getBiasAction(ctx, lang) {
+  const bias = ctx.bias;
+  const confidence = ctx.confidence || 0;
+  const trapRisk = ctx.trapRisk;
+  
+  if (lang === 'it') {
+    if (trapRisk === 'HIGH') {
+      return `⚠️ Attenzione! Rischio trappola alto. Non forzare entry.`;
+    }
+    if (confidence >= 70) {
+      return `Bias forte: cerca SOLO ${bias === 'BULLISH' ? 'long' : 'short'}. Ignora segnali opposti.`;
+    }
+    if (confidence >= 50) {
+      return `Bias moderato: preferisci ${bias === 'BULLISH' ? 'long' : 'short'}, ma sii selettivo.`;
+    }
+    return `Bias debole: non forzare, aspetta segnale più chiaro.`;
+  }
+  
+  if (trapRisk === 'HIGH') {
+    return `⚠️ Caution! High trap risk. Don't force entry.`;
+  }
+  if (confidence >= 70) {
+    return `Strong bias: look ONLY for ${bias === 'BULLISH' ? 'longs' : 'shorts'}. Ignore opposite signals.`;
+  }
+  if (confidence >= 50) {
+    return `Moderate bias: prefer ${bias === 'BULLISH' ? 'longs' : 'shorts'}, but be selective.`;
+  }
+  return `Weak bias: don't force it, wait for clearer signal.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPEN INTEREST - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getOIWhatItIs(ctx, lang) {
+  const change24h = ctx.change24h || 0;
   const trend = ctx.trend;
   
   if (lang === 'it') {
-    if (change > 5) return `Nuovo denaro sta entrando (+${change.toFixed(1)}%). Il trend ha carburante.`;
-    if (change < -5) return `I trader stanno uscendo (${change.toFixed(1)}%). Movimento in esaurimento.`;
-    return 'Situazione stabile. Né carburante nuovo né uscite.';
+    if (change24h > 5) {
+      return `OI in AUMENTO (+${change24h.toFixed(1)}%). Nuovo denaro sta entrando nel mercato.`;
+    }
+    if (change24h < -5) {
+      return `OI in CALO (${change24h.toFixed(1)}%). I trader stanno chiudendo posizioni.`;
+    }
+    return `OI STABILE (${change24h.toFixed(1)}%). Né entrate né uscite significative.`;
   }
   
-  if (change > 5) return `New money entering (+${change.toFixed(1)}%). Trend has fuel.`;
-  if (change < -5) return `Traders exiting (${change.toFixed(1)}%). Move exhausting.`;
-  return 'Stable situation. Neither new fuel nor exits.';
+  if (change24h > 5) {
+    return `OI INCREASING (+${change24h.toFixed(1)}%). New money entering the market.`;
+  }
+  if (change24h < -5) {
+    return `OI DECREASING (${change24h.toFixed(1)}%). Traders closing positions.`;
+  }
+  return `OI STABLE (${change24h.toFixed(1)}%). No significant entries or exits.`;
 }
 
-function getFundingContext(ctx, lang) {
-  const rate = ctx.rate || ctx.funding || 0;
-  const normalized = rate * 100;
+function getOIWhyItHappens(ctx, lang) {
+  const change1h = ctx.change1h || 0;
+  const change4h = ctx.change4h || 0;
+  const change24h = ctx.change24h || 0;
+  const trend = ctx.trend;
   
   if (lang === 'it') {
-    if (normalized > 0.03) return `Troppi LONG aperti! Pagano caro. Rischio correzione.`;
-    if (normalized > 0) return `Più long che short. Sentiment rialzista ma sano.`;
-    if (normalized < -0.03) return `Troppi SHORT aperti! Pagano caro. Rischio squeeze verso l'alto.`;
-    if (normalized < 0) return `Più short che long. Sentiment ribassista ma sano.`;
-    return 'Equilibrio perfetto tra long e short.';
+    // Analyze velocity
+    if (Math.abs(change1h) > Math.abs(change4h) / 4) {
+      return `Accelerazione recente (1H: ${change1h > 0 ? '+' : ''}${change1h.toFixed(1)}%) → movimento in corso.`;
+    }
+    
+    if (trend === 'increasing') {
+      return `Flusso costante in entrata → supporta il trend attuale, più "benzina" per il movimento.`;
+    }
+    if (trend === 'decreasing') {
+      return `Flusso costante in uscita → il movimento sta perdendo carburante.`;
+    }
+    return `Flusso bilanciato → mercato in equilibrio.`;
   }
   
-  if (normalized > 0.03) return `Too many LONGS open! They're paying high fees. Correction risk.`;
-  if (normalized > 0) return `More longs than shorts. Bullish but healthy sentiment.`;
-  if (normalized < -0.03) return `Too many SHORTS open! They're paying high fees. Squeeze up risk.`;
-  if (normalized < 0) return `More shorts than longs. Bearish but healthy sentiment.`;
-  return 'Perfect balance between longs and shorts.';
+  if (Math.abs(change1h) > Math.abs(change4h) / 4) {
+    return `Recent acceleration (1H: ${change1h > 0 ? '+' : ''}${change1h.toFixed(1)}%) → move in progress.`;
+  }
+  
+  if (trend === 'increasing') {
+    return `Steady inflow → supports current trend, more "fuel" for the move.`;
+  }
+  if (trend === 'decreasing') {
+    return `Steady outflow → move losing fuel.`;
+  }
+  return `Balanced flow → market in equilibrium.`;
 }
 
-function getEnergyContext(ctx, lang) {
-  const level = ctx.level || ctx.energy || 'MEDIUM';
+function getOIAction(ctx, lang) {
+  const change24h = ctx.change24h || 0;
+  const trend = ctx.trend;
+  
+  if (lang === 'it') {
+    if (change24h > 10) {
+      return `Forte afflusso: il trend ha carburante. Puoi seguire il movimento.`;
+    }
+    if (change24h > 5) {
+      return `Afflusso moderato: trend supportato. Entry allineati con la direzione.`;
+    }
+    if (change24h < -10) {
+      return `Forte deflusso: movimento in esaurimento. Considera prendere profitto.`;
+    }
+    if (change24h < -5) {
+      return `Deflusso moderato: cautela, il trend potrebbe invertirsi.`;
+    }
+    return `OI neutrale: nessuna informazione forte. Usa altri indicatori.`;
+  }
+  
+  if (change24h > 10) {
+    return `Strong inflow: trend has fuel. You can follow the move.`;
+  }
+  if (change24h > 5) {
+    return `Moderate inflow: trend supported. Entries aligned with direction.`;
+  }
+  if (change24h < -10) {
+    return `Strong outflow: move exhausting. Consider taking profit.`;
+  }
+  if (change24h < -5) {
+    return `Moderate outflow: caution, trend might reverse.`;
+  }
+  return `Neutral OI: no strong info. Use other indicators.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNDING RATE - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getFundingWhatItIs(ctx, lang) {
+  const rate = ctx.rate || 0;
+  const payer = ctx.payer;
+  const overcrowded = ctx.overcrowded;
+  
+  const ratePercent = (rate * 100).toFixed(4);
+  
+  if (lang === 'it') {
+    if (overcrowded) {
+      return `⚠️ MERCATO AFFOLLATO! Funding ${ratePercent}% → troppi trader nella stessa direzione.`;
+    }
+    if (rate > 0.0003) {
+      return `Funding ALTO POSITIVO (${ratePercent}%). I long pagano i short. Troppi long aperti.`;
+    }
+    if (rate > 0) {
+      return `Funding positivo (${ratePercent}%). Sentiment leggermente bullish.`;
+    }
+    if (rate < -0.0003) {
+      return `Funding ALTO NEGATIVO (${ratePercent}%). I short pagano i long. Troppi short aperti.`;
+    }
+    if (rate < 0) {
+      return `Funding negativo (${ratePercent}%). Sentiment leggermente bearish.`;
+    }
+    return `Funding neutrale (${ratePercent}%). Equilibrio tra long e short.`;
+  }
+  
+  if (overcrowded) {
+    return `⚠️ CROWDED MARKET! Funding ${ratePercent}% → too many traders on same side.`;
+  }
+  if (rate > 0.0003) {
+    return `HIGH POSITIVE funding (${ratePercent}%). Longs pay shorts. Too many longs open.`;
+  }
+  if (rate > 0) {
+    return `Positive funding (${ratePercent}%). Slightly bullish sentiment.`;
+  }
+  if (rate < -0.0003) {
+    return `HIGH NEGATIVE funding (${ratePercent}%). Shorts pay longs. Too many shorts open.`;
+  }
+  if (rate < 0) {
+    return `Negative funding (${ratePercent}%). Slightly bearish sentiment.`;
+  }
+  return `Neutral funding (${ratePercent}%). Balance between longs and shorts.`;
+}
+
+function getFundingWhyItHappens(ctx, lang) {
+  const rate = ctx.rate || 0;
+  const overcrowded = ctx.overcrowded;
+  const sentiment = ctx.sentiment;
+  
+  if (lang === 'it') {
+    if (overcrowded) {
+      return `Quando tutti scommettono nella stessa direzione, il mercato spesso va contro per liquidarli.`;
+    }
+    if (rate > 0.0003) {
+      return `I long stanno pagando caro per mantenere le posizioni → probabile correzione verso il basso.`;
+    }
+    if (rate < -0.0003) {
+      return `Gli short stanno pagando caro per mantenere le posizioni → probabile squeeze verso l'alto.`;
+    }
+    return `Equilibrio sano tra long e short. Nessuna pressione di liquidazione imminente.`;
+  }
+  
+  if (overcrowded) {
+    return `When everyone bets the same way, market often goes against to liquidate them.`;
+  }
+  if (rate > 0.0003) {
+    return `Longs paying high fees to hold → likely correction downward.`;
+  }
+  if (rate < -0.0003) {
+    return `Shorts paying high fees to hold → likely squeeze upward.`;
+  }
+  return `Healthy balance between longs and shorts. No imminent liquidation pressure.`;
+}
+
+function getFundingAction(ctx, lang) {
+  const rate = ctx.rate || 0;
+  const overcrowded = ctx.overcrowded;
+  
+  if (lang === 'it') {
+    if (overcrowded) {
+      return `⚠️ CONTRARIAN: considera la direzione opposta al crowd. Il mercato punisce l'eccesso.`;
+    }
+    if (rate > 0.0003) {
+      return `Attenzione ai long. Rischio correzione. Se long, stringa lo stop.`;
+    }
+    if (rate < -0.0003) {
+      return `Attenzione agli short. Rischio squeeze. Se short, stringa lo stop.`;
+    }
+    return `Funding neutrale. Opera normalmente seguendo altri indicatori.`;
+  }
+  
+  if (overcrowded) {
+    return `⚠️ CONTRARIAN: consider opposite direction to crowd. Market punishes excess.`;
+  }
+  if (rate > 0.0003) {
+    return `Caution with longs. Correction risk. If long, tighten stop.`;
+  }
+  if (rate < -0.0003) {
+    return `Caution with shorts. Squeeze risk. If short, tighten stop.`;
+  }
+  return `Neutral funding. Trade normally following other indicators.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARKET ENERGY - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getEnergyWhatItIs(ctx, lang) {
+  const level = ctx.level;
   const score = ctx.score || 50;
+  const compressionLevel = ctx.compressionLevel;
   
   if (lang === 'it') {
-    if (level === 'HIGH' || score > 70) return `Mercato CARICO! Movimenti forti in arrivo. Segui il flusso.`;
-    if (level === 'LOW' || score < 30) return `Mercato STANCO. Movimenti lenti. Aspetta o riduci aspettative.`;
-    return 'Energia normale. Condizioni standard.';
+    if (level === 'HIGH' || score > 70) {
+      return `Energia ALTA (${score}/100). Mercato carico, movimenti forti imminenti o in corso.`;
+    }
+    if (level === 'LOW' || score < 30) {
+      return `Energia BASSA (${score}/100). Mercato stanco, movimenti lenti.`;
+    }
+    if (compressionLevel === 'HIGH') {
+      return `COMPRESSIONE alta (${score}/100). Volatilità compressa = esplosione imminente.`;
+    }
+    return `Energia media (${score}/100). Condizioni normali.`;
   }
   
-  if (level === 'HIGH' || score > 70) return `Market LOADED! Strong moves coming. Follow the flow.`;
-  if (level === 'LOW' || score < 30) return `Market TIRED. Slow moves. Wait or lower expectations.`;
-  return 'Normal energy. Standard conditions.';
+  if (level === 'HIGH' || score > 70) {
+    return `HIGH energy (${score}/100). Market loaded, strong moves imminent or in progress.`;
+  }
+  if (level === 'LOW' || score < 30) {
+    return `LOW energy (${score}/100). Tired market, slow moves.`;
+  }
+  if (compressionLevel === 'HIGH') {
+    return `HIGH compression (${score}/100). Compressed volatility = explosion imminent.`;
+  }
+  return `Medium energy (${score}/100). Normal conditions.`;
 }
 
-function getV3MonitoringContext(ctx, lang) {
+function getEnergyWhyItHappens(ctx, lang) {
+  const compressionLevel = ctx.compressionLevel;
+  const breakoutPotential = ctx.breakoutPotential;
+  const expectedDirection = ctx.expectedDirection;
+  
+  if (lang === 'it') {
+    if (compressionLevel === 'HIGH') {
+      return `La volatilità è stata compressa. Quando si accumula energia, deve essere rilasciata.`;
+    }
+    if (breakoutPotential) {
+      return `Breakout potenziale verso ${expectedDirection || 'direzione incerta'}. Range si sta restringendo.`;
+    }
+    return `Flusso energetico normale. Il mercato respira.`;
+  }
+  
+  if (compressionLevel === 'HIGH') {
+    return `Volatility has been compressed. When energy accumulates, it must be released.`;
+  }
+  if (breakoutPotential) {
+    return `Potential breakout toward ${expectedDirection || 'uncertain direction'}. Range narrowing.`;
+  }
+  return `Normal energy flow. Market breathing.`;
+}
+
+function getEnergyAction(ctx, lang) {
+  const level = ctx.level;
+  const score = ctx.score || 50;
+  const compressionLevel = ctx.compressionLevel;
+  
+  if (lang === 'it') {
+    if (compressionLevel === 'HIGH') {
+      return `Preparati al breakout. Non entrare ora, aspetta la direzione. Poi segui il flusso.`;
+    }
+    if (level === 'HIGH' || score > 70) {
+      return `Energia alta = movimenti forti. Segui il momentum, non combatterlo.`;
+    }
+    if (level === 'LOW' || score < 30) {
+      return `Energia bassa = mercato lento. Riduci aspettative o aspetta ricarica.`;
+    }
+    return `Condizioni normali. Opera seguendo gli altri indicatori.`;
+  }
+  
+  if (compressionLevel === 'HIGH') {
+    return `Prepare for breakout. Don't enter now, wait for direction. Then follow flow.`;
+  }
+  if (level === 'HIGH' || score > 70) {
+    return `High energy = strong moves. Follow momentum, don't fight it.`;
+  }
+  if (level === 'LOW' || score < 30) {
+    return `Low energy = slow market. Lower expectations or wait for recharge.`;
+  }
+  return `Normal conditions. Trade following other indicators.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V3 MONITORING - INTELLIGENT CONTEXT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getV3MonitoringWhatItIs(ctx, lang) {
   const winRate = ctx.winRate || 0;
   const sampleSize = ctx.sampleSize || 0;
   
   if (lang === 'it') {
-    if (sampleSize < 20) return `Solo ${sampleSize} segnali. Troppo presto per giudicare, continua a osservare.`;
-    if (winRate >= 55) return `${winRate.toFixed(0)}% vincenti su ${sampleSize} segnali. Il sistema funziona bene!`;
-    if (winRate >= 45) return `${winRate.toFixed(0)}% vincenti. Risultato nella media, monitorare.`;
-    return `Solo ${winRate.toFixed(0)}% vincenti. Risultato sotto la media, attenzione.`;
+    if (sampleSize < 20) {
+      return `${sampleSize} segnali raccolti. Dati preliminari, servono più trade per validare.`;
+    }
+    return `Win Rate: ${winRate.toFixed(1)}% su ${sampleSize} segnali. Performance statistica del sistema.`;
   }
   
-  if (sampleSize < 20) return `Only ${sampleSize} signals. Too early to judge, keep watching.`;
-  if (winRate >= 55) return `${winRate.toFixed(0)}% winners on ${sampleSize} signals. System working well!`;
-  if (winRate >= 45) return `${winRate.toFixed(0)}% winners. Average result, keep monitoring.`;
-  return `Only ${winRate.toFixed(0)}% winners. Below average, be careful.`;
+  if (sampleSize < 20) {
+    return `${sampleSize} signals collected. Preliminary data, need more trades to validate.`;
+  }
+  return `Win Rate: ${winRate.toFixed(1)}% on ${sampleSize} signals. System statistical performance.`;
+}
+
+function getV3MonitoringWhyItHappens(ctx, lang) {
+  const winRate = ctx.winRate || 0;
+  const sampleSize = ctx.sampleSize || 0;
+  
+  if (lang === 'it') {
+    if (sampleSize < 30) {
+      return `Sample size basso = varianza alta. Il win rate può cambiare molto con più dati.`;
+    }
+    if (winRate >= 55) {
+      return `Il sistema ha un edge statistico positivo. Confluenze e timing funzionano.`;
+    }
+    if (winRate >= 45) {
+      return `Performance nella media. Il sistema è break-even, serve ottimizzazione.`;
+    }
+    return `Performance sotto attese. Verifica condizioni di mercato o parametri sistema.`;
+  }
+  
+  if (sampleSize < 30) {
+    return `Low sample size = high variance. Win rate can change a lot with more data.`;
+  }
+  if (winRate >= 55) {
+    return `System has positive statistical edge. Confluences and timing are working.`;
+  }
+  if (winRate >= 45) {
+    return `Average performance. System is break-even, needs optimization.`;
+  }
+  return `Performance below expectations. Check market conditions or system parameters.`;
+}
+
+function getV3MonitoringAction(ctx, lang) {
+  const winRate = ctx.winRate || 0;
+  const sampleSize = ctx.sampleSize || 0;
+  
+  if (lang === 'it') {
+    if (sampleSize < 30) {
+      return `Continua a raccogliere dati. Non modificare il sistema basandoti su pochi trade.`;
+    }
+    if (winRate >= 55) {
+      return `Sistema validato. Puoi fidarti dei segnali con size normale.`;
+    }
+    if (winRate >= 45) {
+      return `Sistema nella media. Usa size ridotta finché non migliora.`;
+    }
+    return `Sistema sottoperformante. Considera size minima o pausa.`;
+  }
+  
+  if (sampleSize < 30) {
+    return `Keep collecting data. Don't modify system based on few trades.`;
+  }
+  if (winRate >= 55) {
+    return `System validated. You can trust signals with normal size.`;
+  }
+  if (winRate >= 45) {
+    return `System average. Use reduced size until it improves.`;
+  }
+  return `System underperforming. Consider minimum size or pause.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIQUIDITY HELPER
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getLiquidityWhyItHappens(ctx, lang) {
+  const above = ctx.liquidityAbove || 0;
+  const below = ctx.liquidityBelow || 0;
+  
+  if (lang === 'it') {
+    if (above > below * 1.5) {
+      return `Più stop loss SOPRA → il prezzo è attratto verso l'alto per "cacciarli".`;
+    }
+    if (below > above * 1.5) {
+      return `Più stop loss SOTTO → il prezzo è attratto verso il basso per "cacciarli".`;
+    }
+    return `Liquidità bilanciata. Il prezzo può andare in entrambe le direzioni.`;
+  }
+  
+  if (above > below * 1.5) {
+    return `More stop losses ABOVE → price attracted upward to "hunt" them.`;
+  }
+  if (below > above * 1.5) {
+    return `More stop losses BELOW → price attracted downward to "hunt" them.`;
+  }
+  return `Balanced liquidity. Price can go either direction.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUALITY GATE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getQualityWhatItIs(ctx, lang) {
+  const score = ctx.qualityScore || ctx.score || 0;
+  
+  if (lang === 'it') {
+    if (score >= 80) return `Qualità ALTA (${score}/100). Molte confluenze allineate.`;
+    if (score >= 60) return `Qualità MEDIA (${score}/100). Confluenze sufficienti ma non ideali.`;
+    if (score >= 40) return `Qualità BASSA (${score}/100). Poche confluenze, setup debole.`;
+    return `Qualità INSUFFICIENTE (${score}/100). Troppe incongruenze.`;
+  }
+  
+  if (score >= 80) return `HIGH quality (${score}/100). Many aligned confluences.`;
+  if (score >= 60) return `MEDIUM quality (${score}/100). Sufficient but not ideal confluences.`;
+  if (score >= 40) return `LOW quality (${score}/100). Few confluences, weak setup.`;
+  return `INSUFFICIENT quality (${score}/100). Too many inconsistencies.`;
+}
+
+function getQualityWhyItHappens(ctx, lang) {
+  const score = ctx.qualityScore || ctx.score || 0;
+  
+  if (lang === 'it') {
+    if (score >= 80) {
+      return `Liquidità, whale, bias, timing tutti allineati → setup pulito.`;
+    }
+    if (score >= 60) {
+      return `Alcune confluenze presenti ma non tutte → rischio maggiore.`;
+    }
+    return `Confluenze contrastanti o assenti → alto rischio di trappola.`;
+  }
+  
+  if (score >= 80) {
+    return `Liquidity, whales, bias, timing all aligned → clean setup.`;
+  }
+  if (score >= 60) {
+    return `Some confluences present but not all → higher risk.`;
+  }
+  return `Conflicting or missing confluences → high trap risk.`;
 }
 
 export default HelpOverlay;

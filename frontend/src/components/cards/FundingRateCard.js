@@ -107,14 +107,21 @@ export function FundingRateCard() {
         </div>
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="funding_rate"
         language={language}
         contextData={{
-          rate: fundingRate.rate,
-          funding: fundingRate.rate
+          rate: current_rate,
+          annualizedRate: annualized_rate,
+          // Who is paying
+          payer: payer,
+          sentiment: sentiment,
+          // Crowding analysis
+          overcrowded: overcrowded,
+          // Signal
+          signal: signal_text
         }}
       />
     </div>

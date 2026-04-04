@@ -1,6 +1,61 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-04
 
+## ✅ Help Mode v2.0 - Intelligent Market Reading Assistant (2026-04-04)
+
+### What Changed
+Complete rewrite of HelpOverlay system from "what to do" explanations to intelligent "WHY the market behaves this way" analysis.
+
+### New Structure Per Card
+1. **Cosa succede**: What's happening in the market (context-aware)
+2. **Perché**: WHY this is happening - liquidity, whales, flow analysis, risk assessment
+3. **Azione**: Specific actionable guidance based on current conditions
+
+### Intelligence Features Added
+- **Liquidity Flow Analysis**: Explains where stops are and why price is attracted
+- **Whale Alignment Detection**: Shows if institutional flow supports or opposes your trade
+- **Trap Risk Warnings**: Alerts when market conditions favor false moves
+- **Confluence Scoring**: Explains how many factors align and their impact
+- **Crowding Analysis**: Warns when too many traders are on same side (squeeze risk)
+
+### Cards with Enhanced Intelligence
+| Card | Enhanced Context |
+|------|-----------------|
+| V3 Signal | liquidityAbove/Below, whaleDirection, qualityScore, eventType, confirmationType |
+| Market Regime | trapRisk, whaleAlignment, liquidityAlignment, oiSupportive, all regime scores |
+| Whale Activity | whaleBehavior, absorptionDetected, oiDivergence, liquidationBias, orderbookAggression |
+| Open Interest | change1h/4h/24h velocity analysis, trend fuel interpretation |
+| Funding Rate | overcrowded detection, payer analysis, squeeze probability |
+| Liquidity Magnet | imbalanceRatio, attractorPrice, nearestLiquidityUp/Down |
+| Market Bias | trapRisk, squeezeProbability, exchangeConsensus |
+| Market Energy | compressionLevel, breakoutPotential, expectedDirection |
+
+### Example Output (V3 Signal)
+```
+Cosa succede: Segnale LONG confermato. Struttura 4H + trigger 5M allineati. Il mercato sta offrendo un'opportunità.
+Perché: ↗️ Liquidità maggiore sopra (2.1x) → prezzo attratto verso l'alto • balene allineate con LONG • confluenze forti (85/100)
+Azione: Entry valido con size normale. R:R 1.8 favorevole.
+```
+
+### Files Modified
+- `/app/frontend/src/components/ui/HelpOverlay.js` - Complete rewrite (~900 lines)
+- `/app/frontend/src/components/cards/V3SignalCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/MarketRegimeCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/WhaleAlertCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/OpenInterestCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/FundingRateCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/MarketBiasCard.js` - Enhanced contextData
+- `/app/frontend/src/components/cards/MarketEnergyCard.js` - Enhanced contextData
+
+### What is NOT Changed
+- ✅ Trading logic (unchanged)
+- ✅ V3 thresholds (unchanged)
+- ✅ Backend calculations (unchanged)
+- ✅ Signal generation (unchanged)
+
+---
+
 ## ✅ Didactic/Help Mode UX Improvement (2026-04-04)
 
 ### What Changed

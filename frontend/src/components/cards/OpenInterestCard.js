@@ -122,14 +122,20 @@ export function OpenInterestCard() {
         </div>
       </div>
 
-      {/* Help Overlay - Learn Mode */}
+      {/* Help Overlay - Learn Mode - Enhanced Context */}
       <HelpOverlay 
         show={learnMode}
         cardType="open_interest"
         language={language}
         contextData={{
+          // OI changes across timeframes
+          change1h: openInterest.change_1h,
+          change4h: openInterest.change_4h,
           change24h: openInterest.change_24h,
-          trend: openInterest.trend
+          trend: openInterest.trend,
+          totalOI: openInterest.total_oi,
+          // Signal interpretation
+          signal: openInterest.signal
         }}
       />
     </div>

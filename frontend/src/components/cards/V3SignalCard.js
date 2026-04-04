@@ -757,7 +757,7 @@ export function V3SignalCard({ language = 'it' }) {
           )}
         </div>
 
-        {/* Help Overlay - Learn Mode */}
+        {/* Help Overlay - Learn Mode - Enhanced Context */}
         <HelpOverlay 
           show={learnMode}
           cardType="v3_signal"
@@ -765,7 +765,26 @@ export function V3SignalCard({ language = 'it' }) {
           contextData={{
             phase: setup?.phase || setup?.status,
             direction: setup?.direction,
-            sentiment: setup?.direction
+            sentiment: setup?.direction,
+            // Market structure context
+            regime: v3Data?.market_regime,
+            bias: v3Data?.market_bias,
+            biasConfidence: v3Data?.bias_confidence,
+            // Liquidity context
+            liquidityAbove: v3Data?.liquidity_context?.above_total,
+            liquidityBelow: v3Data?.liquidity_context?.below_total,
+            liquidityImbalance: v3Data?.liquidity_context?.imbalance_direction,
+            // Whale context
+            whaleDirection: v3Data?.whale_context?.direction,
+            whaleStrength: v3Data?.whale_context?.strength,
+            // Energy & timing
+            energyScore: v3Data?.energy_context?.score,
+            compressionLevel: v3Data?.energy_context?.compression_level,
+            // Quality & risk
+            qualityScore: setup?.quality_score,
+            riskReward: setup?.risk_reward_ratio,
+            eventType: setup?.event_type,
+            confirmationType: setup?.confirmation_type
           }}
         />
       </div>
