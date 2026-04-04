@@ -1,5 +1,65 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-04-03
+**Last Updated:** 2026-04-04
+
+## ✅ NEW: Shadow Liquidity Target Engine v0.1 (2026-04-04)
+
+### Purpose
+Test and collect data for liquidity-based exit targets WITHOUT affecting live V3 system.
+
+### Implementation
+- **Location**: `server.py` lines 6208-6700+ (new functions)
+- **Mode**: SHADOW ONLY - parallel calculation, no live impact
+- **Storage**: `shadow_liquidity_targets` MongoDB collection
+
+### Functions Added
+| Function | Purpose |
+|----------|---------|
+| `calculate_shadow_liquidity_targets()` | Analyze 4 liquidity sources, generate shadow T1/T2/T3 |
+| `store_shadow_targets()` | Store shadow data in separate collection |
+| `_calculate_and_store_shadow_targets()` | Async helper called on V3 ENTRY_READY |
+
+### Data Sources Analyzed
+1. **Liquidation Heatmap** (CoinGlass) - where stops are clustered
+2. **Order Book Walls** - large orders above/below entry
+3. **Historical Liquidity Clusters** - high volume zones
+4. **Magnet Analysis** - net attraction direction
+
+### Shadow Target Structure
+```json
+{
+  "liquidity_targets": {
+    "target_1": price, "target_1_source": "liquidation_cluster",
+    "target_2": price, "target_2_source": "orderbook_wall",
+    "target_3": price  // Extended runner target
+  },
+  "suggested_exit_plan": {
+    "partial_at_t1_percent": 50,
+    "partial_at_t2_percent": 30,
+    "runner_percent": 20,
+    "confidence": 75
+  },
+  "data_quality": {
+    "overall_quality": 0-100,
+    "has_liquidation_data": bool,
+    "has_orderbook_data": bool
+  },
+  "comparison": {
+    "t1_difference_percent": diff vs standard
+  }
+}
+```
+
+### API Endpoint
+- `GET /api/v3/shadow-targets` - View collected shadow data and aggregate stats
+
+### What is NOT Changed
+- ✅ Live V3 targets (unchanged)
+- ✅ Entry logic (unchanged)
+- ✅ Stop logic (unchanged)
+- ✅ Telegram behavior (unchanged)
+- ✅ Outcome engine (unchanged)
+
+---
 
 ## ✅ V2 Telegram Alerts Disabled (2026-04-03)
 
