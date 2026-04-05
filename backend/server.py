@@ -1666,13 +1666,29 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                     "target_1": setup_data.get("target_1", 0),
                     "target_2": setup_data.get("target_2", 0),
                     "target_1_type": setup_data.get("target_1_type"),
-                    "target_2_type": setup_data.get("target_2_type")
+                    "target_2_type": setup_data.get("target_2_type"),
+                    "stop_loss": setup_data.get("stop_loss", 0)
                 },
                 market_context=market_context
             ))
             logger.debug(f"[Shadow Liquidity] Queued shadow target calculation for {signal_id[:8]}")
         except Exception as shadow_err:
             logger.debug(f"[Shadow Liquidity] Non-critical error queuing shadow calc: {shadow_err}")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # SHADOW VALIDATION ENGINE - Full signal analysis (non-blocking)
+        # Evaluates R:R, conflicts, quality classification WITHOUT affecting live
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            asyncio.create_task(_perform_full_shadow_validation(
+                signal_id=signal_id,
+                setup_data=setup_data,
+                current_price=current_price,
+                market_context=market_context
+            ))
+            logger.debug(f"[Shadow Validation] Queued validation for {signal_id[:8]}")
+        except Exception as val_err:
+            logger.debug(f"[Shadow Validation] Non-critical error queuing validation: {val_err}")
         
         return {
             "recorded": True, 
@@ -7263,6 +7279,990 @@ def get_shadow_recommendation(shadow_avg: float, standard_avg: float, total: int
         return "NO CLEAR WINNER: Both systems performing similarly. Consider other factors for decision."
 
 
+# ═══════════════════════════════════════════════════════════════════════════════════════
+# SHADOW VALIDATION ENGINE v1.0
+# 
+# Complete shadow validation system that evaluates V3 signals WITHOUT modifying live logic.
+# Runs in parallel, logs everything, makes no production changes.
+#
+# Components:
+# 1. Hard Risk Filter - R:R and conflict validation
+# 2. Setup Classification - LOW/MID/HIGH quality categorization
+# 3. Hybrid Exit Simulation - Standard vs Shadow vs Hybrid comparison
+# 4. Performance Tracking - Full metrics for 30-day observation
+# 5. Promotion Readiness - Data-driven switch recommendations
+# ═══════════════════════════════════════════════════════════════════════════════════════
+
+class ShadowValidationStatus(str, Enum):
+    """Shadow validation result status"""
+    VALID = "VALID"              # Signal passes all shadow checks
+    LOW_QUALITY = "LOW_QUALITY"  # Signal has issues but not rejected
+    REJECTED = "REJECTED"        # Signal would be filtered out
+
+class SetupQualityClass(str, Enum):
+    """Setup quality classification"""
+    LOW = "LOW"
+    MID = "MID"
+    HIGH = "HIGH"
+
+class ExitModel(str, Enum):
+    """Exit strategy models for comparison"""
+    STANDARD = "STANDARD"   # Current V3 targets
+    SHADOW = "SHADOW"       # Liquidity-based targets
+    HYBRID = "HYBRID"       # 50% standard T1, 50% shadow T2
+
+
+def calculate_risk_reward_ratio(
+    entry_price: float,
+    stop_loss: float,
+    target: float,
+    direction: str
+) -> float:
+    """Calculate R:R ratio for a trade setup"""
+    if direction == "LONG":
+        risk = entry_price - stop_loss
+        reward = target - entry_price
+    else:
+        risk = stop_loss - entry_price
+        reward = entry_price - target
+    
+    if risk <= 0:
+        return 0.0
+    
+    return round(reward / risk, 2)
+
+
+async def perform_shadow_risk_validation(
+    setup: Dict[str, Any],
+    current_price: float,
+    whale_direction: Optional[str] = None,
+    liquidity_direction: Optional[str] = None,
+    data_freshness: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    TASK 1: Hard Risk Filter (Shadow Mode)
+    
+    Evaluates each V3 signal BEFORE it would be considered tradable.
+    Does NOT block live signals - only logs and evaluates.
+    
+    Rules:
+    - Reject if R:R < 1.0
+    - Flag as LOW_QUALITY if R:R < 1.3
+    - Block if: high risk + quality_score < 70
+    - Block if: data freshness degraded
+    - Block if: conflicting whale vs liquidity signals
+    
+    Returns validation result for logging.
+    """
+    validation_result = {
+        "shadow_validation": {
+            "status": ShadowValidationStatus.VALID.value,
+            "reasons": [],
+            "risk_flags": [],
+            "computed_rr": 0,
+            "quality_assessment": "",
+            "conflict_detected": False,
+            "data_quality_ok": True,
+            "would_be_tradable": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    }
+    
+    try:
+        direction = setup.get("direction", "LONG")
+        entry_price = setup.get("zone_low", current_price) if direction == "LONG" else setup.get("zone_high", current_price)
+        stop_loss = setup.get("stop_loss", 0)
+        target_1 = setup.get("target_1", 0)
+        target_2 = setup.get("target_2", 0)
+        quality_score = setup.get("quality_score", 50)
+        
+        reasons = []
+        risk_flags = []
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 1. R:R VALIDATION
+        # ═══════════════════════════════════════════════════════════════════
+        if target_1 and stop_loss:
+            rr_t1 = calculate_risk_reward_ratio(entry_price, stop_loss, target_1, direction)
+            validation_result["shadow_validation"]["computed_rr"] = rr_t1
+            
+            if rr_t1 < 1.0:
+                validation_result["shadow_validation"]["status"] = ShadowValidationStatus.REJECTED.value
+                reasons.append(f"R:R too low ({rr_t1:.2f} < 1.0 minimum)")
+                risk_flags.append("CRITICAL_RR")
+                validation_result["shadow_validation"]["would_be_tradable"] = False
+            
+            elif rr_t1 < 1.3:
+                if validation_result["shadow_validation"]["status"] != ShadowValidationStatus.REJECTED.value:
+                    validation_result["shadow_validation"]["status"] = ShadowValidationStatus.LOW_QUALITY.value
+                reasons.append(f"R:R below ideal ({rr_t1:.2f} < 1.3)")
+                risk_flags.append("LOW_RR")
+        else:
+            validation_result["shadow_validation"]["status"] = ShadowValidationStatus.REJECTED.value
+            reasons.append("Missing target or stop loss data")
+            risk_flags.append("INCOMPLETE_DATA")
+            validation_result["shadow_validation"]["would_be_tradable"] = False
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 2. QUALITY + RISK COMBINATION CHECK
+        # ═══════════════════════════════════════════════════════════════════
+        if quality_score < 70:
+            risk_flags.append("LOW_QUALITY_SCORE")
+            if validation_result["shadow_validation"]["computed_rr"] < 1.3:
+                validation_result["shadow_validation"]["status"] = ShadowValidationStatus.REJECTED.value
+                reasons.append(f"Low quality ({quality_score}) combined with poor R:R")
+                validation_result["shadow_validation"]["would_be_tradable"] = False
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 3. CONFLICT DETECTION (Whale vs Liquidity)
+        # ═══════════════════════════════════════════════════════════════════
+        if whale_direction and liquidity_direction:
+            # Normalize directions
+            whale_bull = whale_direction.upper() in ["BUY", "LONG", "BULLISH"]
+            whale_bear = whale_direction.upper() in ["SELL", "SHORT", "BEARISH"]
+            liq_up = liquidity_direction.upper() in ["UP", "ABOVE", "LONG", "BULLISH"]
+            liq_down = liquidity_direction.upper() in ["DOWN", "BELOW", "SHORT", "BEARISH"]
+            
+            # Check for conflict
+            if (whale_bull and liq_down) or (whale_bear and liq_up):
+                validation_result["shadow_validation"]["conflict_detected"] = True
+                risk_flags.append("WHALE_LIQ_CONFLICT")
+                
+                if validation_result["shadow_validation"]["status"] != ShadowValidationStatus.REJECTED.value:
+                    validation_result["shadow_validation"]["status"] = ShadowValidationStatus.LOW_QUALITY.value
+                reasons.append(f"Conflicting signals: Whale={whale_direction}, Liquidity={liquidity_direction}")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 4. DATA FRESHNESS CHECK
+        # ═══════════════════════════════════════════════════════════════════
+        if data_freshness:
+            stale_sources = []
+            for source, info in data_freshness.items():
+                if isinstance(info, dict):
+                    status = info.get("status", "fresh")
+                    if status in ["stale", "critical", "unavailable"]:
+                        stale_sources.append(source)
+            
+            if len(stale_sources) >= 2:
+                validation_result["shadow_validation"]["data_quality_ok"] = False
+                risk_flags.append("STALE_DATA")
+                
+                if "price" in stale_sources or "candles" in stale_sources:
+                    validation_result["shadow_validation"]["status"] = ShadowValidationStatus.REJECTED.value
+                    reasons.append(f"Critical data stale: {stale_sources}")
+                    validation_result["shadow_validation"]["would_be_tradable"] = False
+                else:
+                    reasons.append(f"Data freshness degraded: {stale_sources}")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # 5. GENERATE QUALITY ASSESSMENT
+        # ═══════════════════════════════════════════════════════════════════
+        rr = validation_result["shadow_validation"]["computed_rr"]
+        if rr >= 1.5 and quality_score >= 80 and not validation_result["shadow_validation"]["conflict_detected"]:
+            validation_result["shadow_validation"]["quality_assessment"] = "EXCELLENT - Strong setup with good R:R"
+        elif rr >= 1.3 and quality_score >= 70:
+            validation_result["shadow_validation"]["quality_assessment"] = "GOOD - Tradable setup"
+        elif rr >= 1.0 and quality_score >= 60:
+            validation_result["shadow_validation"]["quality_assessment"] = "MARGINAL - Reduced position size recommended"
+        else:
+            validation_result["shadow_validation"]["quality_assessment"] = "POOR - Would be filtered in optimized system"
+        
+        validation_result["shadow_validation"]["reasons"] = reasons
+        validation_result["shadow_validation"]["risk_flags"] = risk_flags
+        
+        return validation_result
+        
+    except Exception as e:
+        logger.error(f"[Shadow Risk Filter] Error: {e}")
+        validation_result["shadow_validation"]["status"] = ShadowValidationStatus.REJECTED.value
+        validation_result["shadow_validation"]["reasons"].append(f"Validation error: {str(e)}")
+        return validation_result
+
+
+def classify_setup_quality(
+    quality_score: float,
+    rr_ratio: float,
+    whale_aligned: bool,
+    liquidity_aligned: bool,
+    regime: str,
+    conflict_detected: bool = False
+) -> Dict[str, Any]:
+    """
+    TASK 3: Setup Classification
+    
+    Classifies each signal into LOW_QUALITY, MID_QUALITY, or HIGH_QUALITY.
+    
+    Scoring:
+    - Quality Score: 0-100 (primary factor)
+    - R:R Ratio: < 1.0 = penalty, > 1.5 = bonus
+    - Whale Alignment: +15 if aligned
+    - Liquidity Alignment: +15 if aligned
+    - Regime Clarity: TRENDING = +10, COMPRESSION = +5
+    - Conflicts: -20 if detected
+    
+    Returns classification with reasoning.
+    """
+    classification = {
+        "setup_class": SetupQualityClass.MID.value,
+        "composite_score": 0,
+        "factors": {
+            "quality_score_contribution": 0,
+            "rr_contribution": 0,
+            "whale_contribution": 0,
+            "liquidity_contribution": 0,
+            "regime_contribution": 0,
+            "conflict_penalty": 0
+        },
+        "reasoning": []
+    }
+    
+    composite = 0
+    
+    # Quality score contribution (0-50 points)
+    quality_contribution = min(50, quality_score * 0.5)
+    composite += quality_contribution
+    classification["factors"]["quality_score_contribution"] = round(quality_contribution, 1)
+    
+    # R:R contribution (-20 to +20 points)
+    if rr_ratio >= 2.0:
+        rr_contribution = 20
+        classification["reasoning"].append("Excellent R:R (≥2.0)")
+    elif rr_ratio >= 1.5:
+        rr_contribution = 15
+        classification["reasoning"].append("Good R:R (≥1.5)")
+    elif rr_ratio >= 1.3:
+        rr_contribution = 10
+        classification["reasoning"].append("Acceptable R:R (≥1.3)")
+    elif rr_ratio >= 1.0:
+        rr_contribution = 0
+        classification["reasoning"].append("Marginal R:R (≥1.0)")
+    else:
+        rr_contribution = -20
+        classification["reasoning"].append("Poor R:R (<1.0)")
+    
+    composite += rr_contribution
+    classification["factors"]["rr_contribution"] = rr_contribution
+    
+    # Whale alignment (+15)
+    if whale_aligned:
+        composite += 15
+        classification["factors"]["whale_contribution"] = 15
+        classification["reasoning"].append("Whale flow aligned")
+    
+    # Liquidity alignment (+15)
+    if liquidity_aligned:
+        composite += 15
+        classification["factors"]["liquidity_contribution"] = 15
+        classification["reasoning"].append("Liquidity direction aligned")
+    
+    # Regime contribution
+    regime_upper = (regime or "").upper()
+    if regime_upper in ["TRENDING", "TREND"]:
+        composite += 10
+        classification["factors"]["regime_contribution"] = 10
+        classification["reasoning"].append("Clear trending regime")
+    elif regime_upper == "COMPRESSION":
+        composite += 5
+        classification["factors"]["regime_contribution"] = 5
+        classification["reasoning"].append("Compression (breakout potential)")
+    elif regime_upper in ["VOLATILE", "CHOPPY"]:
+        composite -= 5
+        classification["factors"]["regime_contribution"] = -5
+        classification["reasoning"].append("Volatile regime (higher risk)")
+    
+    # Conflict penalty
+    if conflict_detected:
+        composite -= 20
+        classification["factors"]["conflict_penalty"] = -20
+        classification["reasoning"].append("Signal conflict detected")
+    
+    classification["composite_score"] = round(composite, 1)
+    
+    # Final classification
+    if composite >= 75:
+        classification["setup_class"] = SetupQualityClass.HIGH.value
+    elif composite >= 50:
+        classification["setup_class"] = SetupQualityClass.MID.value
+    else:
+        classification["setup_class"] = SetupQualityClass.LOW.value
+    
+    return classification
+
+
+async def simulate_hybrid_exit(
+    entry_price: float,
+    direction: str,
+    stop_loss: float,
+    standard_t1: float,
+    standard_t2: float,
+    shadow_t1: Optional[float],
+    shadow_t2: Optional[float],
+    price_history: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    TASK 2: Hybrid Exit Simulation
+    
+    Simulates three exit models and compares results:
+    
+    1. STANDARD: 100% exit at standard T1 or T2
+    2. SHADOW: 100% exit at shadow T1 or T2
+    3. HYBRID: 50% at standard T1, 50% left running toward shadow T2
+    
+    Returns comparison of all three models.
+    """
+    simulation = {
+        "models": {
+            "standard": {
+                "realized_r": 0,
+                "exit_price": None,
+                "exit_reason": None,
+                "partial_exits": []
+            },
+            "shadow": {
+                "realized_r": 0,
+                "exit_price": None,
+                "exit_reason": None,
+                "partial_exits": []
+            },
+            "hybrid": {
+                "realized_r": 0,
+                "weighted_exit_price": None,
+                "partial_exits": []
+            }
+        },
+        "comparison": {
+            "best_model": None,
+            "worst_model": None,
+            "standard_vs_shadow_delta": 0,
+            "standard_vs_hybrid_delta": 0,
+            "shadow_vs_hybrid_delta": 0
+        },
+        "price_analysis": {
+            "mfe": 0,
+            "mfe_price": None,
+            "mae": 0,
+            "mae_price": None,
+            "standard_exit_too_early": False,
+            "shadow_missed_profit": False
+        }
+    }
+    
+    if not price_history:
+        return simulation
+    
+    prices = [p.get("price", 0) for p in price_history if p.get("price", 0) > 0]
+    if not prices:
+        return simulation
+    
+    # Calculate risk (for R:R computation)
+    if direction == "LONG":
+        risk = entry_price - stop_loss
+        mfe_price = max(prices)
+        mae_price = min(prices)
+        mfe_pct = ((mfe_price - entry_price) / entry_price) * 100
+        mae_pct = ((entry_price - mae_price) / entry_price) * 100
+    else:
+        risk = stop_loss - entry_price
+        mfe_price = min(prices)
+        mae_price = max(prices)
+        mfe_pct = ((entry_price - mfe_price) / entry_price) * 100
+        mae_pct = ((mae_price - entry_price) / entry_price) * 100
+    
+    simulation["price_analysis"]["mfe"] = round(mfe_pct, 2)
+    simulation["price_analysis"]["mfe_price"] = mfe_price
+    simulation["price_analysis"]["mae"] = round(mae_pct, 2)
+    simulation["price_analysis"]["mae_price"] = mae_price
+    
+    # Helper to check if target hit
+    def was_hit(target: float, direction: str, prices: List[float]) -> bool:
+        if not target:
+            return False
+        if direction == "LONG":
+            return any(p >= target for p in prices)
+        else:
+            return any(p <= target for p in prices)
+    
+    # Helper to calculate R:R
+    def calc_r(exit_price: float, entry: float, risk: float, direction: str) -> float:
+        if risk <= 0:
+            return 0
+        if direction == "LONG":
+            return (exit_price - entry) / risk
+        else:
+            return (entry - exit_price) / risk
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # STANDARD MODEL
+    # ═══════════════════════════════════════════════════════════════════
+    std_hit_t1 = was_hit(standard_t1, direction, prices)
+    std_hit_t2 = was_hit(standard_t2, direction, prices)
+    std_hit_stop = was_hit(stop_loss, direction if direction == "SHORT" else ("SHORT" if direction == "LONG" else "LONG"), prices)
+    
+    if std_hit_t2:
+        simulation["models"]["standard"]["exit_price"] = standard_t2
+        simulation["models"]["standard"]["exit_reason"] = "T2_HIT"
+        simulation["models"]["standard"]["realized_r"] = calc_r(standard_t2, entry_price, risk, direction)
+    elif std_hit_t1:
+        simulation["models"]["standard"]["exit_price"] = standard_t1
+        simulation["models"]["standard"]["exit_reason"] = "T1_HIT"
+        simulation["models"]["standard"]["realized_r"] = calc_r(standard_t1, entry_price, risk, direction)
+    elif std_hit_stop:
+        simulation["models"]["standard"]["exit_price"] = stop_loss
+        simulation["models"]["standard"]["exit_reason"] = "STOP_LOSS"
+        simulation["models"]["standard"]["realized_r"] = -1.0
+    else:
+        # Expired - use last price
+        simulation["models"]["standard"]["exit_price"] = prices[-1]
+        simulation["models"]["standard"]["exit_reason"] = "EXPIRED"
+        simulation["models"]["standard"]["realized_r"] = calc_r(prices[-1], entry_price, risk, direction)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SHADOW MODEL
+    # ═══════════════════════════════════════════════════════════════════
+    if shadow_t1 and shadow_t2:
+        shd_hit_t1 = was_hit(shadow_t1, direction, prices)
+        shd_hit_t2 = was_hit(shadow_t2, direction, prices)
+        
+        if shd_hit_t2:
+            simulation["models"]["shadow"]["exit_price"] = shadow_t2
+            simulation["models"]["shadow"]["exit_reason"] = "T2_HIT"
+            simulation["models"]["shadow"]["realized_r"] = calc_r(shadow_t2, entry_price, risk, direction)
+        elif shd_hit_t1:
+            simulation["models"]["shadow"]["exit_price"] = shadow_t1
+            simulation["models"]["shadow"]["exit_reason"] = "T1_HIT"
+            simulation["models"]["shadow"]["realized_r"] = calc_r(shadow_t1, entry_price, risk, direction)
+        elif std_hit_stop:
+            simulation["models"]["shadow"]["exit_price"] = stop_loss
+            simulation["models"]["shadow"]["exit_reason"] = "STOP_LOSS"
+            simulation["models"]["shadow"]["realized_r"] = -1.0
+        else:
+            simulation["models"]["shadow"]["exit_price"] = prices[-1]
+            simulation["models"]["shadow"]["exit_reason"] = "EXPIRED"
+            simulation["models"]["shadow"]["realized_r"] = calc_r(prices[-1], entry_price, risk, direction)
+    else:
+        # No shadow targets - copy standard
+        simulation["models"]["shadow"] = simulation["models"]["standard"].copy()
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # HYBRID MODEL (50% standard T1, 50% toward shadow T2)
+    # ═══════════════════════════════════════════════════════════════════
+    hybrid_r = 0
+    partial_exits = []
+    
+    # First 50%: Exit at standard T1 if hit
+    if std_hit_t1:
+        first_exit_r = calc_r(standard_t1, entry_price, risk, direction) * 0.5
+        partial_exits.append({
+            "portion": 0.5,
+            "exit_price": standard_t1,
+            "reason": "STANDARD_T1"
+        })
+        hybrid_r += first_exit_r
+        
+        # Second 50%: Try to reach shadow T2
+        if shadow_t2 and was_hit(shadow_t2, direction, prices):
+            second_exit_r = calc_r(shadow_t2, entry_price, risk, direction) * 0.5
+            partial_exits.append({
+                "portion": 0.5,
+                "exit_price": shadow_t2,
+                "reason": "SHADOW_T2"
+            })
+            hybrid_r += second_exit_r
+        elif std_hit_stop:
+            partial_exits.append({
+                "portion": 0.5,
+                "exit_price": stop_loss,
+                "reason": "STOP_LOSS"
+            })
+            hybrid_r += -0.5  # -1R * 0.5
+        else:
+            # Trail to best available
+            second_exit_r = calc_r(prices[-1], entry_price, risk, direction) * 0.5
+            partial_exits.append({
+                "portion": 0.5,
+                "exit_price": prices[-1],
+                "reason": "TRAIL_EXIT"
+            })
+            hybrid_r += second_exit_r
+    elif std_hit_stop:
+        # Full stop loss
+        hybrid_r = -1.0
+        partial_exits.append({
+            "portion": 1.0,
+            "exit_price": stop_loss,
+            "reason": "STOP_LOSS"
+        })
+    else:
+        # Expired
+        hybrid_r = calc_r(prices[-1], entry_price, risk, direction)
+        partial_exits.append({
+            "portion": 1.0,
+            "exit_price": prices[-1],
+            "reason": "EXPIRED"
+        })
+    
+    simulation["models"]["hybrid"]["realized_r"] = round(hybrid_r, 2)
+    simulation["models"]["hybrid"]["partial_exits"] = partial_exits
+    if partial_exits:
+        weighted_price = sum(p["exit_price"] * p["portion"] for p in partial_exits)
+        simulation["models"]["hybrid"]["weighted_exit_price"] = round(weighted_price, 2)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # COMPARISON
+    # ═══════════════════════════════════════════════════════════════════
+    std_r = simulation["models"]["standard"]["realized_r"]
+    shd_r = simulation["models"]["shadow"]["realized_r"]
+    hyb_r = simulation["models"]["hybrid"]["realized_r"]
+    
+    results = {"STANDARD": std_r, "SHADOW": shd_r, "HYBRID": hyb_r}
+    best = max(results, key=results.get)
+    worst = min(results, key=results.get)
+    
+    simulation["comparison"]["best_model"] = best
+    simulation["comparison"]["worst_model"] = worst
+    simulation["comparison"]["standard_vs_shadow_delta"] = round(std_r - shd_r, 2)
+    simulation["comparison"]["standard_vs_hybrid_delta"] = round(std_r - hyb_r, 2)
+    simulation["comparison"]["shadow_vs_hybrid_delta"] = round(shd_r - hyb_r, 2)
+    
+    # Analysis: Did standard exit too early?
+    if std_hit_t1 and mfe_pct > (standard_t1 - entry_price) / entry_price * 100 * 1.5:
+        simulation["price_analysis"]["standard_exit_too_early"] = True
+    
+    # Analysis: Did shadow miss profit?
+    if shadow_t2 and not was_hit(shadow_t2, direction, prices) and was_hit(standard_t2, direction, prices):
+        simulation["price_analysis"]["shadow_missed_profit"] = True
+    
+    return simulation
+
+
+async def store_shadow_validation_result(
+    signal_id: str,
+    setup_dict: Dict[str, Any],
+    risk_validation: Dict[str, Any],
+    setup_classification: Dict[str, Any],
+    hybrid_simulation: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Store comprehensive shadow validation results for analysis.
+    """
+    try:
+        collection = db["shadow_validation_logs"]
+        
+        doc = {
+            "signal_id": signal_id,
+            "created_at": datetime.now(timezone.utc),
+            "direction": setup_dict.get("direction"),
+            "entry_price": setup_dict.get("zone_low") if setup_dict.get("direction") == "LONG" else setup_dict.get("zone_high"),
+            "standard_targets": {
+                "stop_loss": setup_dict.get("stop_loss"),
+                "target_1": setup_dict.get("target_1"),
+                "target_2": setup_dict.get("target_2")
+            },
+            "quality_score": setup_dict.get("quality_score"),
+            "risk_validation": risk_validation,
+            "setup_classification": setup_classification,
+            "hybrid_simulation": hybrid_simulation,
+            "outcome": {
+                "status": "pending",  # Will be updated when signal closes
+                "final_result": None,
+                "actual_exit_price": None,
+                "actual_r_realized": None
+            }
+        }
+        
+        await collection.update_one(
+            {"signal_id": signal_id},
+            {"$set": doc},
+            upsert=True
+        )
+        
+        logger.info(f"[Shadow Validation] Stored validation for {signal_id[:8]}: "
+                   f"Status={risk_validation['shadow_validation']['status']}, "
+                   f"Class={setup_classification['setup_class']}, "
+                   f"R:R={risk_validation['shadow_validation']['computed_rr']}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"[Shadow Validation] Error storing result: {e}")
+        return False
+
+
+async def get_promotion_readiness_report() -> Dict[str, Any]:
+    """
+    TASK 6: Promotion Readiness System
+    
+    After enough data collected, classifies overall performance and
+    provides recommendation for system changes.
+    
+    Returns:
+    - Which model performed best (STANDARD / SHADOW / HYBRID)
+    - Confidence level
+    - Recommendation (KEEP / TEST_LONGER / READY_FOR_ROLLOUT)
+    """
+    try:
+        # Get all completed validations
+        collection = db["shadow_validation_logs"]
+        completed = await collection.find(
+            {"outcome.status": "completed"},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        if not completed:
+            return {
+                "status": "insufficient_data",
+                "signals_analyzed": 0,
+                "minimum_required": 30,
+                "message": "No completed signals yet. Continue data collection."
+            }
+        
+        total = len(completed)
+        
+        # Aggregate performance by model
+        model_stats = {
+            "STANDARD": {"total_r": 0, "wins": 0, "count": 0},
+            "SHADOW": {"total_r": 0, "wins": 0, "count": 0},
+            "HYBRID": {"total_r": 0, "wins": 0, "count": 0}
+        }
+        
+        # Track which model won each trade
+        model_wins = {"STANDARD": 0, "SHADOW": 0, "HYBRID": 0}
+        
+        # Quality class breakdown
+        quality_performance = {
+            "LOW": {"count": 0, "wins": 0, "avg_r": 0, "r_sum": 0},
+            "MID": {"count": 0, "wins": 0, "avg_r": 0, "r_sum": 0},
+            "HIGH": {"count": 0, "wins": 0, "avg_r": 0, "r_sum": 0}
+        }
+        
+        # Validation filter effectiveness
+        would_have_rejected = 0
+        rejected_outcomes = {"wins": 0, "losses": 0}
+        
+        for sig in completed:
+            sim = sig.get("hybrid_simulation", {})
+            classification = sig.get("setup_classification", {})
+            validation = sig.get("risk_validation", {}).get("shadow_validation", {})
+            
+            if sim and sim.get("models"):
+                models = sim["models"]
+                
+                std_r = models.get("standard", {}).get("realized_r", 0)
+                shd_r = models.get("shadow", {}).get("realized_r", 0)
+                hyb_r = models.get("hybrid", {}).get("realized_r", 0)
+                
+                model_stats["STANDARD"]["total_r"] += std_r
+                model_stats["SHADOW"]["total_r"] += shd_r
+                model_stats["HYBRID"]["total_r"] += hyb_r
+                
+                model_stats["STANDARD"]["count"] += 1
+                model_stats["SHADOW"]["count"] += 1
+                model_stats["HYBRID"]["count"] += 1
+                
+                if std_r > 0:
+                    model_stats["STANDARD"]["wins"] += 1
+                if shd_r > 0:
+                    model_stats["SHADOW"]["wins"] += 1
+                if hyb_r > 0:
+                    model_stats["HYBRID"]["wins"] += 1
+                
+                # Track best model per trade
+                best = sim.get("comparison", {}).get("best_model")
+                if best in model_wins:
+                    model_wins[best] += 1
+            
+            # Quality class analysis
+            q_class = classification.get("setup_class", "MID")
+            if q_class in quality_performance:
+                quality_performance[q_class]["count"] += 1
+                actual_r = sig.get("outcome", {}).get("actual_r_realized", 0) or 0
+                quality_performance[q_class]["r_sum"] += actual_r
+                if actual_r > 0:
+                    quality_performance[q_class]["wins"] += 1
+            
+            # Validation filter analysis
+            if validation.get("status") == "REJECTED":
+                would_have_rejected += 1
+                actual_r = sig.get("outcome", {}).get("actual_r_realized", 0) or 0
+                if actual_r > 0:
+                    rejected_outcomes["wins"] += 1
+                else:
+                    rejected_outcomes["losses"] += 1
+        
+        # Calculate averages
+        for model in model_stats:
+            if model_stats[model]["count"] > 0:
+                model_stats[model]["avg_r"] = round(model_stats[model]["total_r"] / model_stats[model]["count"], 2)
+                model_stats[model]["win_rate"] = round((model_stats[model]["wins"] / model_stats[model]["count"]) * 100, 1)
+        
+        for q in quality_performance:
+            if quality_performance[q]["count"] > 0:
+                quality_performance[q]["avg_r"] = round(quality_performance[q]["r_sum"] / quality_performance[q]["count"], 2)
+                quality_performance[q]["win_rate"] = round((quality_performance[q]["wins"] / quality_performance[q]["count"]) * 100, 1)
+        
+        # Determine best model
+        best_model = max(model_stats, key=lambda x: model_stats[x]["avg_r"])
+        best_model_win_pct = (model_wins[best_model] / total) * 100 if total > 0 else 0
+        
+        # Calculate expectancy for each model
+        def calc_expectancy(win_rate, avg_r):
+            return (win_rate / 100) * avg_r - (1 - win_rate / 100) * 1.0
+        
+        expectancies = {
+            model: calc_expectancy(model_stats[model].get("win_rate", 50), model_stats[model].get("avg_r", 0))
+            for model in model_stats
+        }
+        
+        best_expectancy_model = max(expectancies, key=expectancies.get)
+        
+        # Risk filter effectiveness
+        filter_accuracy = 0
+        if would_have_rejected > 0:
+            filter_accuracy = (rejected_outcomes["losses"] / would_have_rejected) * 100
+        
+        # Generate recommendation
+        if total < 30:
+            recommendation = "TEST_LONGER"
+            recommendation_reason = f"Need more data ({total}/30 minimum)"
+            confidence = "LOW"
+        elif total < 50:
+            if expectancies[best_expectancy_model] > expectancies["STANDARD"] + 0.1:
+                recommendation = "PROMISING"
+                recommendation_reason = f"{best_expectancy_model} showing edge. Continue to 50 signals."
+            else:
+                recommendation = "TEST_LONGER"
+                recommendation_reason = "No clear winner yet"
+            confidence = "MEDIUM"
+        else:
+            best_exp = expectancies[best_expectancy_model]
+            std_exp = expectancies["STANDARD"]
+            
+            if best_expectancy_model != "STANDARD" and best_exp > std_exp + 0.15:
+                recommendation = "READY_FOR_ROLLOUT"
+                recommendation_reason = f"{best_expectancy_model} has +{(best_exp - std_exp):.2f} expectancy advantage"
+                confidence = "HIGH"
+            elif best_expectancy_model != "STANDARD" and best_exp > std_exp + 0.05:
+                recommendation = "PARTIAL_ROLLOUT"
+                recommendation_reason = f"{best_expectancy_model} has modest edge. Consider gradual transition."
+                confidence = "MEDIUM"
+            else:
+                recommendation = "KEEP_CURRENT"
+                recommendation_reason = "Standard system performing well"
+                confidence = "HIGH"
+        
+        return {
+            "status": "complete",
+            "signals_analyzed": total,
+            "minimum_required": 30,
+            "observation_phase": "30_DAY" if total >= 30 else "COLLECTING",
+            
+            "model_performance": model_stats,
+            "model_expectancies": {k: round(v, 3) for k, v in expectancies.items()},
+            "model_win_counts": model_wins,
+            
+            "best_performer": {
+                "model": best_model,
+                "avg_r": model_stats[best_model]["avg_r"],
+                "win_rate": model_stats[best_model].get("win_rate", 0),
+                "won_pct_of_trades": round(best_model_win_pct, 1)
+            },
+            
+            "best_expectancy": {
+                "model": best_expectancy_model,
+                "expectancy": round(expectancies[best_expectancy_model], 3)
+            },
+            
+            "quality_class_analysis": quality_performance,
+            
+            "risk_filter_analysis": {
+                "would_have_rejected": would_have_rejected,
+                "rejected_that_won": rejected_outcomes["wins"],
+                "rejected_that_lost": rejected_outcomes["losses"],
+                "filter_accuracy_pct": round(filter_accuracy, 1)
+            },
+            
+            "recommendation": {
+                "action": recommendation,
+                "reason": recommendation_reason,
+                "confidence": confidence,
+                "best_model_for_production": best_expectancy_model
+            },
+            
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"[Promotion Readiness] Error: {e}")
+        return {"error": str(e)}
+
+
+async def log_telegram_shadow_context(
+    signal_id: str,
+    setup_dict: Dict[str, Any],
+    shadow_targets: Optional[Dict[str, Any]],
+    hybrid_projection: Optional[Dict[str, Any]]
+) -> None:
+    """
+    TASK 5: Telegram Shadow Extension (Internal Logging Only)
+    
+    Logs what the shadow/hybrid system would have produced.
+    Does NOT modify actual Telegram messages.
+    """
+    try:
+        collection = db["telegram_shadow_logs"]
+        
+        doc = {
+            "signal_id": signal_id,
+            "timestamp": datetime.now(timezone.utc),
+            "live_message_sent": True,
+            "shadow_context": {
+                "shadow_t1": shadow_targets.get("liquidity_targets", {}).get("target_1") if shadow_targets else None,
+                "shadow_t2": shadow_targets.get("liquidity_targets", {}).get("target_2") if shadow_targets else None,
+                "shadow_t1_source": shadow_targets.get("liquidity_targets", {}).get("target_1_source") if shadow_targets else None,
+                "shadow_confidence": shadow_targets.get("suggested_exit_plan", {}).get("confidence") if shadow_targets else None,
+                "hybrid_would_exit": hybrid_projection.get("suggested_exit_plan") if hybrid_projection else None
+            },
+            "comparison_at_send_time": {
+                "standard_t1": setup_dict.get("target_1"),
+                "standard_t2": setup_dict.get("target_2"),
+                "t1_difference": None,
+                "t2_difference": None
+            }
+        }
+        
+        # Calculate differences
+        if shadow_targets and shadow_targets.get("liquidity_targets"):
+            std_t1 = setup_dict.get("target_1", 0)
+            shd_t1 = shadow_targets.get("liquidity_targets", {}).get("target_1", 0)
+            if std_t1 and shd_t1:
+                doc["comparison_at_send_time"]["t1_difference"] = round(((shd_t1 - std_t1) / std_t1) * 100, 2)
+            
+            std_t2 = setup_dict.get("target_2", 0)
+            shd_t2 = shadow_targets.get("liquidity_targets", {}).get("target_2", 0)
+            if std_t2 and shd_t2:
+                doc["comparison_at_send_time"]["t2_difference"] = round(((shd_t2 - std_t2) / std_t2) * 100, 2)
+        
+        await collection.insert_one(doc)
+        logger.debug(f"[Telegram Shadow Log] Logged shadow context for {signal_id[:8]}")
+        
+    except Exception as e:
+        logger.error(f"[Telegram Shadow Log] Error: {e}")
+
+
+async def _perform_full_shadow_validation(
+    signal_id: str,
+    setup_data: Dict[str, Any],
+    current_price: float,
+    market_context: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    Orchestrates full shadow validation for a V3 signal.
+    
+    This is called asynchronously when a V3 ENTRY_READY signal is generated.
+    It does NOT affect the live signal - purely for data collection and analysis.
+    
+    Steps:
+    1. Perform risk validation (R:R, conflicts, data quality)
+    2. Classify setup quality (LOW/MID/HIGH)
+    3. Store validation result for later comparison
+    4. Log Telegram shadow context
+    """
+    try:
+        logger.debug(f"[Shadow Validation] Starting full validation for {signal_id[:8]}")
+        
+        # Extract market context
+        whale_direction = market_context.get("whale_direction") if market_context else None
+        liquidity_direction = market_context.get("liquidity_direction") if market_context else None
+        market_regime = setup_data.get("market_regime") or (market_context.get("market_regime") if market_context else None)
+        
+        # Get data freshness status
+        data_freshness = get_all_data_freshness()
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # STEP 1: Risk Validation
+        # ═══════════════════════════════════════════════════════════════════
+        risk_validation = await perform_shadow_risk_validation(
+            setup=setup_data,
+            current_price=current_price,
+            whale_direction=whale_direction,
+            liquidity_direction=liquidity_direction,
+            data_freshness=data_freshness
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # STEP 2: Setup Classification
+        # ═══════════════════════════════════════════════════════════════════
+        direction = setup_data.get("direction", "LONG")
+        quality_score = setup_data.get("quality_score", 50)
+        rr_ratio = risk_validation.get("shadow_validation", {}).get("computed_rr", 1.0)
+        
+        # Determine alignments
+        whale_aligned = False
+        if whale_direction:
+            whale_upper = whale_direction.upper()
+            whale_aligned = (
+                (direction == "LONG" and whale_upper in ["BUY", "LONG", "BULLISH"]) or
+                (direction == "SHORT" and whale_upper in ["SELL", "SHORT", "BEARISH"])
+            )
+        
+        liquidity_aligned = False
+        if liquidity_direction:
+            liq_upper = liquidity_direction.upper()
+            liquidity_aligned = (
+                (direction == "LONG" and liq_upper in ["UP", "ABOVE", "LONG"]) or
+                (direction == "SHORT" and liq_upper in ["DOWN", "BELOW", "SHORT"])
+            )
+        
+        conflict_detected = risk_validation.get("shadow_validation", {}).get("conflict_detected", False)
+        
+        setup_classification = classify_setup_quality(
+            quality_score=quality_score,
+            rr_ratio=rr_ratio,
+            whale_aligned=whale_aligned,
+            liquidity_aligned=liquidity_aligned,
+            regime=market_regime or "",
+            conflict_detected=conflict_detected
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # STEP 3: Store Validation Result
+        # ═══════════════════════════════════════════════════════════════════
+        await store_shadow_validation_result(
+            signal_id=signal_id,
+            setup_dict=setup_data,
+            risk_validation=risk_validation,
+            setup_classification=setup_classification,
+            hybrid_simulation=None  # Will be computed when outcome is known
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # STEP 4: Log Telegram Shadow Context
+        # ═══════════════════════════════════════════════════════════════════
+        # Get shadow targets if already computed
+        shadow_collection = db["shadow_liquidity_targets"]
+        shadow_targets = await shadow_collection.find_one({"signal_id": signal_id}, {"_id": 0})
+        
+        await log_telegram_shadow_context(
+            signal_id=signal_id,
+            setup_dict=setup_data,
+            shadow_targets=shadow_targets,
+            hybrid_projection={
+                "suggested_exit_plan": shadow_targets.get("suggested_exit_plan") if shadow_targets else None
+            }
+        )
+        
+        # Log summary
+        status = risk_validation.get("shadow_validation", {}).get("status", "UNKNOWN")
+        setup_class = setup_classification.get("setup_class", "MID")
+        logger.info(f"[Shadow Validation] Complete for {signal_id[:8]}: "
+                   f"Status={status}, Class={setup_class}, R:R={rr_ratio:.2f}")
+        
+    except Exception as e:
+        logger.error(f"[Shadow Validation] Error in full validation: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
 async def _calculate_and_store_shadow_targets(
     signal_id: str,
     direction: str,
@@ -11843,6 +12843,110 @@ async def get_shadow_performance_metrics():
         
     except Exception as e:
         logger.error(f"Error fetching shadow performance: {e}")
+        return {"error": str(e), "status": "ERROR"}
+
+
+@api_router.get("/v3/shadow-validation-logs")
+async def get_shadow_validation_logs(limit: int = Query(default=50, le=200)):
+    """
+    SHADOW VALIDATION LOGS: View all shadow validation results.
+    
+    Returns validation data including:
+    - Risk validation status (VALID / LOW_QUALITY / REJECTED)
+    - Setup classification (LOW / MID / HIGH)
+    - R:R analysis
+    - Conflict detection
+    - Data quality assessment
+    
+    Note: This is SHADOW data - does not affect live signals.
+    """
+    try:
+        collection = db["shadow_validation_logs"]
+        
+        cursor = collection.find({}).sort("created_at", -1).limit(limit)
+        logs = []
+        
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            if isinstance(doc.get("created_at"), datetime):
+                doc["created_at"] = doc["created_at"].isoformat()
+            logs.append(doc)
+        
+        # Aggregate statistics
+        total_count = await collection.count_documents({})
+        
+        status_counts = {
+            "VALID": await collection.count_documents({"risk_validation.shadow_validation.status": "VALID"}),
+            "LOW_QUALITY": await collection.count_documents({"risk_validation.shadow_validation.status": "LOW_QUALITY"}),
+            "REJECTED": await collection.count_documents({"risk_validation.shadow_validation.status": "REJECTED"})
+        }
+        
+        class_counts = {
+            "HIGH": await collection.count_documents({"setup_classification.setup_class": "HIGH"}),
+            "MID": await collection.count_documents({"setup_classification.setup_class": "MID"}),
+            "LOW": await collection.count_documents({"setup_classification.setup_class": "LOW"})
+        }
+        
+        # Calculate average R:R
+        rr_values = [
+            doc.get("risk_validation", {}).get("shadow_validation", {}).get("computed_rr", 0)
+            for doc in logs if doc.get("risk_validation")
+        ]
+        avg_rr = sum(rr_values) / len(rr_values) if rr_values else 0
+        
+        # Conflict rate
+        conflict_count = sum(
+            1 for doc in logs 
+            if doc.get("risk_validation", {}).get("shadow_validation", {}).get("conflict_detected", False)
+        )
+        conflict_rate = (conflict_count / len(logs)) * 100 if logs else 0
+        
+        return {
+            "status": "SHADOW_VALIDATION_ACTIVE",
+            "total_validations": total_count,
+            "showing": len(logs),
+            
+            "aggregate_stats": {
+                "avg_computed_rr": round(avg_rr, 2),
+                "conflict_rate_pct": round(conflict_rate, 1),
+                "by_status": status_counts,
+                "by_class": class_counts,
+                "would_reject_pct": round((status_counts["REJECTED"] / total_count) * 100, 1) if total_count > 0 else 0
+            },
+            
+            "validation_logs": logs,
+            
+            "note": "Shadow validation evaluates signals but does NOT block live trades"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching shadow validation logs: {e}")
+        return {"error": str(e), "status": "ERROR"}
+
+
+@api_router.get("/v3/promotion-readiness")
+async def get_promotion_readiness():
+    """
+    PROMOTION READINESS REPORT: Should we switch to shadow targets?
+    
+    Analyzes all collected data to determine if shadow/hybrid targets
+    should replace standard targets in production.
+    
+    Returns:
+    - Best performing model (STANDARD / SHADOW / HYBRID)
+    - Expectancy calculations
+    - Quality class performance breakdown
+    - Risk filter effectiveness
+    - Clear recommendation (KEEP_CURRENT / TEST_LONGER / READY_FOR_ROLLOUT)
+    
+    This is the decision-support endpoint for the 30-day observation phase.
+    """
+    try:
+        report = await get_promotion_readiness_report()
+        return report
+        
+    except Exception as e:
+        logger.error(f"Error generating promotion readiness report: {e}")
         return {"error": str(e), "status": "ERROR"}
 
 

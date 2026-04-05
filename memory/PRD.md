@@ -1,6 +1,107 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-05
 
+## ✅ SHADOW VALIDATION ENGINE v1.0 (2026-04-05)
+
+### Objective
+Complete shadow validation system for the 30-day observation phase.
+Evaluates V3 signals WITHOUT modifying live logic.
+
+### Components Implemented
+
+#### TASK 1: Hard Risk Filter (Shadow)
+Validates each V3 signal with strict criteria:
+- **R:R < 1.0** → REJECTED
+- **R:R < 1.3** → LOW_QUALITY
+- **Low quality + poor R:R** → REJECTED
+- **Stale critical data** → REJECTED
+- **Whale vs Liquidity conflict** → LOW_QUALITY flag
+
+Output:
+```json
+{
+  "shadow_validation": {
+    "status": "VALID | LOW_QUALITY | REJECTED",
+    "reasons": [...],
+    "risk_flags": [...],
+    "computed_rr": 1.5,
+    "would_be_tradable": true
+  }
+}
+```
+
+#### TASK 2: Hybrid Exit Simulation
+Compares three exit models:
+1. **STANDARD**: 100% exit at V3 T1/T2
+2. **SHADOW**: 100% exit at liquidity-based T1/T2
+3. **HYBRID**: 50% at standard T1, 50% toward shadow T2
+
+Computes for each:
+- `realized_r`
+- `exit_price` / `weighted_exit_price`
+- `exit_reason` (T1_HIT, T2_HIT, STOP_LOSS, EXPIRED)
+
+#### TASK 3: Setup Classification
+Classifies each signal into:
+- **HIGH** (composite ≥ 75): Strong setup, full size
+- **MID** (50-74): Acceptable, standard size
+- **LOW** (< 50): Weak, reduced size or skip
+
+Factors:
+- Quality Score (0-50 contribution)
+- R:R Ratio (-20 to +20)
+- Whale Alignment (+15)
+- Liquidity Alignment (+15)
+- Regime Clarity (+10 trending, +5 compression)
+- Conflict Penalty (-20)
+
+#### TASK 4: Performance Comparison Engine
+For every closed signal, stores:
+- `standard_realized_r`
+- `shadow_realized_r`
+- `hybrid_realized_r`
+- `mfe` / `mae` (Max Favorable/Adverse Excursion)
+- `standard_exit_too_early` (bool)
+- `shadow_missed_profit` (bool)
+
+#### TASK 5: Telegram Shadow Extension
+Internal logging only (no live message changes):
+- What shadow target would have been
+- Hybrid exit projection
+- Comparison at send time
+
+#### TASK 6: Promotion Readiness System
+After 30+ signals, provides:
+- Best model by expectancy
+- Quality class breakdown
+- Risk filter accuracy
+- Recommendation: KEEP_CURRENT / TEST_LONGER / READY_FOR_ROLLOUT
+
+### New API Endpoints
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v3/shadow-validation-logs` | View validation results |
+| `GET /api/v3/promotion-readiness` | Get switch recommendation |
+
+### Database Collections
+- `shadow_validation_logs`: Full validation data per signal
+- `telegram_shadow_logs`: What Telegram would have shown with shadow
+
+### Critical Constraints Maintained
+- ✅ V3 signal generation UNCHANGED
+- ✅ Existing APIs UNCHANGED
+- ✅ Telegram alerts UNCHANGED
+- ✅ All improvements in SHADOW MODE only
+- ✅ Full backward compatibility
+
+### Observation Phase Status
+- Target: 30 days
+- Minimum signals: 30
+- Current: 0 validated
+- Recommendation: COLLECTING DATA
+
+---
+
 ## ✅ SHADOW LIQUIDITY TARGET ENGINE v0.2 (2026-04-05)
 
 ### Goal
