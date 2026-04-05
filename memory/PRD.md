@@ -1,6 +1,85 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
 **Last Updated:** 2026-04-05
 
+## ✅ SHADOW LIQUIDITY TARGET ENGINE v0.2 (2026-04-05)
+
+### Goal
+Build objective evidence to determine if liquidity-based exits are superior to standard targets.
+
+### Changes Made
+
+#### 1. STRENGTH-BASED TARGET RANKING (Instead of Proximity)
+**Key principle change**: Targets are now sorted by STRENGTH (how much liquidity), not DISTANCE (how close).
+
+New strength scoring formula:
+- **Value Score** (0-50): Logarithmic scale of liquidity value
+- **Distance Score** (0-25): Optimal distance 0.5-2% = max score
+- **Source Score** (0-25): liquidation_cluster > orderbook_wall > historical_cluster > magnet
+
+#### 2. TARGET HIERARCHY (New Structure)
+| Target | Description |
+|--------|-------------|
+| **Primary Magnet** | Strongest liquidity level (highest score) |
+| **Secondary Zone** | Second strongest level |
+| **Extended Target** | Third strongest (for runners) |
+
+Each target includes:
+- `price`
+- `strength_score` (0-100)
+- `source` (can be combined: "liquidation_cluster+orderbook_wall")
+- `liquidity_value`
+- `distance_pct`
+- `expected_fill_probability`
+
+#### 3. VALIDATION TRACKING SYSTEM
+After signal closes, computes:
+- Standard T1/T2 hit (bool)
+- Shadow T1/T2 hit (bool)
+- **MFE%** (Max Favorable Excursion)
+- **MAE%** (Max Adverse Excursion)
+- Final outcome (WIN/LOSS/PARTIAL_WIN/EXPIRED)
+- Profit comparison (standard vs shadow)
+- `shadow_outperformed` (bool)
+
+#### 4. PERFORMANCE COMPARISON API
+`GET /api/v3/shadow-performance`
+
+Returns:
+- Avg profit comparison
+- Win rate comparison
+- % trades where shadow outperformed
+- By-direction breakdown (LONG vs SHORT)
+- Recommendation (SWITCH / KEEP STANDARD / CONTINUE TESTING)
+- Risk metrics (MFE, MAE, R:R achieved)
+
+#### 5. UI UPDATES (ShadowTargetInspector)
+- Performance comparison section with metrics grid
+- Standard vs Shadow avg profit
+- Shadow wins percentage
+- Recommendation display
+- Risk metrics (MFE, MAE)
+
+### New Files/Functions
+- `calculate_liquidity_strength_score()` - Unified scoring formula
+- `validate_shadow_target_outcome()` - Post-signal validation
+- `get_shadow_performance_comparison()` - Aggregate metrics
+- `GET /api/v3/shadow-performance` - New endpoint
+
+### What Was NOT Changed
+- ✅ V3 live targets (unchanged)
+- ✅ V3 entry logic (unchanged)
+- ✅ Stop loss calculations (unchanged)
+- ✅ Telegram behavior (unchanged)
+- ✅ Outcome engine (unchanged)
+
+### Current Status
+- Engine version: shadow_liquidity_v0.2
+- Signals collected: 3
+- Signals validated: 0 (waiting for outcomes)
+- Minimum for recommendation: 20
+
+---
+
 ## ✅ DATA INTEGRITY STABILIZATION PASS (2026-04-05)
 
 ### Goal

@@ -6390,12 +6390,69 @@ def calculate_v3_targets(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SHADOW LIQUIDITY TARGET ENGINE (v0.1)
+# SHADOW LIQUIDITY TARGET ENGINE (v0.2)
 # 
 # This module runs IN PARALLEL with the live V3 targets.
 # It does NOT replace or modify live targets.
 # Purpose: Data collection and analysis for liquidity-based exit optimization.
+#
+# v0.2 Changes:
+# - Targets based on STRENGTH, not proximity
+# - Primary, Secondary, Extended targets with strength scores
+# - Validation tracking for outcome comparison
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def calculate_liquidity_strength_score(
+    value: float,
+    distance_pct: float,
+    source: str,
+    direction: str
+) -> float:
+    """
+    Calculate a unified strength score for a liquidity target.
+    
+    Higher score = more attractive target.
+    
+    Factors:
+    - Value/volume at the level (primary factor)
+    - Distance from entry (moderate distance preferred)
+    - Source reliability (liquidation > orderbook > cluster > magnet)
+    
+    Returns: 0-100 score
+    """
+    # Base score from value (logarithmic scale)
+    import math
+    value_score = min(50, math.log10(max(1, value)) * 8)  # Max 50 points from value
+    
+    # Distance score (0.5-2% is ideal, too close or too far penalized)
+    if 0.5 <= distance_pct <= 2.0:
+        distance_score = 25  # Ideal range
+    elif 0.3 <= distance_pct < 0.5:
+        distance_score = 15  # Too close, might not give enough profit
+    elif 2.0 < distance_pct <= 3.5:
+        distance_score = 20  # Acceptable
+    elif 3.5 < distance_pct <= 5.0:
+        distance_score = 10  # Far but reachable
+    else:
+        distance_score = 5  # Too close or too far
+    
+    # Source reliability score
+    source_scores = {
+        "liquidation_cluster": 25,    # Most reliable - actual stop losses
+        "orderbook_wall": 20,         # Visible walls but can be spoofed
+        "historical_cluster": 15,     # Historical significance
+        "magnet_attraction": 15,      # Derived metric
+        "combined": 22,               # Multiple sources = higher confidence
+    }
+    
+    # Check for combined sources
+    if "+" in source:
+        source_score = source_scores.get("combined", 18)
+    else:
+        source_score = source_scores.get(source, 10)
+    
+    return min(100, value_score + distance_score + source_score)
+
 
 async def calculate_shadow_liquidity_targets(
     direction: str,
@@ -6408,34 +6465,21 @@ async def calculate_shadow_liquidity_targets(
     liquidity_clusters: Optional[List[Dict]] = None
 ) -> Dict[str, Any]:
     """
-    SHADOW MODE: Calculate liquidity-based targets WITHOUT affecting live system.
+    SHADOW MODE v0.2: Calculate liquidity-based targets by STRENGTH, not proximity.
     
-    This function analyzes multiple liquidity data sources to suggest
-    optimal exit targets based on where liquidity is concentrated.
+    Key change from v0.1: Targets are ranked by how STRONG the liquidity is,
+    not how CLOSE it is to entry. This tests the hypothesis that price moves
+    to where the most liquidity is, regardless of distance.
     
-    Returns shadow targets for comparison and data collection only.
+    Hierarchy:
+    1. Primary Magnet: Strongest liquidity level (highest score)
+    2. Secondary Zone: Second strongest level
+    3. Extended Target: Third strongest (for runners)
     
-    Data Sources Used:
-    1. Liquidation Heatmap (CoinGlass) - where stops are clustered
-    2. Order Book Depth - where large orders sit
-    3. Liquidity Clusters - historical liquidity zones
-    4. Magnet Analysis - net attraction direction
-    
-    Args:
-        direction: LONG or SHORT
-        entry_price: Entry price for the trade
-        current_price: Current BTC price
-        standard_targets: The live V3 targets (for comparison)
-        magnet_data: Liquidity magnet analysis
-        liquidation_levels: CoinGlass liquidation levels
-        orderbook_data: Aggregated order book
-        liquidity_clusters: Historical liquidity zones
-        
-    Returns:
-        Shadow target analysis with confidence metrics
+    Returns shadow target analysis with strength-based scoring.
     """
     shadow_result = {
-        "engine_version": "shadow_liquidity_v0.1",
+        "engine_version": "shadow_liquidity_v0.2",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "direction": direction,
         "entry_price": entry_price,
@@ -6444,8 +6488,37 @@ async def calculate_shadow_liquidity_targets(
         # Standard targets (for comparison)
         "standard_targets": standard_targets,
         
-        # Shadow liquidity targets
+        # Shadow liquidity targets - Now strength-based
         "liquidity_targets": {
+            # Primary Magnet - Strongest level
+            "primary_magnet": {
+                "price": None,
+                "strength_score": 0,
+                "source": None,
+                "liquidity_value": 0,
+                "distance_pct": 0,
+                "expected_fill_probability": 0
+            },
+            # Secondary Zone - Second strongest
+            "secondary_zone": {
+                "price": None,
+                "strength_score": 0,
+                "source": None,
+                "liquidity_value": 0,
+                "distance_pct": 0,
+                "expected_fill_probability": 0
+            },
+            # Extended Target - Third strongest (runners)
+            "extended_target": {
+                "price": None,
+                "strength_score": 0,
+                "source": None,
+                "liquidity_value": 0,
+                "distance_pct": 0,
+                "expected_fill_probability": 0
+            },
+            
+            # Legacy format for backward compatibility
             "target_1": None,
             "target_1_source": None,
             "target_1_confidence": 0,
@@ -6454,18 +6527,19 @@ async def calculate_shadow_liquidity_targets(
             "target_2_source": None,
             "target_2_confidence": 0,
             "target_2_liquidity_value": 0,
-            "target_3": None,  # Extended target for runners
+            "target_3": None,
             "target_3_source": None,
             "target_3_confidence": 0
         },
         
         # Exit strategy suggestion
         "suggested_exit_plan": {
-            "partial_at_t1_percent": 50,  # Default: take 50% at T1
-            "partial_at_t2_percent": 30,  # Take 30% at T2
-            "runner_percent": 20,         # Let 20% run
+            "partial_at_t1_percent": 50,
+            "partial_at_t2_percent": 30,
+            "runner_percent": 20,
             "confidence": 0,
-            "reasoning": ""
+            "reasoning": "",
+            "aggressive_vs_conservative": "balanced"  # aggressive / conservative / balanced
         },
         
         # Data quality metrics
@@ -6474,233 +6548,291 @@ async def calculate_shadow_liquidity_targets(
             "has_orderbook_data": False,
             "has_cluster_data": False,
             "has_magnet_data": False,
-            "overall_quality": 0,  # 0-100
-            "missing_sources": []
+            "overall_quality": 0,
+            "missing_sources": [],
+            "sources_used": []
         },
         
         # Comparison with standard targets
         "comparison": {
             "t1_difference_percent": 0,
             "t2_difference_percent": 0,
-            "better_rr_potential": False,
+            "shadow_more_conservative": False,
+            "shadow_more_aggressive": False,
+            "expected_rr_improvement": 0,
             "notes": []
+        },
+        
+        # NEW: Validation tracking fields (populated after signal closes)
+        "validation": {
+            "status": "pending",  # pending / completed
+            "standard_t1_hit": None,
+            "standard_t2_hit": None,
+            "shadow_t1_hit": None,
+            "shadow_t2_hit": None,
+            "mfe_percent": None,  # Max favorable excursion
+            "mae_percent": None,  # Max adverse excursion
+            "final_outcome": None,  # win / loss / expired / breakeven
+            "profit_standard_percent": None,
+            "profit_shadow_percent": None,
+            "shadow_outperformed": None  # True/False/None
         }
     }
     
     try:
-        # Track data quality
         quality_score = 0
         missing = []
+        sources_used = []
+        
+        # Collect all potential targets with strength scoring
+        all_targets = []
         
         # ═══════════════════════════════════════════════════════════════════
-        # 1. ANALYZE LIQUIDATION DATA (Highest priority for targets)
+        # 1. ANALYZE LIQUIDATION DATA (Highest weight for strength)
         # ═══════════════════════════════════════════════════════════════════
-        liq_targets = []
-        
         if liquidation_levels and len(liquidation_levels) > 0:
             shadow_result["data_quality"]["has_liquidation_data"] = True
             quality_score += 30
+            sources_used.append("CoinGlass Liquidation")
             
             for level in liquidation_levels:
                 price = level.get("price", 0)
                 value = level.get("value", 0)
                 
-                if direction == "LONG" and price > entry_price:
-                    # For LONG, we want liquidation levels ABOVE entry
-                    distance_pct = ((price - entry_price) / entry_price) * 100
-                    if 0.3 < distance_pct < 5:  # Between 0.3% and 5%
-                        liq_targets.append({
+                # Skip tiny levels
+                if value < 100000:  # < $100K
+                    continue
+                
+                is_valid_direction = (
+                    (direction == "LONG" and price > entry_price) or
+                    (direction == "SHORT" and price < entry_price)
+                )
+                
+                if is_valid_direction:
+                    if direction == "LONG":
+                        distance_pct = ((price - entry_price) / entry_price) * 100
+                    else:
+                        distance_pct = ((entry_price - price) / entry_price) * 100
+                    
+                    if 0.2 < distance_pct < 6:  # Extended range for strength-based
+                        strength = calculate_liquidity_strength_score(
+                            value, distance_pct, "liquidation_cluster", direction
+                        )
+                        all_targets.append({
                             "price": price,
                             "value": value,
                             "distance_pct": distance_pct,
-                            "source": "liquidation_cluster"
+                            "source": "liquidation_cluster",
+                            "strength_score": strength
                         })
-                        
-                elif direction == "SHORT" and price < entry_price:
-                    # For SHORT, we want liquidation levels BELOW entry
-                    distance_pct = ((entry_price - price) / entry_price) * 100
-                    if 0.3 < distance_pct < 5:
-                        liq_targets.append({
-                            "price": price,
-                            "value": value,
-                            "distance_pct": distance_pct,
-                            "source": "liquidation_cluster"
-                        })
-            
-            # Sort by value (largest liquidation clusters first)
-            liq_targets.sort(key=lambda x: x["value"], reverse=True)
         else:
             missing.append("liquidation_data")
         
         # ═══════════════════════════════════════════════════════════════════
         # 2. ANALYZE ORDER BOOK WALLS
         # ═══════════════════════════════════════════════════════════════════
-        ob_targets = []
-        
         if orderbook_data:
             shadow_result["data_quality"]["has_orderbook_data"] = True
             quality_score += 25
+            sources_used.append("Aggregated Orderbook")
             
             asks = orderbook_data.get("asks", [])
             bids = orderbook_data.get("bids", [])
             
-            if direction == "LONG" and asks:
-                # Look for large sell walls above entry
-                for ask in asks[:20]:  # Top 20 ask levels
-                    price = float(ask[0])
-                    volume = float(ask[1])
-                    value_usd = price * volume
-                    
-                    if price > entry_price and value_usd > 500000:  # > $500K wall
-                        distance_pct = ((price - entry_price) / entry_price) * 100
-                        if 0.2 < distance_pct < 3:
-                            ob_targets.append({
-                                "price": price,
-                                "value": value_usd,
-                                "distance_pct": distance_pct,
-                                "source": "orderbook_wall"
-                            })
-                            
-            elif direction == "SHORT" and bids:
-                # Look for large buy walls below entry
-                for bid in bids[:20]:
-                    price = float(bid[0])
-                    volume = float(bid[1])
-                    value_usd = price * volume
-                    
-                    if price < entry_price and value_usd > 500000:
-                        distance_pct = ((entry_price - price) / entry_price) * 100
-                        if 0.2 < distance_pct < 3:
-                            ob_targets.append({
-                                "price": price,
-                                "value": value_usd,
-                                "distance_pct": distance_pct,
-                                "source": "orderbook_wall"
-                            })
+            levels_to_check = asks[:30] if direction == "LONG" else bids[:30]
             
-            ob_targets.sort(key=lambda x: x["value"], reverse=True)
+            for level in levels_to_check:
+                price = float(level[0])
+                volume = float(level[1])
+                value_usd = price * volume
+                
+                if value_usd < 300000:  # < $300K
+                    continue
+                
+                is_valid_direction = (
+                    (direction == "LONG" and price > entry_price) or
+                    (direction == "SHORT" and price < entry_price)
+                )
+                
+                if is_valid_direction:
+                    if direction == "LONG":
+                        distance_pct = ((price - entry_price) / entry_price) * 100
+                    else:
+                        distance_pct = ((entry_price - price) / entry_price) * 100
+                    
+                    if 0.1 < distance_pct < 5:
+                        strength = calculate_liquidity_strength_score(
+                            value_usd, distance_pct, "orderbook_wall", direction
+                        )
+                        all_targets.append({
+                            "price": price,
+                            "value": value_usd,
+                            "distance_pct": distance_pct,
+                            "source": "orderbook_wall",
+                            "strength_score": strength
+                        })
         else:
             missing.append("orderbook_data")
         
         # ═══════════════════════════════════════════════════════════════════
         # 3. ANALYZE LIQUIDITY CLUSTERS (Historical zones)
         # ═══════════════════════════════════════════════════════════════════
-        cluster_targets = []
-        
         if liquidity_clusters and len(liquidity_clusters) > 0:
             shadow_result["data_quality"]["has_cluster_data"] = True
             quality_score += 20
+            sources_used.append("Historical Clusters")
             
             for cluster in liquidity_clusters:
                 price = cluster.get("price", 0)
-                strength = cluster.get("strength", 0)
+                cluster_strength = cluster.get("strength", 0)
+                value = cluster_strength * 500000  # Normalize to comparable scale
                 
-                if direction == "LONG" and price > entry_price:
-                    distance_pct = ((price - entry_price) / entry_price) * 100
-                    if 0.3 < distance_pct < 4:
-                        cluster_targets.append({
+                is_valid_direction = (
+                    (direction == "LONG" and price > entry_price) or
+                    (direction == "SHORT" and price < entry_price)
+                )
+                
+                if is_valid_direction:
+                    if direction == "LONG":
+                        distance_pct = ((price - entry_price) / entry_price) * 100
+                    else:
+                        distance_pct = ((entry_price - price) / entry_price) * 100
+                    
+                    if 0.2 < distance_pct < 5:
+                        strength = calculate_liquidity_strength_score(
+                            value, distance_pct, "historical_cluster", direction
+                        )
+                        all_targets.append({
                             "price": price,
-                            "value": strength * 1000000,  # Normalize strength
+                            "value": value,
                             "distance_pct": distance_pct,
-                            "source": "historical_cluster"
+                            "source": "historical_cluster",
+                            "strength_score": strength
                         })
-                        
-                elif direction == "SHORT" and price < entry_price:
-                    distance_pct = ((entry_price - price) / entry_price) * 100
-                    if 0.3 < distance_pct < 4:
-                        cluster_targets.append({
-                            "price": price,
-                            "value": strength * 1000000,
-                            "distance_pct": distance_pct,
-                            "source": "historical_cluster"
-                        })
-            
-            cluster_targets.sort(key=lambda x: x["value"], reverse=True)
         else:
             missing.append("cluster_data")
         
         # ═══════════════════════════════════════════════════════════════════
         # 4. ANALYZE MAGNET DATA
         # ═══════════════════════════════════════════════════════════════════
-        magnet_target = None
-        
-        if magnet_data:
+        if magnet_data and magnet_data.get("nearest_magnet_price"):
             shadow_result["data_quality"]["has_magnet_data"] = True
             quality_score += 25
+            sources_used.append("Liquidity Magnet")
             
             magnet_price = magnet_data.get("nearest_magnet_price", 0)
             magnet_strength = magnet_data.get("magnet_score", 0)
+            value = magnet_strength * 100000
             
-            if magnet_price > 0:
-                if direction == "LONG" and magnet_price > entry_price:
+            is_valid_direction = (
+                (direction == "LONG" and magnet_price > entry_price) or
+                (direction == "SHORT" and magnet_price < entry_price)
+            )
+            
+            if is_valid_direction and magnet_price > 0:
+                if direction == "LONG":
                     distance_pct = ((magnet_price - entry_price) / entry_price) * 100
-                    if 0.3 < distance_pct < 5:
-                        magnet_target = {
-                            "price": magnet_price,
-                            "value": magnet_strength * 10000,
-                            "distance_pct": distance_pct,
-                            "source": "magnet_attraction"
-                        }
-                        
-                elif direction == "SHORT" and magnet_price < entry_price:
+                else:
                     distance_pct = ((entry_price - magnet_price) / entry_price) * 100
-                    if 0.3 < distance_pct < 5:
-                        magnet_target = {
-                            "price": magnet_price,
-                            "value": magnet_strength * 10000,
-                            "distance_pct": distance_pct,
-                            "source": "magnet_attraction"
-                        }
+                
+                if 0.2 < distance_pct < 6:
+                    strength = calculate_liquidity_strength_score(
+                        value, distance_pct, "magnet_attraction", direction
+                    )
+                    all_targets.append({
+                        "price": magnet_price,
+                        "value": value,
+                        "distance_pct": distance_pct,
+                        "source": "magnet_attraction",
+                        "strength_score": strength
+                    })
         else:
             missing.append("magnet_data")
         
         # ═══════════════════════════════════════════════════════════════════
-        # 5. COMBINE AND RANK ALL TARGETS
+        # 5. SORT BY STRENGTH (not distance!) and deduplicate
         # ═══════════════════════════════════════════════════════════════════
-        all_targets = liq_targets + ob_targets + cluster_targets
-        if magnet_target:
-            all_targets.append(magnet_target)
+        # THIS IS THE KEY CHANGE: Sort by strength score, highest first
+        all_targets.sort(key=lambda x: x["strength_score"], reverse=True)
         
-        # Sort by distance (closest first), then by value (largest first)
-        all_targets.sort(key=lambda x: (x["distance_pct"], -x["value"]))
-        
-        # Deduplicate similar prices (within 0.1%)
+        # Deduplicate similar prices (within 0.15%)
         deduped_targets = []
         for t in all_targets:
             is_duplicate = False
             for existing in deduped_targets:
-                if abs(t["price"] - existing["price"]) / existing["price"] < 0.001:
-                    # Merge: keep higher value
-                    if t["value"] > existing["value"]:
-                        existing["value"] = t["value"]
+                price_diff = abs(t["price"] - existing["price"]) / existing["price"]
+                if price_diff < 0.0015:  # Within 0.15%
+                    # Merge: combine sources, keep higher strength
+                    if t["strength_score"] > existing["strength_score"]:
+                        existing["strength_score"] = (existing["strength_score"] + t["strength_score"]) / 2 + 5  # Bonus for confluence
+                    existing["value"] += t["value"]
+                    if t["source"] not in existing["source"]:
                         existing["source"] = f"{existing['source']}+{t['source']}"
                     is_duplicate = True
                     break
             if not is_duplicate:
                 deduped_targets.append(t)
         
+        # Re-sort after merging
+        deduped_targets.sort(key=lambda x: x["strength_score"], reverse=True)
+        
         # ═══════════════════════════════════════════════════════════════════
-        # 6. ASSIGN SHADOW TARGETS
+        # 6. ASSIGN SHADOW TARGETS BY STRENGTH
         # ═══════════════════════════════════════════════════════════════════
+        def calc_fill_probability(strength: float, distance: float) -> float:
+            """Estimate probability of price reaching this level"""
+            base_prob = min(85, strength)
+            # Penalty for very far targets
+            if distance > 3:
+                base_prob *= (1 - (distance - 3) * 0.1)
+            return max(10, min(95, base_prob))
+        
         if len(deduped_targets) >= 1:
             t1 = deduped_targets[0]
+            shadow_result["liquidity_targets"]["primary_magnet"] = {
+                "price": round(t1["price"], 2),
+                "strength_score": round(t1["strength_score"], 1),
+                "source": t1["source"],
+                "liquidity_value": t1["value"],
+                "distance_pct": round(t1["distance_pct"], 2),
+                "expected_fill_probability": calc_fill_probability(t1["strength_score"], t1["distance_pct"])
+            }
+            # Legacy format
             shadow_result["liquidity_targets"]["target_1"] = round(t1["price"], 2)
             shadow_result["liquidity_targets"]["target_1_source"] = t1["source"]
+            shadow_result["liquidity_targets"]["target_1_confidence"] = round(t1["strength_score"], 1)
             shadow_result["liquidity_targets"]["target_1_liquidity_value"] = t1["value"]
-            shadow_result["liquidity_targets"]["target_1_confidence"] = min(90, 50 + (t1["value"] / 100000))
         
         if len(deduped_targets) >= 2:
             t2 = deduped_targets[1]
+            shadow_result["liquidity_targets"]["secondary_zone"] = {
+                "price": round(t2["price"], 2),
+                "strength_score": round(t2["strength_score"], 1),
+                "source": t2["source"],
+                "liquidity_value": t2["value"],
+                "distance_pct": round(t2["distance_pct"], 2),
+                "expected_fill_probability": calc_fill_probability(t2["strength_score"], t2["distance_pct"])
+            }
+            # Legacy format
             shadow_result["liquidity_targets"]["target_2"] = round(t2["price"], 2)
             shadow_result["liquidity_targets"]["target_2_source"] = t2["source"]
+            shadow_result["liquidity_targets"]["target_2_confidence"] = round(t2["strength_score"], 1)
             shadow_result["liquidity_targets"]["target_2_liquidity_value"] = t2["value"]
-            shadow_result["liquidity_targets"]["target_2_confidence"] = min(85, 40 + (t2["value"] / 100000))
         
         if len(deduped_targets) >= 3:
             t3 = deduped_targets[2]
+            shadow_result["liquidity_targets"]["extended_target"] = {
+                "price": round(t3["price"], 2),
+                "strength_score": round(t3["strength_score"], 1),
+                "source": t3["source"],
+                "liquidity_value": t3["value"],
+                "distance_pct": round(t3["distance_pct"], 2),
+                "expected_fill_probability": calc_fill_probability(t3["strength_score"], t3["distance_pct"])
+            }
+            # Legacy format
             shadow_result["liquidity_targets"]["target_3"] = round(t3["price"], 2)
             shadow_result["liquidity_targets"]["target_3_source"] = t3["source"]
-            shadow_result["liquidity_targets"]["target_3_confidence"] = min(70, 30 + (t3["value"] / 100000))
+            shadow_result["liquidity_targets"]["target_3_confidence"] = round(t3["strength_score"], 1)
         
         # ═══════════════════════════════════════════════════════════════════
         # 7. GENERATE EXIT PLAN SUGGESTION
@@ -6708,17 +6840,33 @@ async def calculate_shadow_liquidity_targets(
         exit_confidence = min(100, quality_score)
         
         if len(deduped_targets) >= 2:
-            # Strong liquidity at multiple levels = aggressive take profit
-            t1_value = deduped_targets[0].get("value", 0)
-            t2_value = deduped_targets[1].get("value", 0) if len(deduped_targets) > 1 else 0
+            t1_strength = deduped_targets[0]["strength_score"]
+            t2_strength = deduped_targets[1]["strength_score"]
+            t1_distance = deduped_targets[0]["distance_pct"]
             
-            if t1_value > 2000000:  # Very large liquidity cluster
-                shadow_result["suggested_exit_plan"]["partial_at_t1_percent"] = 60
-                shadow_result["suggested_exit_plan"]["reasoning"] = "Large liquidity cluster at T1 - take majority here"
-            elif t2_value > t1_value:
+            if t1_strength > 75 and t1_distance < 2:
+                # Very strong T1, close by = aggressive take profit
+                shadow_result["suggested_exit_plan"]["partial_at_t1_percent"] = 65
+                shadow_result["suggested_exit_plan"]["partial_at_t2_percent"] = 25
+                shadow_result["suggested_exit_plan"]["runner_percent"] = 10
+                shadow_result["suggested_exit_plan"]["aggressive_vs_conservative"] = "aggressive"
+                shadow_result["suggested_exit_plan"]["reasoning"] = f"Strong liquidity (score {t1_strength:.0f}) at {t1_distance:.1f}% - take majority early"
+                
+            elif t2_strength > t1_strength * 0.9:
+                # T2 almost as strong as T1 = balanced approach
                 shadow_result["suggested_exit_plan"]["partial_at_t1_percent"] = 40
                 shadow_result["suggested_exit_plan"]["partial_at_t2_percent"] = 40
-                shadow_result["suggested_exit_plan"]["reasoning"] = "Stronger liquidity at T2 - balanced exit"
+                shadow_result["suggested_exit_plan"]["runner_percent"] = 20
+                shadow_result["suggested_exit_plan"]["aggressive_vs_conservative"] = "balanced"
+                shadow_result["suggested_exit_plan"]["reasoning"] = "Strong liquidity at both levels - balanced exit"
+                
+            elif t1_distance > 2.5:
+                # T1 is far but strong = let it run
+                shadow_result["suggested_exit_plan"]["partial_at_t1_percent"] = 50
+                shadow_result["suggested_exit_plan"]["partial_at_t2_percent"] = 30
+                shadow_result["suggested_exit_plan"]["runner_percent"] = 20
+                shadow_result["suggested_exit_plan"]["aggressive_vs_conservative"] = "conservative"
+                shadow_result["suggested_exit_plan"]["reasoning"] = f"Strong magnet at {t1_distance:.1f}% - standard exit with runners"
             else:
                 shadow_result["suggested_exit_plan"]["reasoning"] = "Standard liquidity distribution"
         else:
@@ -6740,28 +6888,42 @@ async def calculate_shadow_liquidity_targets(
             shadow_result["comparison"]["t1_difference_percent"] = round(diff_pct, 2)
             
             if direction == "LONG":
+                shadow_result["comparison"]["shadow_more_aggressive"] = liq_t1 > std_t1
+                shadow_result["comparison"]["shadow_more_conservative"] = liq_t1 < std_t1
                 if liq_t1 > std_t1:
-                    shadow_result["comparison"]["notes"].append("Liquidity T1 is higher than standard")
+                    shadow_result["comparison"]["notes"].append(f"Shadow T1 +{diff_pct:.1f}% higher (more aggressive)")
                 else:
-                    shadow_result["comparison"]["notes"].append("Liquidity T1 is more conservative")
+                    shadow_result["comparison"]["notes"].append(f"Shadow T1 {diff_pct:.1f}% lower (more conservative)")
             else:
+                shadow_result["comparison"]["shadow_more_aggressive"] = liq_t1 < std_t1
+                shadow_result["comparison"]["shadow_more_conservative"] = liq_t1 > std_t1
                 if liq_t1 < std_t1:
-                    shadow_result["comparison"]["notes"].append("Liquidity T1 extends further")
+                    shadow_result["comparison"]["notes"].append(f"Shadow T1 extends {abs(diff_pct):.1f}% further")
                 else:
-                    shadow_result["comparison"]["notes"].append("Liquidity T1 is more conservative")
+                    shadow_result["comparison"]["notes"].append(f"Shadow T1 {diff_pct:.1f}% closer (more conservative)")
         
         if std_t2 and liq_t2:
             diff_pct = ((liq_t2 - std_t2) / std_t2) * 100
             shadow_result["comparison"]["t2_difference_percent"] = round(diff_pct, 2)
         
+        # Calculate expected R:R improvement
+        stop_loss = standard_targets.get("stop_loss", entry_price * 0.99 if direction == "LONG" else entry_price * 1.01)
+        if std_t1 and liq_t1 and stop_loss:
+            std_rr = abs(std_t1 - entry_price) / abs(entry_price - stop_loss) if abs(entry_price - stop_loss) > 0 else 0
+            liq_rr = abs(liq_t1 - entry_price) / abs(entry_price - stop_loss) if abs(entry_price - stop_loss) > 0 else 0
+            shadow_result["comparison"]["expected_rr_improvement"] = round((liq_rr - std_rr), 2)
+        
         # Update data quality
         shadow_result["data_quality"]["overall_quality"] = quality_score
         shadow_result["data_quality"]["missing_sources"] = missing
+        shadow_result["data_quality"]["sources_used"] = sources_used
         
         return shadow_result
         
     except Exception as e:
-        logger.error(f"[Shadow Liquidity Engine] Error calculating targets: {e}")
+        logger.error(f"[Shadow Liquidity Engine v0.2] Error calculating targets: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         shadow_result["data_quality"]["overall_quality"] = 0
         shadow_result["data_quality"]["missing_sources"].append(f"error: {str(e)}")
         return shadow_result
@@ -6794,6 +6956,311 @@ async def store_shadow_targets(signal_id: str, shadow_data: Dict[str, Any]) -> b
     except Exception as e:
         logger.error(f"[Shadow Liquidity] Error storing shadow targets: {e}")
         return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHADOW TARGET VALIDATION SYSTEM
+# Tracks and compares actual outcomes vs predictions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def validate_shadow_target_outcome(
+    signal_id: str,
+    price_history: List[Dict[str, Any]],  # List of {timestamp, price} during signal lifetime
+    final_outcome: str,  # WIN / LOSS / PARTIAL_WIN / EXPIRED
+    outcome_price: float
+) -> Dict[str, Any]:
+    """
+    Validate shadow target predictions against actual price action.
+    
+    Computes:
+    - Which targets were actually hit (standard vs shadow)
+    - MFE (Max Favorable Excursion) - best price reached
+    - MAE (Max Adverse Excursion) - worst price reached
+    - Profit comparison between standard and shadow exits
+    
+    Returns validation results for storage and analysis.
+    """
+    try:
+        # Get the shadow target data
+        collection = db["shadow_liquidity_targets"]
+        shadow_doc = await collection.find_one({"signal_id": signal_id}, {"_id": 0})
+        
+        if not shadow_doc:
+            return {"error": "Shadow targets not found for this signal"}
+        
+        direction = shadow_doc.get("direction", "LONG")
+        entry_price = shadow_doc.get("entry_price", 0)
+        
+        # Standard targets
+        std_targets = shadow_doc.get("standard_targets", {})
+        std_t1 = std_targets.get("target_1", 0)
+        std_t2 = std_targets.get("target_2", 0)
+        stop_loss = std_targets.get("stop_loss", 0)
+        
+        # Shadow targets
+        liq_targets = shadow_doc.get("liquidity_targets", {})
+        shadow_t1 = liq_targets.get("target_1", 0)
+        shadow_t2 = liq_targets.get("target_2", 0)
+        
+        # Calculate MFE/MAE from price history
+        if price_history and len(price_history) > 0:
+            prices = [p.get("price", 0) for p in price_history if p.get("price", 0) > 0]
+            
+            if prices:
+                if direction == "LONG":
+                    mfe = max(prices)  # Best price for LONG
+                    mae = min(prices)  # Worst price for LONG
+                    mfe_pct = ((mfe - entry_price) / entry_price) * 100
+                    mae_pct = ((mae - entry_price) / entry_price) * 100
+                else:
+                    mfe = min(prices)  # Best price for SHORT
+                    mae = max(prices)  # Worst price for SHORT
+                    mfe_pct = ((entry_price - mfe) / entry_price) * 100
+                    mae_pct = ((entry_price - mae) / entry_price) * 100
+            else:
+                mfe_pct = 0
+                mae_pct = 0
+        else:
+            mfe_pct = 0
+            mae_pct = 0
+        
+        # Check which targets were hit
+        def was_target_hit(target_price: float, direction: str, prices: List[float]) -> bool:
+            if not target_price or not prices:
+                return False
+            if direction == "LONG":
+                return any(p >= target_price for p in prices)
+            else:
+                return any(p <= target_price for p in prices)
+        
+        prices_list = [p.get("price", 0) for p in price_history] if price_history else []
+        
+        std_t1_hit = was_target_hit(std_t1, direction, prices_list)
+        std_t2_hit = was_target_hit(std_t2, direction, prices_list)
+        shadow_t1_hit = was_target_hit(shadow_t1, direction, prices_list)
+        shadow_t2_hit = was_target_hit(shadow_t2, direction, prices_list)
+        
+        # Calculate hypothetical profits
+        def calc_profit_pct(entry: float, exit: float, direction: str) -> float:
+            if direction == "LONG":
+                return ((exit - entry) / entry) * 100
+            else:
+                return ((entry - exit) / entry) * 100
+        
+        # Standard profit (based on final outcome)
+        if final_outcome in ["WIN"]:
+            profit_standard = calc_profit_pct(entry_price, std_t2, direction) if std_t2 else 0
+        elif final_outcome in ["PARTIAL_WIN"]:
+            profit_standard = calc_profit_pct(entry_price, std_t1, direction) if std_t1 else 0
+        elif final_outcome == "LOSS":
+            profit_standard = calc_profit_pct(entry_price, stop_loss, direction) if stop_loss else 0
+        else:
+            profit_standard = 0
+        
+        # Shadow profit (what would have happened with shadow targets)
+        if shadow_t2_hit:
+            profit_shadow = calc_profit_pct(entry_price, shadow_t2, direction) if shadow_t2 else 0
+        elif shadow_t1_hit:
+            profit_shadow = calc_profit_pct(entry_price, shadow_t1, direction) if shadow_t1 else 0
+        elif final_outcome == "LOSS":
+            profit_shadow = calc_profit_pct(entry_price, stop_loss, direction) if stop_loss else 0
+        else:
+            profit_shadow = 0
+        
+        # Determine which system performed better
+        shadow_outperformed = profit_shadow > profit_standard
+        
+        validation_result = {
+            "status": "completed",
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "standard_t1_hit": std_t1_hit,
+            "standard_t2_hit": std_t2_hit,
+            "shadow_t1_hit": shadow_t1_hit,
+            "shadow_t2_hit": shadow_t2_hit,
+            "mfe_percent": round(mfe_pct, 2),
+            "mae_percent": round(mae_pct, 2),
+            "final_outcome": final_outcome,
+            "profit_standard_percent": round(profit_standard, 2),
+            "profit_shadow_percent": round(profit_shadow, 2),
+            "shadow_outperformed": shadow_outperformed,
+            "profit_difference": round(profit_shadow - profit_standard, 2)
+        }
+        
+        # Update the shadow targets document with validation
+        await collection.update_one(
+            {"signal_id": signal_id},
+            {"$set": {"validation": validation_result}}
+        )
+        
+        logger.info(f"[Shadow Validation] Signal {signal_id[:8]}: Standard={profit_standard:.2f}% vs Shadow={profit_shadow:.2f}%")
+        
+        return validation_result
+        
+    except Exception as e:
+        logger.error(f"[Shadow Validation] Error validating signal {signal_id}: {e}")
+        return {"error": str(e)}
+
+
+async def get_shadow_performance_comparison() -> Dict[str, Any]:
+    """
+    Calculate aggregate performance comparison between standard and shadow targets.
+    
+    Returns comprehensive metrics for decision-making:
+    - Win rates for both systems
+    - Average profits
+    - % of trades where shadow outperformed
+    - Statistical significance indicators
+    """
+    try:
+        collection = db["shadow_liquidity_targets"]
+        
+        # Get all validated signals
+        validated_signals = await collection.find(
+            {"validation.status": "completed"},
+            {"_id": 0, "validation": 1, "direction": 1, "data_quality": 1, "comparison": 1}
+        ).to_list(500)
+        
+        if not validated_signals or len(validated_signals) == 0:
+            return {
+                "status": "insufficient_data",
+                "message": "No validated signals yet. Continue collecting data.",
+                "signals_analyzed": 0,
+                "minimum_required": 20
+            }
+        
+        total = len(validated_signals)
+        
+        # Aggregate metrics
+        standard_wins = 0
+        shadow_wins = 0
+        standard_profits = []
+        shadow_profits = []
+        shadow_outperformed_count = 0
+        standard_outperformed_count = 0
+        
+        by_direction = {"LONG": {"standard": [], "shadow": []}, "SHORT": {"standard": [], "shadow": []}}
+        
+        for sig in validated_signals:
+            val = sig.get("validation", {})
+            direction = sig.get("direction", "LONG")
+            
+            std_profit = val.get("profit_standard_percent", 0)
+            shadow_profit = val.get("profit_shadow_percent", 0)
+            
+            standard_profits.append(std_profit)
+            shadow_profits.append(shadow_profit)
+            
+            by_direction[direction]["standard"].append(std_profit)
+            by_direction[direction]["shadow"].append(shadow_profit)
+            
+            if std_profit > 0:
+                standard_wins += 1
+            if shadow_profit > 0:
+                shadow_wins += 1
+                
+            if val.get("shadow_outperformed", False):
+                shadow_outperformed_count += 1
+            elif std_profit > shadow_profit:
+                standard_outperformed_count += 1
+        
+        # Calculate averages
+        avg_standard = sum(standard_profits) / total if total > 0 else 0
+        avg_shadow = sum(shadow_profits) / total if total > 0 else 0
+        
+        # Win rates
+        standard_win_rate = (standard_wins / total) * 100 if total > 0 else 0
+        shadow_win_rate = (shadow_wins / total) * 100 if total > 0 else 0
+        
+        # Calculate average R:R achieved (need more context, simplified here)
+        avg_mfe = sum(v.get("validation", {}).get("mfe_percent", 0) for v in validated_signals) / total if total > 0 else 0
+        avg_mae = sum(abs(v.get("validation", {}).get("mae_percent", 0)) for v in validated_signals) / total if total > 0 else 0
+        
+        # Statistical significance check (simplified - proper test would use t-test)
+        is_statistically_significant = total >= 30 and abs(avg_shadow - avg_standard) > 0.5
+        
+        return {
+            "status": "complete",
+            "signals_analyzed": total,
+            "minimum_for_confidence": 30,
+            "has_sufficient_data": total >= 30,
+            
+            # Primary comparison metrics
+            "comparison": {
+                "standard_avg_profit_pct": round(avg_standard, 2),
+                "shadow_avg_profit_pct": round(avg_shadow, 2),
+                "profit_difference_pct": round(avg_shadow - avg_standard, 2),
+                
+                "standard_win_rate_pct": round(standard_win_rate, 1),
+                "shadow_win_rate_pct": round(shadow_win_rate, 1),
+                
+                "shadow_outperformed_pct": round((shadow_outperformed_count / total) * 100, 1) if total > 0 else 0,
+                "standard_outperformed_pct": round((standard_outperformed_count / total) * 100, 1) if total > 0 else 0,
+                "ties_pct": round(((total - shadow_outperformed_count - standard_outperformed_count) / total) * 100, 1) if total > 0 else 0
+            },
+            
+            # Risk metrics
+            "risk_metrics": {
+                "avg_mfe_pct": round(avg_mfe, 2),
+                "avg_mae_pct": round(avg_mae, 2),
+                "risk_reward_achieved": round(avg_mfe / avg_mae, 2) if avg_mae > 0 else 0
+            },
+            
+            # By direction breakdown
+            "by_direction": {
+                "LONG": {
+                    "count": len(by_direction["LONG"]["standard"]),
+                    "standard_avg": round(sum(by_direction["LONG"]["standard"]) / len(by_direction["LONG"]["standard"]), 2) if by_direction["LONG"]["standard"] else 0,
+                    "shadow_avg": round(sum(by_direction["LONG"]["shadow"]) / len(by_direction["LONG"]["shadow"]), 2) if by_direction["LONG"]["shadow"] else 0
+                },
+                "SHORT": {
+                    "count": len(by_direction["SHORT"]["standard"]),
+                    "standard_avg": round(sum(by_direction["SHORT"]["standard"]) / len(by_direction["SHORT"]["standard"]), 2) if by_direction["SHORT"]["standard"] else 0,
+                    "shadow_avg": round(sum(by_direction["SHORT"]["shadow"]) / len(by_direction["SHORT"]["shadow"]), 2) if by_direction["SHORT"]["shadow"] else 0
+                }
+            },
+            
+            # Recommendation
+            "recommendation": {
+                "is_statistically_significant": is_statistically_significant,
+                "suggested_action": get_shadow_recommendation(avg_shadow, avg_standard, total, shadow_outperformed_count),
+                "confidence_level": "high" if total >= 50 else "medium" if total >= 30 else "low"
+            },
+            
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"[Shadow Performance] Error calculating comparison: {e}")
+        return {"error": str(e)}
+
+
+def get_shadow_recommendation(shadow_avg: float, standard_avg: float, total: int, outperformed: int) -> str:
+    """Generate a recommendation based on comparison data"""
+    if total < 20:
+        return "Continue collecting data. Minimum 20 signals needed for initial assessment."
+    
+    if total < 50:
+        pct_better = (outperformed / total) * 100
+        diff = shadow_avg - standard_avg
+        if diff > 0.5 and pct_better > 55:
+            return f"Early results favorable for shadow (+{diff:.2f}% avg). Continue to 50 signals for confidence."
+        elif diff < -0.5:
+            return f"Early results favor standard targets. Shadow underperforming by {abs(diff):.2f}%."
+        else:
+            return "Results inconclusive so far. Continue data collection."
+    
+    # 50+ signals
+    pct_better = (outperformed / total) * 100
+    diff = shadow_avg - standard_avg
+    
+    if diff > 0.5 and pct_better > 60:
+        return f"RECOMMEND SWITCH: Shadow targets showing +{diff:.2f}% avg improvement, outperforming in {pct_better:.0f}% of trades."
+    elif diff > 0.3 and pct_better > 55:
+        return f"CONSIDER TESTING LIVE: Shadow targets show modest improvement (+{diff:.2f}%), could run parallel live test."
+    elif diff < -0.3:
+        return f"KEEP STANDARD: Standard targets outperforming shadow by {abs(diff):.2f}%. Shadow approach needs refinement."
+    else:
+        return "NO CLEAR WINNER: Both systems performing similarly. Consider other factors for decision."
 
 
 async def _calculate_and_store_shadow_targets(
@@ -11275,16 +11742,17 @@ async def backfill_v3_signals():
 @api_router.get("/v3/shadow-targets")
 async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
     """
-    SHADOW MODE ANALYSIS: View shadow liquidity target data.
+    SHADOW MODE ANALYSIS v0.2: View shadow liquidity target data.
     
     This endpoint returns shadow targets calculated in parallel with live V3 targets.
     Data is for analysis only - does NOT affect live trading decisions.
     
     Returns:
-        - Recent shadow target calculations
+        - Recent shadow target calculations with strength-based scoring
         - Comparison with standard targets
         - Data quality metrics
         - Exit plan suggestions
+        - Validation results (when available)
     """
     try:
         collection = db["shadow_liquidity_targets"]
@@ -11301,6 +11769,7 @@ async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
         
         # Calculate aggregate statistics
         total_count = await collection.count_documents({})
+        validated_count = await collection.count_documents({"validation.status": "completed"})
         
         # Quality distribution
         quality_scores = [d.get("data_quality", {}).get("overall_quality", 0) for d in shadow_targets]
@@ -11310,17 +11779,28 @@ async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
         t1_diffs = [d.get("comparison", {}).get("t1_difference_percent", 0) for d in shadow_targets if d.get("comparison")]
         avg_t1_diff = sum(t1_diffs) / len(t1_diffs) if t1_diffs else 0
         
+        # Strength score stats (new in v0.2)
+        strength_scores = [
+            d.get("liquidity_targets", {}).get("primary_magnet", {}).get("strength_score", 0) 
+            for d in shadow_targets 
+            if d.get("liquidity_targets", {}).get("primary_magnet", {}).get("strength_score")
+        ]
+        avg_strength = sum(strength_scores) / len(strength_scores) if strength_scores else 0
+        
         return {
             "status": "SHADOW_MODE_ACTIVE",
-            "engine_version": "shadow_liquidity_v0.1",
+            "engine_version": "shadow_liquidity_v0.2",
             "total_collected": total_count,
+            "total_validated": validated_count,
             "showing": len(shadow_targets),
             
             "aggregate_stats": {
                 "avg_data_quality": round(avg_quality, 1),
                 "avg_t1_difference_percent": round(avg_t1_diff, 2),
+                "avg_primary_magnet_strength": round(avg_strength, 1),
                 "signals_with_liquidity_t1": sum(1 for d in shadow_targets if d.get("liquidity_targets", {}).get("target_1")),
-                "signals_with_liquidity_t2": sum(1 for d in shadow_targets if d.get("liquidity_targets", {}).get("target_2"))
+                "signals_with_liquidity_t2": sum(1 for d in shadow_targets if d.get("liquidity_targets", {}).get("target_2")),
+                "signals_validated": validated_count
             },
             
             "data_source_coverage": {
@@ -11332,11 +11812,37 @@ async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
             
             "recent_targets": shadow_targets,
             
-            "note": "This is SHADOW MODE data - does not affect live V3 targets"
+            "note": "This is SHADOW MODE data - does not affect live V3 targets. Targets now ranked by STRENGTH, not proximity."
         }
         
     except Exception as e:
         logger.error(f"Error fetching shadow targets: {e}")
+        return {"error": str(e), "status": "ERROR"}
+
+
+@api_router.get("/v3/shadow-performance")
+async def get_shadow_performance_metrics():
+    """
+    SHADOW MODE PERFORMANCE COMPARISON: Standard vs Shadow Target Analysis.
+    
+    Provides comprehensive metrics to determine if liquidity-based targets
+    outperform standard targets.
+    
+    Returns:
+        - Average profit comparison (standard vs shadow)
+        - Win rate comparison
+        - % of trades where shadow outperformed
+        - By-direction breakdown
+        - Recommendation for switching
+    
+    Note: Requires validated signals (signals with completed outcomes).
+    """
+    try:
+        comparison_data = await get_shadow_performance_comparison()
+        return comparison_data
+        
+    except Exception as e:
+        logger.error(f"Error fetching shadow performance: {e}")
         return {"error": str(e), "status": "ERROR"}
 
 

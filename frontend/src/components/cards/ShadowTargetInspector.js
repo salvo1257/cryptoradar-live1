@@ -23,9 +23,11 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 export function ShadowTargetInspector({ language = 'it' }) {
   const { learnMode } = useApp();
   const [shadowData, setShadowData] = useState(null);
+  const [performanceData, setPerformanceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedSignal, setExpandedSignal] = useState(null);
+  const [showPerformance, setShowPerformance] = useState(true);
 
   const labels = {
     it: {
@@ -59,7 +61,19 @@ export function ShadowTargetInspector({ language = 'it' }) {
       higher: 'più alto',
       lower: 'più basso',
       conservative: 'più conservativo',
-      aggressive: 'più aggressivo'
+      aggressive: 'più aggressivo',
+      // Performance comparison labels
+      performanceTitle: 'Confronto Performance',
+      standardAvg: 'Standard Avg',
+      shadowAvg: 'Shadow Avg',
+      shadowWins: 'Shadow Vince',
+      standardWins: 'Standard Vince',
+      profitDiff: 'Diff. Profitto',
+      winRate: 'Win Rate',
+      recommendation: 'Raccomandazione',
+      validated: 'Validati',
+      needMore: 'Servono più dati',
+      collecting: 'Raccolta dati...'
     },
     en: {
       title: 'Shadow Target Inspector',
@@ -92,7 +106,19 @@ export function ShadowTargetInspector({ language = 'it' }) {
       higher: 'higher',
       lower: 'lower',
       conservative: 'more conservative',
-      aggressive: 'more aggressive'
+      aggressive: 'more aggressive',
+      // Performance comparison labels
+      performanceTitle: 'Performance Comparison',
+      standardAvg: 'Standard Avg',
+      shadowAvg: 'Shadow Avg',
+      shadowWins: 'Shadow Wins',
+      standardWins: 'Standard Wins',
+      profitDiff: 'Profit Diff',
+      winRate: 'Win Rate',
+      recommendation: 'Recommendation',
+      validated: 'Validated',
+      needMore: 'Need more data',
+      collecting: 'Collecting data...'
     }
   };
 
@@ -102,10 +128,24 @@ export function ShadowTargetInspector({ language = 'it' }) {
     try {
       setLoading(true);
       setError(null);
+      
+      // Fetch shadow targets
       const response = await fetch(`${API_URL}/api/v3/shadow-targets?limit=50`);
       if (!response.ok) throw new Error('Failed to fetch shadow targets');
       const data = await response.json();
       setShadowData(data);
+      
+      // Fetch performance comparison
+      try {
+        const perfResponse = await fetch(`${API_URL}/api/v3/shadow-performance`);
+        if (perfResponse.ok) {
+          const perfData = await perfResponse.json();
+          setPerformanceData(perfData);
+        }
+      } catch (perfErr) {
+        console.log('Performance data not available yet:', perfErr);
+      }
+      
     } catch (err) {
       console.error('Error fetching shadow targets:', err);
       setError(err.message);
@@ -324,6 +364,147 @@ export function ShadowTargetInspector({ language = 'it' }) {
           </div>
         </div>
       </div>
+
+      {/* Performance Comparison Section */}
+      {performanceData && performanceData.status === 'complete' && (
+        <div className="px-5 py-4 border-b border-indigo-500/20 bg-gradient-to-r from-emerald-950/20 to-indigo-950/20">
+          <div 
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowPerformance(!showPerformance)}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm font-semibold text-white">{t.performanceTitle}</span>
+              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px]">
+                {performanceData.signals_analyzed} {t.validated}
+              </Badge>
+            </div>
+            {showPerformance ? (
+              <ChevronUp className="w-4 h-4 text-zinc-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-zinc-400" />
+            )}
+          </div>
+          
+          {showPerformance && (
+            <div className="mt-4 space-y-4">
+              {/* Key Metrics */}
+              <div className="grid grid-cols-4 gap-3">
+                <div className="bg-crypto-surface/40 rounded px-3 py-2 text-center">
+                  <div className="text-lg font-mono font-bold text-zinc-300">
+                    {performanceData.comparison?.standard_avg_profit_pct?.toFixed(2) || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{t.standardAvg}</div>
+                </div>
+                <div className="bg-crypto-surface/40 rounded px-3 py-2 text-center">
+                  <div className={cn(
+                    "text-lg font-mono font-bold",
+                    (performanceData.comparison?.shadow_avg_profit_pct || 0) > (performanceData.comparison?.standard_avg_profit_pct || 0)
+                      ? "text-emerald-400"
+                      : "text-zinc-300"
+                  )}>
+                    {performanceData.comparison?.shadow_avg_profit_pct?.toFixed(2) || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{t.shadowAvg}</div>
+                </div>
+                <div className="bg-crypto-surface/40 rounded px-3 py-2 text-center">
+                  <div className={cn(
+                    "text-lg font-mono font-bold",
+                    (performanceData.comparison?.profit_difference_pct || 0) > 0
+                      ? "text-emerald-400"
+                      : (performanceData.comparison?.profit_difference_pct || 0) < 0
+                        ? "text-red-400"
+                        : "text-zinc-400"
+                  )}>
+                    {(performanceData.comparison?.profit_difference_pct || 0) > 0 ? '+' : ''}
+                    {performanceData.comparison?.profit_difference_pct?.toFixed(2) || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{t.profitDiff}</div>
+                </div>
+                <div className="bg-crypto-surface/40 rounded px-3 py-2 text-center">
+                  <div className="text-lg font-mono font-bold text-indigo-400">
+                    {performanceData.comparison?.shadow_outperformed_pct?.toFixed(0) || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 uppercase">{t.shadowWins}</div>
+                </div>
+              </div>
+
+              {/* Win Rate Comparison */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-crypto-surface/20 rounded px-3 py-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-zinc-400">Standard {t.winRate}</span>
+                    <span className="text-sm font-mono text-zinc-300">
+                      {performanceData.comparison?.standard_win_rate_pct?.toFixed(1) || 0}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={performanceData.comparison?.standard_win_rate_pct || 0} 
+                    className="h-1.5 bg-zinc-800"
+                  />
+                </div>
+                <div className="bg-crypto-surface/20 rounded px-3 py-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-zinc-400">Shadow {t.winRate}</span>
+                    <span className="text-sm font-mono text-emerald-400">
+                      {performanceData.comparison?.shadow_win_rate_pct?.toFixed(1) || 0}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={performanceData.comparison?.shadow_win_rate_pct || 0} 
+                    className="h-1.5 bg-zinc-800"
+                  />
+                </div>
+              </div>
+
+              {/* Recommendation */}
+              {performanceData.recommendation && (
+                <div className={cn(
+                  "p-3 rounded border",
+                  performanceData.recommendation.suggested_action?.includes('RECOMMEND SWITCH')
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : performanceData.recommendation.suggested_action?.includes('KEEP STANDARD')
+                      ? "bg-red-500/10 border-red-500/30"
+                      : "bg-indigo-500/10 border-indigo-500/30"
+                )}>
+                  <div className="flex items-start gap-2">
+                    {performanceData.recommendation.suggested_action?.includes('RECOMMEND SWITCH') ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5" />
+                    ) : performanceData.recommendation.suggested_action?.includes('KEEP STANDARD') ? (
+                      <XCircle className="w-4 h-4 text-red-400 mt-0.5" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-indigo-400 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-200 mb-0.5">{t.recommendation}</div>
+                      <div className="text-xs text-zinc-400">{performanceData.recommendation.suggested_action}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Risk Metrics */}
+              {performanceData.risk_metrics && (
+                <div className="flex items-center gap-4 text-xs text-zinc-500">
+                  <span>MFE avg: <span className="text-emerald-400">{performanceData.risk_metrics.avg_mfe_pct?.toFixed(2)}%</span></span>
+                  <span>MAE avg: <span className="text-red-400">{performanceData.risk_metrics.avg_mae_pct?.toFixed(2)}%</span></span>
+                  <span>R:R achieved: <span className="text-indigo-400">{performanceData.risk_metrics.risk_reward_achieved?.toFixed(2)}</span></span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Performance Insufficient Data Notice */}
+      {performanceData && performanceData.status === 'insufficient_data' && (
+        <div className="px-5 py-3 border-b border-indigo-500/20 bg-zinc-900/50">
+          <div className="flex items-center gap-2 text-zinc-500 text-xs">
+            <Clock className="w-4 h-4" />
+            <span>{t.collecting} {performanceData.signals_analyzed || 0}/{performanceData.minimum_required || 20} {t.validated}</span>
+          </div>
+        </div>
+      )}
 
       {/* Signals List */}
       <ScrollArea className="h-[500px]">
