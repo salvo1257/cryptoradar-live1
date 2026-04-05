@@ -17,6 +17,7 @@ import {
   V3SignalCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
+import { DataFreshnessIndicator } from '../cards/DataFreshnessIndicator';
 import { Badge } from '../ui/badge';
 
 export function DashboardPage() {
@@ -85,6 +86,12 @@ export function DashboardPage() {
 
   return (
     <div className="p-6 space-y-8" data-testid="dashboard-page">
+      
+      {/* ═══════════════════════════════════════════════════════════════════
+          DATA INTEGRITY STATUS - Always visible at top
+          Shows if market data is fresh, stale, or unavailable
+      ═══════════════════════════════════════════════════════════════════ */}
+      <DataFreshnessIndicator />
       
       {/* ═══════════════════════════════════════════════════════════════════
           TOP ROW: V3 Signal + Market Regime (Primary Decision Layer)

@@ -1,5 +1,74 @@
 # CryptoRadar v3.0.0 - Product Requirements Document
-**Last Updated:** 2026-04-04
+**Last Updated:** 2026-04-05
+
+## ✅ DATA INTEGRITY STABILIZATION PASS (2026-04-05)
+
+### Goal
+Use REAL data only. Never invent values when data is unavailable.
+
+### Changes Made
+
+#### 1. REMOVED ALL RANDOM FALLBACKS
+| Location | Before | After |
+|----------|--------|-------|
+| `generate_open_interest()` | `random.uniform(-2, 2)` for OI changes | Returns `data_available: false`, `trend: "unknown"` |
+| `generate_funding_rate()` | `random.uniform(-0.01, 0.02)` for rate | Returns `data_available: false`, `payer: "unknown"` |
+
+**No simulated data is ever used.** When API fails, the system returns explicit "unavailable" state.
+
+#### 2. DATA FRESHNESS TRACKING SYSTEM
+New global tracker monitors all data sources:
+- `price` (Kraken) - warning: 30s, stale: 60s, critical: 120s
+- `candles` (Kraken) - warning: 60s, stale: 180s, critical: 300s
+- `open_interest` (CoinGlass) - warning: 60s, stale: 120s, critical: 300s
+- `funding_rate` (CoinGlass) - warning: 60s, stale: 180s, critical: 600s
+- `liquidation` (CoinGlass) - warning: 60s, stale: 120s, critical: 300s
+- `orderbook` (Kraken) - warning: 30s, stale: 60s, critical: 120s
+- `whale_activity` - warning: 60s, stale: 120s, critical: 300s
+
+Each source tracks:
+- `last_fetch` timestamp
+- `status`: fresh | warning | stale | critical | unavailable
+- `age_seconds`
+- `source` name
+- `is_reliable` boolean
+
+#### 3. NEW API ENDPOINT
+`GET /api/system/data-freshness`
+Returns complete freshness status for all data sources.
+
+#### 4. UI CHANGES
+- **DataFreshnessIndicator** component at top of dashboard
+- Shows overall health: "All Data Fresh" / "Some Data Stale" / "Data Issues"
+- Expandable to see individual source status
+- **DataFreshnessBadge** inline component for cards
+- OpenInterestCard and FundingRateCard show "Data Unavailable" state when API fails
+
+#### 5. MODEL UPDATES
+`OpenInterest` and `FundingRate` models now include:
+- `data_available: bool`
+- `freshness_status: str`
+- `age_seconds: Optional[float]`
+
+### What Was NOT Changed
+- ✅ V2 trading logic
+- ✅ V3 entry logic
+- ✅ Stop loss calculations
+- ✅ Target calculations
+- ✅ R:R thresholds
+- ✅ Telegram behavior
+- ✅ Outcome engine
+- ✅ Shadow Liquidity Engine (still active in shadow mode)
+
+### Files Modified
+- `/app/backend/server.py` - Data freshness tracker, removed random fallbacks
+- `/app/frontend/src/components/cards/DataFreshnessIndicator.js` - NEW
+- `/app/frontend/src/components/cards/OpenInterestCard.js` - Unavailable state
+- `/app/frontend/src/components/cards/FundingRateCard.js` - Unavailable state
+- `/app/frontend/src/components/pages/DashboardPage.js` - Added indicator
+- `/app/frontend/src/components/cards/index.js` - Export new components
+
+---
 
 ## ✅ Help Mode v2.0 - Intelligent Market Reading Assistant (2026-04-04)
 

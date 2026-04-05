@@ -20,6 +20,125 @@ from apscheduler.triggers.interval import IntervalTrigger
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA INTEGRITY SYSTEM - Freshness Tracking & Stale Data Detection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Freshness thresholds (in seconds)
+DATA_FRESHNESS_THRESHOLDS = {
+    "price": {"warning": 30, "stale": 60, "critical": 120},
+    "open_interest": {"warning": 60, "stale": 120, "critical": 300},
+    "funding_rate": {"warning": 60, "stale": 180, "critical": 600},
+    "liquidation": {"warning": 60, "stale": 120, "critical": 300},
+    "orderbook": {"warning": 30, "stale": 60, "critical": 120},
+    "whale_activity": {"warning": 60, "stale": 120, "critical": 300},
+    "candles": {"warning": 60, "stale": 180, "critical": 300},
+}
+
+# Data freshness status enum
+class DataFreshnessStatus(str, Enum):
+    FRESH = "fresh"           # Data is current
+    WARNING = "warning"       # Data is slightly old but usable
+    STALE = "stale"           # Data is old, use with caution
+    CRITICAL = "critical"     # Data is too old, should not be trusted
+    UNAVAILABLE = "unavailable"  # Data could not be fetched
+
+# Global data freshness tracker
+data_freshness_tracker = {
+    "price": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "open_interest": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "funding_rate": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "liquidation": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "orderbook": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "whale_activity": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "candles": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+}
+
+def update_data_freshness(data_type: str, success: bool, source: str = None):
+    """Update the freshness tracker for a data type"""
+    if data_type in data_freshness_tracker:
+        if success:
+            data_freshness_tracker[data_type]["last_fetch"] = datetime.now(timezone.utc)
+            data_freshness_tracker[data_type]["status"] = DataFreshnessStatus.FRESH
+            data_freshness_tracker[data_type]["source"] = source
+        else:
+            # Don't update last_fetch, just mark as unavailable if it was already stale
+            current_status = get_data_freshness_status(data_type)
+            if current_status in [DataFreshnessStatus.STALE, DataFreshnessStatus.CRITICAL]:
+                data_freshness_tracker[data_type]["status"] = DataFreshnessStatus.UNAVAILABLE
+
+def get_data_freshness_status(data_type: str) -> DataFreshnessStatus:
+    """Get current freshness status for a data type"""
+    if data_type not in data_freshness_tracker:
+        return DataFreshnessStatus.UNAVAILABLE
+    
+    tracker = data_freshness_tracker[data_type]
+    last_fetch = tracker.get("last_fetch")
+    
+    if last_fetch is None:
+        return DataFreshnessStatus.UNAVAILABLE
+    
+    age_seconds = (datetime.now(timezone.utc) - last_fetch).total_seconds()
+    thresholds = DATA_FRESHNESS_THRESHOLDS.get(data_type, {"warning": 60, "stale": 120, "critical": 300})
+    
+    if age_seconds >= thresholds["critical"]:
+        return DataFreshnessStatus.CRITICAL
+    elif age_seconds >= thresholds["stale"]:
+        return DataFreshnessStatus.STALE
+    elif age_seconds >= thresholds["warning"]:
+        return DataFreshnessStatus.WARNING
+    else:
+        return DataFreshnessStatus.FRESH
+
+def get_data_age_seconds(data_type: str) -> Optional[float]:
+    """Get the age of data in seconds"""
+    if data_type not in data_freshness_tracker:
+        return None
+    
+    last_fetch = data_freshness_tracker[data_type].get("last_fetch")
+    if last_fetch is None:
+        return None
+    
+    return (datetime.now(timezone.utc) - last_fetch).total_seconds()
+
+def get_all_data_freshness() -> Dict[str, Any]:
+    """Get freshness status for all tracked data sources"""
+    result = {}
+    for data_type in data_freshness_tracker:
+        status = get_data_freshness_status(data_type)
+        age = get_data_age_seconds(data_type)
+        result[data_type] = {
+            "status": status.value,
+            "age_seconds": round(age, 1) if age is not None else None,
+            "last_fetch": data_freshness_tracker[data_type]["last_fetch"].isoformat() if data_freshness_tracker[data_type]["last_fetch"] else None,
+            "source": data_freshness_tracker[data_type]["source"],
+            "is_reliable": status in [DataFreshnessStatus.FRESH, DataFreshnessStatus.WARNING]
+        }
+    return result
+
+def is_critical_data_available() -> tuple[bool, List[str]]:
+    """Check if critical data sources are available and fresh enough for signal generation"""
+    critical_sources = ["price", "candles"]  # Minimum required for any signal
+    important_sources = ["open_interest", "liquidation"]  # Important but not blocking
+    
+    missing_critical = []
+    missing_important = []
+    
+    for source in critical_sources:
+        status = get_data_freshness_status(source)
+        if status in [DataFreshnessStatus.UNAVAILABLE, DataFreshnessStatus.CRITICAL]:
+            missing_critical.append(source)
+    
+    for source in important_sources:
+        status = get_data_freshness_status(source)
+        if status in [DataFreshnessStatus.UNAVAILABLE, DataFreshnessStatus.CRITICAL]:
+            missing_important.append(source)
+    
+    all_critical_ok = len(missing_critical) == 0
+    return all_critical_ok, missing_critical + missing_important
+
+# ═══════════════════════════════════════════════════════════════════════════════
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -107,7 +226,10 @@ class OpenInterest(BaseModel):
     trend: str  # "increasing", "decreasing", "stable"
     exchanges: List[Dict[str, Any]]
     signal: str
-    data_source: str = "Simulated (CoinGlass pending)"
+    data_source: str = "Unknown"
+    data_available: bool = True
+    freshness_status: str = "fresh"  # fresh, warning, stale, critical, unavailable
+    age_seconds: Optional[float] = None
 
 class FundingRate(BaseModel):
     current_rate: float
@@ -116,7 +238,10 @@ class FundingRate(BaseModel):
     sentiment: str  # "bullish", "bearish", "neutral"
     overcrowded: Optional[str] = None  # "longs", "shorts", or None
     signal_text: str
-    data_source: str = "Simulated (CoinGlass pending)"
+    data_source: str = "Unknown"
+    data_available: bool = True
+    freshness_status: str = "fresh"
+    age_seconds: Optional[float] = None
 
 class LiquidityCluster(BaseModel):
     price: float
@@ -2865,9 +2990,14 @@ async def fetch_kraken_ticker():
                 # Update cache
                 market_data_cache["ticker"] = result
                 market_data_cache["ticker_time"] = datetime.now(timezone.utc)
+                
+                # Update data freshness tracker
+                update_data_freshness("price", True, "Kraken")
+                
                 return result
     except Exception as e:
         logger.error(f"Error fetching Kraken ticker: {e}")
+        update_data_freshness("price", False)
     return None
 
 async def fetch_kraken_ohlc(interval: int = 60, since: int = None):
@@ -2909,9 +3039,14 @@ async def fetch_kraken_ohlc(interval: int = 60, since: int = None):
                 # Update cache
                 market_data_cache["candles"][cache_key] = candles
                 market_data_cache["candles_time"][cache_key] = datetime.now(timezone.utc)
+                
+                # Update data freshness tracker
+                update_data_freshness("candles", True, "Kraken")
+                
                 return candles
     except Exception as e:
         logger.error(f"Error fetching Kraken OHLC: {e}")
+        update_data_freshness("candles", False)
     return None
 
 
@@ -3156,9 +3291,14 @@ async def fetch_kraken_orderbook(count: int = 100):
                 # Update cache
                 market_data_cache["orderbook"] = orderbook
                 market_data_cache["orderbook_time"] = datetime.now(timezone.utc)
+                
+                # Update data freshness tracker
+                update_data_freshness("orderbook", True, "Kraken")
+                
                 return orderbook
     except Exception as e:
         logger.error(f"Error fetching Kraken orderbook: {e}")
+        update_data_freshness("orderbook", False)
     return None
 
 # ============== COINBASE API HELPERS ==============
@@ -4788,9 +4928,15 @@ async def fetch_coinglass_liquidation():
                         }
                         market_data_cache["coinglass_liquidation"] = result
                         market_data_cache["coinglass_liquidation_time"] = datetime.now(timezone.utc)
+                        
+                        # Update data freshness tracker
+                        update_data_freshness("liquidation", True, "CoinGlass")
+                        
                         return result
     except Exception as e:
         logger.error(f"Error fetching CoinGlass liquidation: {e}")
+    
+    update_data_freshness("liquidation", False)
     return None
 
 async def generate_open_interest(current_price: float, candles: List[dict] = None, lang: str = "it") -> OpenInterest:
@@ -4825,6 +4971,8 @@ async def generate_open_interest(current_price: float, candles: List[dict] = Non
             {"name": "Others", "oi": round(total_oi * 0.09, 2), "share": 9},
         ]
         
+        update_data_freshness("open_interest", True, "CoinGlass")
+        
         return OpenInterest(
             total_oi=total_oi,
             change_1h=change_1h,
@@ -4833,27 +4981,28 @@ async def generate_open_interest(current_price: float, candles: List[dict] = Non
             trend=trend,
             exchanges=exchanges,
             signal=signal,
-            data_source="CoinGlass"
+            data_source="CoinGlass",
+            data_available=True,
+            freshness_status="fresh",
+            age_seconds=0
         )
     
-    # Fallback to simulated if API fails
-    import random
-    base_oi = 82.5
+    # DATA UNAVAILABLE - No random fallback
+    # Return explicit "unavailable" state instead of fake data
+    update_data_freshness("open_interest", False)
+    
     return OpenInterest(
-        total_oi=base_oi,
-        change_1h=round(random.uniform(-2, 2), 2),
-        change_4h=round(random.uniform(-3, 3), 2),
-        change_24h=round(random.uniform(-5, 5), 2),
-        trend="stable",
-        exchanges=[
-            {"name": "Binance", "oi": round(base_oi * 0.42, 2), "share": 42},
-            {"name": "CME", "oi": round(base_oi * 0.22, 2), "share": 22},
-            {"name": "Bybit", "oi": round(base_oi * 0.15, 2), "share": 15},
-            {"name": "OKX", "oi": round(base_oi * 0.12, 2), "share": 12},
-            {"name": "Others", "oi": round(base_oi * 0.09, 2), "share": 9},
-        ],
-        signal=get_translation("api_unavailable", lang),
-        data_source="Fallback"
+        total_oi=0,
+        change_1h=0,
+        change_4h=0,
+        change_24h=0,
+        trend="unknown",
+        exchanges=[],
+        signal=get_translation("api_unavailable", lang) + " - Open Interest data not available",
+        data_source="Unavailable",
+        data_available=False,
+        freshness_status="unavailable",
+        age_seconds=None
     )
 
 async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict = None, lang: str = "it") -> FundingRate:
@@ -4893,6 +5042,8 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
                 overcrowded = None
                 signal_text = get_translation("balanced_liquidations", lang)
             
+            update_data_freshness("funding_rate", True, "CoinGlass")
+            
             return FundingRate(
                 current_rate=round(current_rate, 4),
                 annualized_rate=round(current_rate * 3 * 365, 2),
@@ -4900,20 +5051,27 @@ async def generate_funding_rate(orderbook: dict = None, liquidation_data: dict =
                 sentiment=sentiment,
                 overcrowded=overcrowded,
                 signal_text=signal_text,
-                data_source="CoinGlass (Liquidation-derived)"
+                data_source="CoinGlass (Liquidation-derived)",
+                data_available=True,
+                freshness_status="fresh",
+                age_seconds=0
             )
     
-    # Fallback
-    import random
-    base_rate = random.uniform(-0.01, 0.02)
+    # DATA UNAVAILABLE - No random fallback
+    # Return explicit "unavailable" state instead of fake data
+    update_data_freshness("funding_rate", False)
+    
     return FundingRate(
-        current_rate=round(base_rate, 4),
-        annualized_rate=round(base_rate * 3 * 365, 2),
-        payer="longs" if base_rate > 0 else "shorts",
-        sentiment="bullish" if base_rate > 0.005 else "bearish" if base_rate < -0.005 else "neutral",
+        current_rate=0,
+        annualized_rate=0,
+        payer="unknown",
+        sentiment="unknown",
         overcrowded=None,
-        signal_text=get_translation("api_unavailable", lang),
-        data_source="Fallback"
+        signal_text=get_translation("api_unavailable", lang) + " - Funding Rate data not available",
+        data_source="Unavailable",
+        data_available=False,
+        freshness_status="unavailable",
+        age_seconds=None
     )
 
 # ============== MARKET ENERGY / COMPRESSION DETECTOR ==============
@@ -9955,7 +10113,9 @@ def generate_trade_signal(
         quality_level=quality_level,
         quality_gate_passed=quality_gate_passed,
         # NEW v2.9: Market Regime
-        market_regime=market_regime_data
+        market_regime=market_regime_data,
+        # NEW v3.0.1: Data Freshness - Transparent data integrity
+        data_freshness=get_all_data_freshness()
     )
 
 # ============== API ROUTES ==============
@@ -10124,6 +10284,58 @@ async def get_system_ready():
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA FRESHNESS ENDPOINT - Transparent data integrity status
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/system/data-freshness")
+async def get_data_freshness_status_endpoint():
+    """
+    Returns the freshness status of all tracked data sources.
+    
+    Use this to verify:
+    - Which data sources are fresh/stale/unavailable
+    - How old each data source is
+    - Whether critical data is available for signal generation
+    
+    Freshness levels:
+    - fresh: Data is current and reliable (< warning threshold)
+    - warning: Data is slightly old but still usable
+    - stale: Data is old, use with caution
+    - critical: Data is too old, should not be trusted
+    - unavailable: Data could not be fetched
+    """
+    freshness = get_all_data_freshness()
+    critical_ok, missing_sources = is_critical_data_available()
+    
+    # Calculate overall health
+    stale_count = sum(1 for v in freshness.values() if v["status"] in ["stale", "critical", "unavailable"])
+    total_sources = len(freshness)
+    
+    if stale_count == 0:
+        overall_status = "healthy"
+    elif stale_count <= 2:
+        overall_status = "degraded"
+    else:
+        overall_status = "critical"
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "overall_status": overall_status,
+        "critical_data_available": critical_ok,
+        "missing_or_stale_sources": missing_sources,
+        "thresholds": DATA_FRESHNESS_THRESHOLDS,
+        "sources": freshness,
+        "summary": {
+            "total_sources": total_sources,
+            "fresh_count": sum(1 for v in freshness.values() if v["status"] == "fresh"),
+            "warning_count": sum(1 for v in freshness.values() if v["status"] == "warning"),
+            "stale_count": sum(1 for v in freshness.values() if v["status"] == "stale"),
+            "critical_count": sum(1 for v in freshness.values() if v["status"] == "critical"),
+            "unavailable_count": sum(1 for v in freshness.values() if v["status"] == "unavailable")
+        }
+    }
 
 @api_router.get("/system/config")
 async def get_system_config():
