@@ -9151,23 +9151,33 @@ def analyze_liquidity_magnet(
     liquidity_clusters: List = None,
     liquidation_data: dict = None,
     open_interest_data: dict = None,
+    market_energy_data: dict = None,  # NEW: For context scoring
     lang: str = "it"
 ) -> LiquidityMagnet:
     """
-    Liquidity Magnet Score v1.0 - Measures price attraction toward nearby liquidity zones.
+    Liquidity Magnet Score v2.0 - STRENGTH-BASED SELECTION (NOT proximity)
     
-    Analyzes:
-    1. Liquidity size above and below price
-    2. Distance from current price to each liquidity zone
-    3. Liquidation cluster strength
-    4. Stop cluster density
-    5. Multi-exchange order book confirmation
-    6. CoinGlass liquidation/OI context
+    CRITICAL CHANGE: Selects STRONGEST liquidity clusters, not nearest.
+    This produces more realistic targets with better R:R.
+    
+    Algorithm:
+    1. FILTER: Ignore clusters with value < $5M or distance < 0.2%
+    2. VALUE SCORE (0-50): log10(value) * 10
+    3. DISTANCE SCORE (0-30): Optimal range 0.5-2.5% = max score
+    4. CONTEXT SCORE (0-20): OI change, compression, breakout prob, volume
+    5. TOTAL = value + distance + context
+    6. SELECT: Primary = highest score, Secondary = second highest
     
     Returns magnet score, target direction, and likely sweep expectation.
     """
+    import math
     
     signals = []
+    
+    # ======== CONFIGURATION ========
+    MIN_LIQUIDITY_VALUE = 5_000_000  # $5M minimum to be considered
+    MIN_DISTANCE_PCT = 0.2  # 0.2% minimum distance
+    MAX_DISTANCE_PCT = 5.0  # 5% maximum distance
     
     # ======== 1. AGGREGATE LIQUIDITY DATA ========
     liquidity_above_total = 0
@@ -9183,7 +9193,7 @@ def analyze_liquidity_magnet(
                     "price": cluster.price if hasattr(cluster, 'price') else 0,
                     "value": cluster.estimated_value if hasattr(cluster, 'estimated_value') else 0,
                     "strength": cluster.strength if hasattr(cluster, 'strength') else "minor",
-                    "distance": abs(cluster.distance_percent) if hasattr(cluster, 'distance_percent') else 0,
+                    "distance_pct": abs(cluster.distance_percent) if hasattr(cluster, 'distance_percent') else 0,
                     "source": "liquidity_cluster"
                 }
                 
@@ -9206,13 +9216,13 @@ def analyze_liquidity_magnet(
             
             for price, volume in ask_volumes:
                 if volume > avg_ask * 2.5:  # Significant wall
-                    distance = ((price - current_price) / current_price) * 100
-                    if distance > 0 and distance < 5:  # Within 5%
+                    distance_pct = ((price - current_price) / current_price) * 100
+                    if distance_pct > 0 and distance_pct < MAX_DISTANCE_PCT:
                         zone = {
                             "price": price,
                             "value": volume * price,
                             "strength": "major" if volume > avg_ask * 5 else "moderate",
-                            "distance": distance,
+                            "distance_pct": distance_pct,
                             "source": "orderbook_ask"
                         }
                         above_zones.append(zone)
@@ -9225,13 +9235,13 @@ def analyze_liquidity_magnet(
             
             for price, volume in bid_volumes:
                 if volume > avg_bid * 2.5:  # Significant wall
-                    distance = ((current_price - price) / current_price) * 100
-                    if distance > 0 and distance < 5:  # Within 5%
+                    distance_pct = ((current_price - price) / current_price) * 100
+                    if distance_pct > 0 and distance_pct < MAX_DISTANCE_PCT:
                         zone = {
                             "price": price,
                             "value": volume * price,
                             "strength": "major" if volume > avg_bid * 5 else "moderate",
-                            "distance": distance,
+                            "distance_pct": distance_pct,
                             "source": "orderbook_bid"
                         }
                         below_zones.append(zone)
@@ -9246,172 +9256,204 @@ def analyze_liquidity_magnet(
                 liq_value = level.get("value", 0)
                 
                 if liq_price > current_price:
-                    distance = ((liq_price - current_price) / current_price) * 100
-                    if distance < 5:
+                    distance_pct = ((liq_price - current_price) / current_price) * 100
+                    if distance_pct < MAX_DISTANCE_PCT:
                         zone = {
                             "price": liq_price,
                             "value": liq_value,
                             "strength": "major" if liq_value > 10000000 else "moderate",
-                            "distance": distance,
+                            "distance_pct": distance_pct,
                             "source": "liquidation"
                         }
                         above_zones.append(zone)
                         liquidity_above_total += liq_value
                 elif liq_price < current_price:
-                    distance = ((current_price - liq_price) / current_price) * 100
-                    if distance < 5:
+                    distance_pct = ((current_price - liq_price) / current_price) * 100
+                    if distance_pct < MAX_DISTANCE_PCT:
                         zone = {
                             "price": liq_price,
                             "value": liq_value,
                             "strength": "major" if liq_value > 10000000 else "moderate",
-                            "distance": distance,
+                            "distance_pct": distance_pct,
                             "source": "liquidation"
                         }
                         below_zones.append(zone)
                         liquidity_below_total += liq_value
     
-    # ======== 2. CALCULATE MAGNET ATTRACTION ========
-    # Attraction is inversely proportional to distance and directly proportional to value
+    # ======== 2. EXTRACT MARKET CONTEXT FOR SCORING ========
+    oi_change_24h = 0
+    compression_level = 0
+    breakout_probability = "LOW"
     
-    def calculate_zone_attraction(zone):
-        """Calculate attraction score for a zone (higher = more attractive)"""
-        if zone["distance"] <= 0:
-            return 0
-        
-        # Base attraction from value (normalized to millions)
-        value_score = min(zone["value"] / 1000000, 100)  # Cap at 100M = 100
-        
-        # Distance factor (closer = more attractive)
-        # Distance 0.5% = 2x multiplier, 1% = 1x, 2% = 0.5x, 5% = 0.2x
-        distance_multiplier = 1 / max(zone["distance"], 0.5)
-        
-        # Strength bonus
-        strength_bonus = {"major": 1.5, "moderate": 1.0, "minor": 0.5}.get(zone["strength"], 1.0)
-        
-        return value_score * distance_multiplier * strength_bonus
+    if open_interest_data:
+        oi_change_24h = open_interest_data.get("change_24h", 0)
     
-    # Calculate total attraction for each side
-    up_attraction = sum(calculate_zone_attraction(z) for z in above_zones)
-    down_attraction = sum(calculate_zone_attraction(z) for z in below_zones)
+    if market_energy_data:
+        compression_level = market_energy_data.get("compression_level", 0) if isinstance(market_energy_data.get("compression_level"), (int, float)) else 0
+        breakout_probability = market_energy_data.get("breakout_probability", "LOW")
     
-    total_attraction = up_attraction + down_attraction
+    # ======== 3. CALCULATE STRENGTH SCORE FOR EACH ZONE ========
+    def calculate_strength_score(zone: dict) -> dict:
+        """
+        Calculate total strength score for a zone.
+        
+        Returns zone with score breakdown:
+        - value_score (0-50): Based on liquidity value
+        - distance_score (0-30): Optimal range scoring
+        - context_score (0-20): Market context bonus
+        - total_score: Sum of all scores
+        """
+        value = zone.get("value", 0)
+        distance = zone.get("distance_pct", 0)
+        
+        # ═══ STEP 1: FILTER - Skip if below thresholds ═══
+        if value < MIN_LIQUIDITY_VALUE or distance < MIN_DISTANCE_PCT:
+            zone["value_score"] = 0
+            zone["distance_score"] = 0
+            zone["context_score"] = 0
+            zone["total_score"] = 0
+            zone["filtered_out"] = True
+            return zone
+        
+        zone["filtered_out"] = False
+        
+        # ═══ STEP 2: VALUE SCORE (0-50) ═══
+        # log10 scaling: $10M = 70, $100M = 80, $1B = 90
+        # Capped at 50 for this component
+        if value > 0:
+            value_score = min(50, math.log10(value) * 10)
+        else:
+            value_score = 0
+        zone["value_score"] = round(value_score, 1)
+        
+        # ═══ STEP 3: DISTANCE SCORE (0-30) ═══
+        # Optimal range: 0.5% - 2.5% = 30 points (best R:R targets)
+        # Too close (0.2-0.5%): 15 points (low reward)
+        # Bit far (2.5-4%): 20 points (achievable but extended)
+        # Very far (>4%): 5 points (unlikely to reach)
+        if 0.5 <= distance <= 2.5:
+            distance_score = 30  # Optimal range
+        elif MIN_DISTANCE_PCT <= distance < 0.5:
+            distance_score = 15  # Too close
+        elif 2.5 < distance <= 4.0:
+            distance_score = 20  # Extended but achievable
+        else:
+            distance_score = 5  # Very far
+        zone["distance_score"] = distance_score
+        
+        # ═══ STEP 4: CONTEXT SCORE (0-20) ═══
+        context_score = 0
+        
+        # OI change supporting movement
+        if oi_change_24h > 3:
+            context_score += 5  # Rising OI = more fuel
+        
+        # Compression suggesting breakout
+        if compression_level > 70 or compression_level == "HIGH":
+            context_score += 5  # Compression = energy building
+        
+        # High breakout probability
+        if breakout_probability == "HIGH":
+            context_score += 5
+        
+        # Major strength zones get bonus
+        if zone.get("strength") == "major":
+            context_score += 5
+        
+        zone["context_score"] = context_score
+        
+        # ═══ STEP 5: TOTAL SCORE ═══
+        zone["total_score"] = value_score + distance_score + context_score
+        
+        return zone
     
-    # ======== 3. DETERMINE TARGET DIRECTION ========
-    if total_attraction > 0:
-        attraction_ratio = up_attraction / down_attraction if down_attraction > 0 else 10.0
+    # Score all zones
+    above_zones = [calculate_strength_score(z) for z in above_zones]
+    below_zones = [calculate_strength_score(z) for z in below_zones]
+    
+    # ======== 4. FILTER AND SORT BY STRENGTH (NOT DISTANCE!) ========
+    valid_above = [z for z in above_zones if not z.get("filtered_out", True)]
+    valid_below = [z for z in below_zones if not z.get("filtered_out", True)]
+    
+    # Sort by total_score (STRENGTH), not distance
+    valid_above_sorted = sorted(valid_above, key=lambda z: z.get("total_score", 0), reverse=True)
+    valid_below_sorted = sorted(valid_below, key=lambda z: z.get("total_score", 0), reverse=True)
+    
+    # ======== 5. SELECT PRIMARY AND SECONDARY MAGNETS ========
+    # Combine all valid zones and pick top 2 by score
+    all_valid = []
+    for z in valid_above_sorted:
+        z["side"] = "above"
+        all_valid.append(z)
+    for z in valid_below_sorted:
+        z["side"] = "below"
+        all_valid.append(z)
+    
+    all_valid_sorted = sorted(all_valid, key=lambda z: z.get("total_score", 0), reverse=True)
+    
+    # Primary magnet = highest score
+    if all_valid_sorted:
+        primary_magnet = all_valid_sorted[0]
+        primary_side = primary_magnet.get("side", "above")
     else:
-        attraction_ratio = 1.0
+        primary_magnet = {"price": current_price, "value": 0, "distance_pct": 0, "total_score": 0, "side": "above"}
+        primary_side = "above"
     
-    if attraction_ratio > 1.3:
+    # Secondary magnet = second highest (preferably opposite side)
+    secondary_magnet = None
+    if len(all_valid_sorted) > 1:
+        # Try to find opposite side first
+        for z in all_valid_sorted[1:]:
+            if z.get("side") != primary_side:
+                secondary_magnet = z
+                break
+        # If no opposite side, use second best regardless
+        if secondary_magnet is None:
+            secondary_magnet = all_valid_sorted[1]
+    
+    # ======== 6. DETERMINE TARGET DIRECTION ========
+    total_above_score = sum(z.get("total_score", 0) for z in valid_above)
+    total_below_score = sum(z.get("total_score", 0) for z in valid_below)
+    total_score = total_above_score + total_below_score
+    
+    if total_score > 0:
+        score_ratio = total_above_score / total_below_score if total_below_score > 0 else 10.0
+    else:
+        score_ratio = 1.0
+    
+    if score_ratio > 1.3:
         target_direction = "UP"
-        signals.append(get_translation("magnet_stronger_above", lang, attraction_ratio))
-    elif attraction_ratio < 0.77 and attraction_ratio > 0:  # 1/1.3
+        signals.append(get_translation("magnet_stronger_above", lang, score_ratio))
+    elif score_ratio < 0.77 and score_ratio > 0:
         target_direction = "DOWN"
-        inverse_ratio = 1/attraction_ratio if attraction_ratio > 0 else 1.0
+        inverse_ratio = 1/score_ratio if score_ratio > 0 else 1.0
         signals.append(get_translation("magnet_stronger_below", lang, inverse_ratio))
     else:
         target_direction = "BALANCED"
         signals.append(get_translation("magnet_balanced", lang))
     
-    # ======== 4. FIND NEAREST MAGNETS ========
-    # Sort zones by attraction score
-    above_zones_sorted = sorted(above_zones, key=calculate_zone_attraction, reverse=True)
-    below_zones_sorted = sorted(below_zones, key=calculate_zone_attraction, reverse=True)
-    
-    # Primary magnet (strongest attraction side)
-    if target_direction == "UP" and above_zones_sorted:
-        nearest_magnet = above_zones_sorted[0]
-        nearest_magnet_distance = nearest_magnet["distance"]
-    elif target_direction == "DOWN" and below_zones_sorted:
-        nearest_magnet = below_zones_sorted[0]
-        nearest_magnet_distance = -nearest_magnet["distance"]  # Negative for below
-    elif above_zones_sorted and below_zones_sorted:
-        # Balanced - pick the one with higher attraction
-        if calculate_zone_attraction(above_zones_sorted[0]) >= calculate_zone_attraction(below_zones_sorted[0]):
-            nearest_magnet = above_zones_sorted[0]
-            nearest_magnet_distance = nearest_magnet["distance"]
-        else:
-            nearest_magnet = below_zones_sorted[0]
-            nearest_magnet_distance = -nearest_magnet["distance"]
-    elif above_zones_sorted:
-        nearest_magnet = above_zones_sorted[0]
-        nearest_magnet_distance = nearest_magnet["distance"]
-    elif below_zones_sorted:
-        nearest_magnet = below_zones_sorted[0]
-        nearest_magnet_distance = -nearest_magnet["distance"]
-    else:
-        nearest_magnet = {"price": current_price, "value": 0, "distance": 0}
-        nearest_magnet_distance = 0
-    
-    # Secondary magnet (opposite side)
-    secondary_magnet = None
-    secondary_distance = None
-    if target_direction == "UP" and below_zones_sorted:
-        secondary_magnet = below_zones_sorted[0]
-        secondary_distance = -secondary_magnet["distance"]
-    elif target_direction == "DOWN" and above_zones_sorted:
-        secondary_magnet = above_zones_sorted[0]
-        secondary_distance = secondary_magnet["distance"]
-    elif target_direction == "BALANCED":
-        if nearest_magnet_distance >= 0 and below_zones_sorted:
-            secondary_magnet = below_zones_sorted[0]
-            secondary_distance = -secondary_magnet["distance"]
-        elif nearest_magnet_distance < 0 and above_zones_sorted:
-            secondary_magnet = above_zones_sorted[0]
-            secondary_distance = secondary_magnet["distance"]
-    
-    # ======== 5. CALCULATE MAGNET SCORE ========
-    # Score 0-100 based on:
-    # - Total liquidity attraction
-    # - Proximity of nearest magnet
-    # - Imbalance between sides
-    # 
-    # NEW SCALE:
-    # - WEAK: 0-30 (low directional attraction)
-    # - BALANCED: 40-60 (neutral state - liquidity present on both sides)
-    # - STRONG/VERY_STRONG: 70-100 (strong directional pull)
-    
-    if total_attraction == 0:
-        # No liquidity data - show as neutral balanced state
-        magnet_score = 45  # Neutral middle score, not 0
-    else:
-        # Base score from total liquidity presence (not direction)
-        # More liquidity overall = higher base score
-        liquidity_presence_score = min(total_attraction / 5, 40)  # Max 40 from presence
-        
-        # Proximity bonus (closer magnets = higher score)
-        proximity_bonus = 0
-        if nearest_magnet["distance"] > 0:
-            if nearest_magnet["distance"] < 1:
-                proximity_bonus = 25
-            elif nearest_magnet["distance"] < 2:
-                proximity_bonus = 15
-            elif nearest_magnet["distance"] < 3:
-                proximity_bonus = 10
-            else:
-                proximity_bonus = 5
-        
-        # Direction clarity bonus (stronger imbalance = clearer direction = higher score)
-        # BALANCED state should stay in 40-60 range
-        imbalance_factor = abs(attraction_ratio - 1) if attraction_ratio != 0 else 0
+    # ======== 7. CALCULATE OVERALL MAGNET SCORE ========
+    # Based on the strength of the primary magnet
+    if primary_magnet.get("total_score", 0) > 0:
+        # Scale: 0-30 score = weak, 30-50 = moderate, 50-70 = strong, 70+ = very strong
+        raw_score = primary_magnet.get("total_score", 0)
         
         if target_direction == "BALANCED":
-            # Balanced: Keep score in neutral range (40-60)
-            # Higher liquidity presence moves toward 60, lower toward 40
-            magnet_score = 40 + min(liquidity_presence_score / 2, 20)
+            # Balanced stays in 40-60 range
+            magnet_score = 40 + min(raw_score / 5, 20)
         else:
-            # Directional: Use full scoring with imbalance bonus
-            direction_bonus = min(imbalance_factor * 15, 35)  # Up to 35 for strong direction
-            magnet_score = min(liquidity_presence_score + proximity_bonus + direction_bonus, 100)
+            # Directional: map score to 0-100 scale
+            magnet_score = min(raw_score + 20, 100)  # Boost directional
             
-            # Ensure directional scores are above balanced range when strong
-            if magnet_score < 65 and imbalance_factor > 0.5:
-                magnet_score = max(magnet_score, 65)  # Boost clearly directional magnets
+            # Ensure strong directional magnets score high
+            if raw_score > 50:
+                magnet_score = max(magnet_score, 70)
+    else:
+        magnet_score = 45  # Neutral when no valid data
     
-    # ======== 6. DETERMINE MAGNET STRENGTH ========
-    # Aligned with new scale
+    # ======== 8. DETERMINE MAGNET STRENGTH ========
     if target_direction == "BALANCED":
-        magnet_strength = "MODERATE"  # Balanced is always moderate, not weak
+        magnet_strength = "MODERATE"
     elif magnet_score >= 81:
         magnet_strength = "VERY_STRONG"
         signals.append(get_translation("magnet_very_strong", lang))
@@ -9423,54 +9465,58 @@ def analyze_liquidity_magnet(
     else:
         magnet_strength = "WEAK"
     
-    # ======== 7. SWEEP EXPECTATION ========
-    # Determine if market is likely to sweep one side first before reversing
-    
+    # ======== 9. SWEEP EXPECTATION ========
     sweep_expectation = "NO_CLEAR_SWEEP"
     
-    if target_direction == "UP" and secondary_magnet:
-        # If going up but there's significant liquidity below
-        if secondary_magnet["value"] > 5000000 and secondary_magnet["distance"] < 2:
+    if target_direction == "UP" and secondary_magnet and secondary_magnet.get("side") == "below":
+        if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
             sweep_expectation = "SWEEP_DOWN_FIRST"
             signals.append(get_translation("sweep_down_first", lang, secondary_magnet["price"]))
-    elif target_direction == "DOWN" and secondary_magnet:
-        # If going down but there's significant liquidity above
-        if secondary_magnet["value"] > 5000000 and secondary_magnet["distance"] < 2:
+    elif target_direction == "DOWN" and secondary_magnet and secondary_magnet.get("side") == "above":
+        if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
             sweep_expectation = "SWEEP_UP_FIRST"
             signals.append(get_translation("sweep_up_first", lang, secondary_magnet["price"]))
     
-    # High magnet score with clear direction = likely direct sweep
+    # High magnet score with clear direction = direct sweep
     if magnet_score >= 70 and target_direction != "BALANCED":
         if target_direction == "UP":
             sweep_expectation = "SWEEP_UP_FIRST"
         else:
             sweep_expectation = "SWEEP_DOWN_FIRST"
     
-    # ======== 8. BUILD EXPLANATION ========
+    # ======== 10. BUILD EXPLANATION ========
+    primary_distance = primary_magnet.get("distance_pct", 0)
+    if primary_side == "below":
+        primary_distance = -primary_distance  # Negative for below
+    
     explanation = _build_magnet_explanation(
         magnet_score, target_direction, magnet_strength,
-        nearest_magnet["price"], nearest_magnet_distance,
+        primary_magnet.get("price", current_price), primary_distance,
         liquidity_above_total, liquidity_below_total,
         sweep_expectation, lang
     )
+    
+    # Log strength-based selection
+    logger.debug(f"[Magnet v2.0] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
+                f"(score={primary_magnet.get('total_score', 0):.0f}), Direction={target_direction}")
     
     return LiquidityMagnet(
         magnet_score=round(magnet_score, 1),
         target_direction=target_direction,
         magnet_strength=magnet_strength,
-        nearest_magnet_price=round(nearest_magnet["price"], 2),
-        nearest_magnet_distance_percent=round(nearest_magnet_distance, 2),
-        nearest_magnet_value=round(nearest_magnet["value"], 0),
+        nearest_magnet_price=round(primary_magnet.get("price", current_price), 2),
+        nearest_magnet_distance_percent=round(primary_distance, 2),
+        nearest_magnet_value=round(primary_magnet.get("value", 0), 0),
         secondary_magnet_price=round(secondary_magnet["price"], 2) if secondary_magnet else None,
-        secondary_magnet_distance_percent=round(secondary_distance, 2) if secondary_distance else None,
+        secondary_magnet_distance_percent=round(-secondary_magnet["distance_pct"] if secondary_magnet.get("side") == "below" else secondary_magnet["distance_pct"], 2) if secondary_magnet else None,
         secondary_magnet_value=round(secondary_magnet["value"], 0) if secondary_magnet else None,
         liquidity_above_total=round(liquidity_above_total, 0),
         liquidity_below_total=round(liquidity_below_total, 0),
         sweep_expectation=sweep_expectation,
-        attraction_ratio=round(attraction_ratio, 2),
+        attraction_ratio=round(score_ratio, 2),
         signals=signals[:5],
         explanation=explanation,
-        data_source="Multi-Exchange + CoinGlass"
+        data_source="Multi-Exchange + CoinGlass (Strength-Based v2.0)"
     )
 
 

@@ -1,24 +1,27 @@
-# CryptoRadar v3.1.1 - Product Requirements Document
+# CryptoRadar v3.2.0 - Product Requirements Document
 **Last Updated:** 2026-04-06
 
-## 🔴 CRITICAL FIX v3.1.1 - Signal Deduplication & Shadow Tracking (2026-04-06)
+## 🔴 CRITICAL SYSTEM UPGRADE v3.2.0 (2026-04-06)
 
-### Problem Statement
-Two critical issues were corrupting the system and invalidating all statistics:
+### Three Critical Fixes Implemented
 
-1. **Duplicate Signals**: Both V2 and V3 engines were sending the same signal multiple times within seconds/minutes
-   - Caused duplicated trades
-   - Corrupted statistics
-   - Invalid shadow validation data
+This upgrade addresses three blocking issues affecting system reliability and decision quality:
 
-2. **Shadow Engine Not Tracking Outcomes**: Shadow validation was not recording outcomes correctly
-   - Signals hit targets but weren't registered
-   - Completely broke validation data collection
+1. ✅ **Signal Duplication Prevention** (V2 + V3)
+2. ✅ **Shadow Outcome Tracking** (Real-time)
+3. ✅ **Liquidity Magnet Algorithm v2.0** (Strength-based)
 
-### Solution Implemented
+---
 
-#### FIX 1: Hash-Based Signal Deduplication
+## FIX 1: Hash-Based Signal Deduplication
 
+### Problem
+Same signal was being sent multiple times within seconds, causing:
+- Duplicated trades
+- Corrupted statistics
+- Invalid shadow validation data
+
+### Solution
 **Algorithm:**
 ```python
 signal_hash = SHA256(
@@ -39,16 +42,22 @@ signal_hash = SHA256(
 - ✅ V3 Engine (`record_v3_entry_signal`)
 - ✅ V2 Engine (`auto_record_signal_change`)
 
-#### FIX 2: Real-Time Shadow Outcome Tracking
+---
 
+## FIX 2: Real-Time Shadow Outcome Tracking
+
+### Problem
+Shadow validation was not recording outcomes even when targets were hit.
+
+### Solution
 **Components:**
 1. **Active Tracking Registry**: In-memory dict tracking all PENDING signals
 2. **Background Loop**: Runs every 10 seconds, fetches current price
 3. **Outcome Detection Logic**:
    - LONG: price >= T2 → FULL_WIN, price >= T1 → partial, price <= SL → LOSS
    - SHORT: price <= T2 → FULL_WIN, price <= T1 → partial, price >= SL → LOSS
-4. **Automatic Finalization**: When outcome reached, updates both `signal_history` and `shadow_validation_logs`
-5. **Expiry Fallback**: Signals >4 hours old are processed using historical candles
+4. **Automatic Finalization**: Updates both `signal_history` and `shadow_validation_logs`
+5. **Expiry Fallback**: Signals >4 hours old processed using historical candles
 
 **What's Tracked:**
 - Entry price, SL, T1, T2
@@ -57,35 +66,104 @@ signal_hash = SHA256(
 - Max Adverse Excursion (MAE)
 - T1/T2/SL hit timestamps
 
-### New API Endpoints
+---
+
+## FIX 3: Liquidity Magnet Algorithm v2.0 (STRENGTH-BASED)
+
+### Problem
+Old algorithm selected NEAREST liquidity instead of STRONGEST.
+This produced unrealistic targets (too close, low R:R).
+
+### Solution: Strength-Based Selection
+
+**STEP 1: FILTER**
+```python
+# Ignore:
+- liquidity_value < $5,000,000
+- distance_pct < 0.2%
+```
+
+**STEP 2: VALUE SCORE (0-50)**
+```python
+value_score = min(50, log10(liquidity_value) * 10)
+```
+
+**STEP 3: DISTANCE SCORE (0-30)**
+```python
+if 0.5 <= distance_pct <= 2.5:
+    distance_score = 30  # Optimal range for R:R
+elif 0.2 <= distance_pct < 0.5:
+    distance_score = 15  # Too close
+elif 2.5 < distance_pct <= 4.0:
+    distance_score = 20  # Extended but achievable
+else:
+    distance_score = 5   # Very far
+```
+
+**STEP 4: CONTEXT SCORE (0-20)**
+```python
+context_score = 0
+if oi_change_24h > 3:     context_score += 5
+if compression > 70:       context_score += 5
+if breakout_prob == HIGH:  context_score += 5
+if strength == "major":    context_score += 5
+```
+
+**STEP 5: TOTAL SCORE & SELECTION**
+```python
+total_score = value_score + distance_score + context_score
+primary_magnet = max(valid_clusters, key=lambda c: c.total_score)
+secondary_magnet = second_highest_score
+```
+
+### Key Changes
+- **OLD**: Selected nearest liquidity (proximity bias)
+- **NEW**: Selects strongest meaningful liquidity (score-based)
+- **Result**: More realistic targets (0.5%–3%), improved R:R quality
+
+---
+
+## New API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/system/dedup-status` | GET | View dedup cache status and entries |
 | `/api/system/shadow-tracking-status` | GET | View actively tracked signals |
-| `/api/system/recover-pending-signals` | POST | Recover PENDING signals for tracking after restart |
-| `/api/system/force-check-outcomes` | POST | Force immediate outcome check on all tracked signals |
+| `/api/system/recover-pending-signals` | POST | Recover PENDING signals after restart |
+| `/api/system/force-check-outcomes` | POST | Force immediate outcome check |
 
-### Database Changes
-- `signal_hash` field added to signal records
-- `shadow_tracked` boolean added to V3 signals
-- `shadow_mfe_pct`, `shadow_mae_pct`, `shadow_price_checks` fields for tracking data
+---
 
-### Configuration
-- `SIGNAL_DEDUP_WINDOW_MINUTES = 10`
-- Shadow tracking interval: 10 seconds
-- Signal expiry: 4 hours (then uses historical candles)
+## Configuration
 
-### Verification Status
-- ✅ Dedup system: ACTIVE
-- ✅ Shadow tracking loop: RUNNING
-- ✅ All existing APIs: FUNCTIONAL
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `SIGNAL_DEDUP_WINDOW_MINUTES` | 10 | Blocks same signal within 10 min |
+| Shadow tracking interval | 10 sec | Price check frequency |
+| Signal expiry | 4 hours | Fallback to candle analysis |
+| `MIN_LIQUIDITY_VALUE` | $5M | Minimum cluster value |
+| `MIN_DISTANCE_PCT` | 0.2% | Minimum distance filter |
 
-### TEMPORARY RULE
-Until sufficient clean data is collected:
+---
+
+## Verification Status
+
+| System | Status | Test |
+|--------|--------|------|
+| Signal Deduplication | ✅ ACTIVE | `/api/system/dedup-status` |
+| Shadow Tracking Loop | ✅ RUNNING | `/api/system/shadow-tracking-status` |
+| Liquidity Magnet v2.0 | ✅ ACTIVE | `/api/liquidity-magnet` shows "Strength-Based v2.0" |
+| V3 Engine | ✅ OPERATIONAL | `/api/v3/trade-signal` |
+
+---
+
+## TEMPORARY RULE
+
+Until sufficient clean data is collected (30+ signals):
 - Previous statistical analysis should be considered INVALID
 - New signals will have `signal_hash` for dedup tracking
-- Shadow outcomes will be tracked in real-time
+- Shadow outcomes tracked in real-time
+- Magnet targets now strength-based (not proximity)
 
 ---
 
