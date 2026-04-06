@@ -1,5 +1,56 @@
-# CryptoRadar v3.2.0 - Product Requirements Document
+# CryptoRadar v3.2.1 - Product Requirements Document
 **Last Updated:** 2026-04-06
+
+## 🔧 LIQUIDITY PIPELINE FIX (2026-04-06)
+
+### Root Cause Analysis
+
+**Issue**: Both legacy magnet and zone engine showing $0 liquidity
+
+**Root Causes Found**:
+1. **CoinGlass Heatmap API (403)**: The `/futures/liquidation/heatmap/model2` endpoint returns 403 - requires higher API plan tier
+2. **Filtering Too Strict**: MIN_LIQUIDITY_VALUE was $5M and MIN_DISTANCE_PCT was 0.2%, filtering out all valid cluster data
+
+### Fixes Applied
+
+| Component | Old Value | New Value | Reason |
+|-----------|-----------|-----------|--------|
+| Legacy Magnet MIN_LIQUIDITY | $5M | $1M | Allow smaller clusters |
+| Legacy Magnet MIN_DISTANCE | 0.2% | 0.01% | Allow closer zones |
+| Zone Engine MIN_LIQUIDITY | $5M | $1M | Allow smaller clusters |
+| Zone Engine MIN_DISTANCE | 0.2% | 0.01% | Allow closer zones |
+
+### New Debug Endpoint
+
+`GET /api/debug/liquidity-pipeline` - Traces full data flow:
+- Stage 1: Current price
+- Stage 2: API key verification
+- Stage 3-5: CoinGlass data (basic, heatmap, full)
+- Stage 6: Orderbook data
+- Stage 7: Liquidity clusters
+- Stage 8: Magnet result
+- Stage 9: Zone result
+- Diagnosis: Issues detected
+
+### Data Sources (Priority Order)
+
+1. **Liquidity Clusters** (from 4H candle analysis) ✅ WORKING
+2. **Orderbook Walls** (multi-exchange aggregated) ✅ WORKING
+3. **CoinGlass Heatmap** (liquidation levels) ❌ NOT AVAILABLE (requires higher API plan)
+
+### Current Status
+
+| System | Status | Data Source |
+|--------|--------|-------------|
+| Legacy Magnet | ✅ WORKING | Clusters + Orderbook |
+| Zone Engine | ✅ WORKING | Clusters + Orderbook |
+| CoinGlass Heatmap | ❌ UNAVAILABLE | API plan limitation |
+
+### UI Update
+
+Added "data unavailable" warning when CoinGlass heatmap is not accessible. Shows orderbook/cluster data only indicator.
+
+---
 
 ## 🆕 LIQUIDITY ZONE ENGINE v1.0 (PREVIEW) - 2026-04-06
 

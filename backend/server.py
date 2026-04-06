@@ -5442,6 +5442,178 @@ async def fetch_coinglass_liquidation():
     update_data_freshness("liquidation", False)
     return None
 
+
+async def fetch_coinglass_liquidation_heatmap(current_price: float = None):
+    """
+    Fetch Liquidation Heatmap data from CoinGlass with actual price levels.
+    This returns the actual liquidation clusters at specific price points.
+    
+    CRITICAL: This is what provides 'liquidation_levels' for the magnet/zone engines.
+    
+    Correct endpoint: /api/futures/liquidation/heatmap/model2
+    """
+    try:
+        if not COINGLASS_API_KEY:
+            logger.warning("[CoinGlass Heatmap] No API key configured")
+            return None
+        
+        headers = {"CG-API-KEY": COINGLASS_API_KEY, "accept": "application/json"}
+        
+        async with httpx.AsyncClient(timeout=20.0) as http_client:
+            # Correct endpoint: heatmap/model2
+            response = await http_client.get(
+                f"{COINGLASS_API_URL}/futures/liquidation/heatmap/model2",
+                params={"symbol": "BTC", "range": "3"},  # 3% range, can be 1, 3, 5
+                headers=headers
+            )
+            
+            logger.info(f"[CoinGlass Heatmap] Request URL: {response.request.url}")
+            logger.info(f"[CoinGlass Heatmap] Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"[CoinGlass Heatmap] Response code: {data.get('code')}, has data: {bool(data.get('data'))}")
+                
+                if data.get("code") == "0" and data.get("data"):
+                    raw_data = data["data"]
+                    
+                    # Debug: log raw data structure
+                    if isinstance(raw_data, list) and len(raw_data) > 0:
+                        logger.info(f"[CoinGlass Heatmap] Raw data type: list, count: {len(raw_data)}")
+                        if isinstance(raw_data[0], dict):
+                            logger.info(f"[CoinGlass Heatmap] Sample entry keys: {list(raw_data[0].keys())[:10]}")
+                    elif isinstance(raw_data, dict):
+                        logger.info(f"[CoinGlass Heatmap] Raw data type: dict, keys: {list(raw_data.keys())[:10]}")
+                    
+                    # Parse liquidation levels from heatmap
+                    liquidation_levels = []
+                    
+                    # Model2 typically returns: {"y": [price_levels], "liqData": [[values_per_price]]}
+                    # Or: list of {"price": x, "liq": y} objects
+                    
+                    if isinstance(raw_data, dict):
+                        # Format 1: {y: [prices], liqData: [[values]]} or similar
+                        prices = raw_data.get("y") or raw_data.get("prices") or raw_data.get("priceList") or []
+                        liq_values = raw_data.get("liqData") or raw_data.get("data") or raw_data.get("liquidations") or []
+                        
+                        if prices and liq_values:
+                            # liqData may be 2D array (multiple exchanges) - sum them
+                            for i, price in enumerate(prices):
+                                try:
+                                    price_float = float(price)
+                                    
+                                    # Sum all exchange values at this price level
+                                    if isinstance(liq_values, list) and len(liq_values) > 0:
+                                        if isinstance(liq_values[0], list):
+                                            # 2D array - each row is an exchange
+                                            total_value = sum(float(row[i]) if i < len(row) else 0 for row in liq_values)
+                                        else:
+                                            # 1D array
+                                            total_value = float(liq_values[i]) if i < len(liq_values) else 0
+                                    else:
+                                        total_value = 0
+                                    
+                                    if total_value > 100000:  # Min $100k to be relevant
+                                        liquidation_levels.append({
+                                            "price": price_float,
+                                            "value": total_value,
+                                            "source": "coinglass_heatmap"
+                                        })
+                                except (ValueError, TypeError, IndexError) as e:
+                                    continue
+                        
+                        # Also check for longs/shorts format
+                        for side_key in ["longs", "shorts", "longLiquidations", "shortLiquidations"]:
+                            side_data = raw_data.get(side_key, [])
+                            if isinstance(side_data, list):
+                                for item in side_data:
+                                    if isinstance(item, dict):
+                                        price = item.get("price") or item.get("p")
+                                        value = item.get("liq") or item.get("vol") or item.get("value") or item.get("amount")
+                                        if price and value:
+                                            try:
+                                                liquidation_levels.append({
+                                                    "price": float(price),
+                                                    "value": float(value),
+                                                    "source": f"coinglass_{side_key}"
+                                                })
+                                            except (ValueError, TypeError):
+                                                continue
+                    
+                    elif isinstance(raw_data, list):
+                        # Format 2: list of objects
+                        for item in raw_data:
+                            if isinstance(item, dict):
+                                price = item.get("price") or item.get("p") or item.get("priceLevel")
+                                value = item.get("liquidation") or item.get("liq") or item.get("vol") or item.get("value") or item.get("amount")
+                                
+                                if price and value:
+                                    try:
+                                        price_float = float(price)
+                                        value_float = float(value)
+                                        if value_float > 100000:  # Min $100k
+                                            liquidation_levels.append({
+                                                "price": price_float,
+                                                "value": value_float,
+                                                "source": "coinglass_heatmap"
+                                            })
+                                    except (ValueError, TypeError):
+                                        continue
+                    
+                    logger.info(f"[CoinGlass Heatmap] Parsed {len(liquidation_levels)} liquidation levels")
+                    
+                    if liquidation_levels:
+                        # Sort by value (highest first)
+                        liquidation_levels.sort(key=lambda x: x["value"], reverse=True)
+                        
+                        # Log top 5 for debugging
+                        for i, lv in enumerate(liquidation_levels[:5]):
+                            logger.info(f"[CoinGlass Heatmap] Level {i+1}: ${lv['price']:,.0f} = ${lv['value']/1e6:.2f}M")
+                        
+                        return {
+                            "liquidation_levels": liquidation_levels,
+                            "total_levels": len(liquidation_levels),
+                            "source": "coinglass_heatmap_model2",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                    else:
+                        # Log raw data structure for debugging
+                        logger.warning(f"[CoinGlass Heatmap] No levels parsed. Raw data sample: {str(raw_data)[:500]}")
+                else:
+                    logger.error(f"[CoinGlass Heatmap] API error: code={data.get('code')}, msg={data.get('msg', 'no message')}")
+            else:
+                logger.error(f"[CoinGlass Heatmap] HTTP error: {response.status_code}")
+                logger.error(f"[CoinGlass Heatmap] Response: {response.text[:500]}")
+        
+    except Exception as e:
+        logger.error(f"[CoinGlass Heatmap] Exception: {type(e).__name__}: {e}")
+    
+    return None
+
+
+async def get_full_liquidation_data(current_price: float = None):
+    """
+    Get complete liquidation data combining totals AND price levels.
+    This is the main function that should be called by magnet/zone engines.
+    """
+    # Get basic liquidation stats (24h totals etc)
+    basic_data = await fetch_coinglass_liquidation() or {}
+    
+    # Get heatmap with price levels
+    heatmap_data = await fetch_coinglass_liquidation_heatmap(current_price)
+    
+    # Combine results
+    result = {
+        **basic_data,
+        "liquidation_levels": heatmap_data.get("liquidation_levels", []) if heatmap_data else [],
+        "heatmap_source": heatmap_data.get("source") if heatmap_data else None,
+        "levels_count": len(heatmap_data.get("liquidation_levels", [])) if heatmap_data else 0
+    }
+    
+    logger.info(f"[Full Liquidation] Returning {result.get('levels_count', 0)} levels")
+    return result
+
+
 async def generate_open_interest(current_price: float, candles: List[dict] = None, lang: str = "it") -> OpenInterest:
     """Generate Open Interest data from CoinGlass API"""
     
@@ -9228,8 +9400,8 @@ def analyze_liquidity_magnet(
     signals = []
     
     # ======== CONFIGURATION ========
-    MIN_LIQUIDITY_VALUE = 5_000_000  # $5M minimum to be considered
-    MIN_DISTANCE_PCT = 0.2  # 0.2% minimum distance
+    MIN_LIQUIDITY_VALUE = 1_000_000  # $1M minimum (lowered from $5M for preview)
+    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum (lowered from 0.2% for preview)
     MAX_DISTANCE_PCT = 5.0  # 5% maximum distance
     
     # ======== 1. AGGREGATE LIQUIDITY DATA ========
@@ -9666,8 +9838,8 @@ def analyze_liquidity_zones(
     
     # ════════════════ CONFIGURATION ════════════════
     ZONE_GROUPING_THRESHOLD_PCT = 0.3  # Group levels within 0.3% distance
-    MIN_ZONE_LIQUIDITY = 5_000_000  # $5M minimum
-    MIN_DISTANCE_PCT = 0.2  # Ignore zones too close
+    MIN_ZONE_LIQUIDITY = 1_000_000  # $1M minimum (lowered for preview to get data)
+    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum (very close zones allowed in preview)
     MAX_DISTANCE_PCT = 5.0  # Ignore zones too far
     
     # ════════════════ STEP 1: COLLECT ALL LIQUIDITY LEVELS ════════════════
@@ -9845,16 +10017,35 @@ def analyze_liquidity_zones(
     # ════════════════ STEP 4: FILTER WEAK ZONES ════════════════
     def is_valid_zone(zone: dict) -> bool:
         """Filter out zones that don't meet criteria"""
+        zone["filter_reason"] = None
         if zone["zone_strength"] < MIN_ZONE_LIQUIDITY:
+            zone["filter_reason"] = f"strength {zone['zone_strength']/1e6:.1f}M < {MIN_ZONE_LIQUIDITY/1e6:.0f}M"
             return False
         if zone["distance_pct"] < MIN_DISTANCE_PCT:
+            zone["filter_reason"] = f"distance {zone['distance_pct']:.2f}% < {MIN_DISTANCE_PCT}%"
             return False
         if zone["distance_pct"] > MAX_DISTANCE_PCT:
+            zone["filter_reason"] = f"distance {zone['distance_pct']:.2f}% > {MAX_DISTANCE_PCT}%"
             return False
         return True
     
+    # Debug: log zones before filtering
+    logger.debug(f"[Zone Engine] Before filtering: {len(zones_above_metrics)} above, {len(zones_below_metrics)} below")
+    for z in zones_above_metrics[:3]:
+        logger.debug(f"[Zone Engine] Above zone: ${z['zone_center']:,.0f}, strength=${z['zone_strength']/1e6:.1f}M, dist={z['distance_pct']:.2f}%")
+    for z in zones_below_metrics[:3]:
+        logger.debug(f"[Zone Engine] Below zone: ${z['zone_center']:,.0f}, strength=${z['zone_strength']/1e6:.1f}M, dist={z['distance_pct']:.2f}%")
+    
     valid_zones_above = [z for z in zones_above_metrics if is_valid_zone(z)]
     valid_zones_below = [z for z in zones_below_metrics if is_valid_zone(z)]
+    
+    # Log filtered out zones
+    filtered_out_above = [z for z in zones_above_metrics if not is_valid_zone(z)]
+    filtered_out_below = [z for z in zones_below_metrics if not is_valid_zone(z)]
+    if filtered_out_above or filtered_out_below:
+        logger.debug(f"[Zone Engine] Filtered out: {len(filtered_out_above)} above, {len(filtered_out_below)} below")
+        for z in (filtered_out_above + filtered_out_below)[:5]:
+            logger.debug(f"[Zone Engine] Filtered: ${z['zone_center']:,.0f} - reason: {z.get('filter_reason', 'unknown')}")
     
     # ════════════════ STEP 5: SCORE ZONES ════════════════
     # Extract market context
@@ -14636,9 +14827,9 @@ async def get_liquidity_magnet(lang: str = Query(default="it", description="Lang
     
     current_price = ticker["price"] if ticker else 0
     
-    # Get OI data and liquidation data
+    # Get OI data and FULL liquidation data (including heatmap levels)
     oi_task = fetch_coinglass_open_interest()
-    liq_task = fetch_coinglass_liquidation()
+    liq_task = get_full_liquidation_data(current_price)
     
     oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
     
@@ -14654,6 +14845,7 @@ async def get_liquidity_magnet(lang: str = Query(default="it", description="Lang
         liquidation_data = {
             "liquidation_levels": liq_data.get("liquidation_levels", [])
         }
+        logger.debug(f"[Magnet API] Using {len(liq_data.get('liquidation_levels', []))} liquidation levels")
     
     # Generate liquidity clusters
     clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
@@ -14704,9 +14896,9 @@ async def get_liquidity_zones(lang: str = Query(default="it", description="Langu
     
     current_price = ticker["price"] if ticker else 0
     
-    # Get OI data and liquidation data
+    # Get OI data and FULL liquidation data (including heatmap levels)
     oi_task = fetch_coinglass_open_interest()
-    liq_task = fetch_coinglass_liquidation()
+    liq_task = get_full_liquidation_data(current_price)
     
     oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
     
@@ -14722,6 +14914,7 @@ async def get_liquidity_zones(lang: str = Query(default="it", description="Langu
         liquidation_data = {
             "liquidation_levels": liq_data.get("liquidation_levels", [])
         }
+        logger.debug(f"[Zone API] Using {len(liq_data.get('liquidation_levels', []))} liquidation levels")
     
     # Generate liquidity clusters
     clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
@@ -14772,9 +14965,9 @@ async def get_liquidity_comparison(lang: str = Query(default="it", description="
     
     current_price = ticker["price"] if ticker else 0
     
-    # Get OI and liquidation data
+    # Get OI and FULL liquidation data (including heatmap levels)
     oi_task = fetch_coinglass_open_interest()
-    liq_task = fetch_coinglass_liquidation()
+    liq_task = get_full_liquidation_data(current_price)
     
     oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
     
@@ -14846,6 +15039,167 @@ async def get_liquidity_comparison(lang: str = Query(default="it", description="
         },
         "recommendation": "Zone engine provides cluster-based targets that better reflect real market heatmap behavior"
     }
+
+@api_router.get("/debug/liquidity-pipeline")
+async def debug_liquidity_pipeline():
+    """
+    DEBUG ENDPOINT: Trace the full liquidity data pipeline.
+    Shows raw data at each stage to identify where data is lost.
+    
+    PREVIEW MODE ONLY - for debugging zero liquidity issue.
+    """
+    debug_info = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "stages": {}
+    }
+    
+    try:
+        # Stage 1: Get current price
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker["price"] if ticker else 0
+        debug_info["stages"]["1_current_price"] = {
+            "price": current_price,
+            "source": "kraken"
+        }
+        
+        # Stage 2: Test CoinGlass API key
+        debug_info["stages"]["2_api_key"] = {
+            "configured": bool(COINGLASS_API_KEY),
+            "key_prefix": COINGLASS_API_KEY[:8] + "..." if COINGLASS_API_KEY else None
+        }
+        
+        # Stage 3: Fetch basic liquidation data
+        basic_liq = await fetch_coinglass_liquidation()
+        debug_info["stages"]["3_basic_liquidation"] = {
+            "success": basic_liq is not None,
+            "data": {k: v for k, v in (basic_liq or {}).items() if k != "liquidation_levels"} if basic_liq else None
+        }
+        
+        # Stage 4: Fetch heatmap liquidation levels
+        heatmap_liq = await fetch_coinglass_liquidation_heatmap(current_price)
+        debug_info["stages"]["4_heatmap_levels"] = {
+            "success": heatmap_liq is not None,
+            "total_levels": heatmap_liq.get("total_levels", 0) if heatmap_liq else 0,
+            "sample_levels": heatmap_liq.get("liquidation_levels", [])[:5] if heatmap_liq else [],
+            "source": heatmap_liq.get("source") if heatmap_liq else None
+        }
+        
+        # Stage 5: Get full liquidation data
+        full_liq = await get_full_liquidation_data(current_price)
+        debug_info["stages"]["5_full_liquidation"] = {
+            "levels_count": full_liq.get("levels_count", 0) if full_liq else 0,
+            "has_levels": len(full_liq.get("liquidation_levels", [])) > 0 if full_liq else False
+        }
+        
+        # Stage 6: Get orderbook data
+        orderbook = await get_aggregated_orderbook()
+        orderbook_levels_above = 0
+        orderbook_levels_below = 0
+        
+        if orderbook:
+            asks = orderbook.get("asks", [])
+            bids = orderbook.get("bids", [])
+            
+            if asks:
+                ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:50]]
+                avg_ask = sum(v for _, v in ask_volumes) / len(ask_volumes) if ask_volumes else 0
+                orderbook_levels_above = sum(1 for p, v in ask_volumes if v > avg_ask * 2)
+            
+            if bids:
+                bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
+                avg_bid = sum(v for _, v in bid_volumes) / len(bid_volumes) if bid_volumes else 0
+                orderbook_levels_below = sum(1 for p, v in bid_volumes if v > avg_bid * 2)
+        
+        debug_info["stages"]["6_orderbook"] = {
+            "has_data": orderbook is not None,
+            "asks_count": len(orderbook.get("asks", [])) if orderbook else 0,
+            "bids_count": len(orderbook.get("bids", [])) if orderbook else 0,
+            "significant_levels_above": orderbook_levels_above,
+            "significant_levels_below": orderbook_levels_below
+        }
+        
+        # Stage 7: Get liquidity clusters
+        candles = await fetch_kraken_ohlc(240)
+        clusters = []
+        if candles and orderbook:
+            clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, orderbook)
+        
+        debug_info["stages"]["7_liquidity_clusters"] = {
+            "count": len(clusters),
+            "above": sum(1 for c in clusters if hasattr(c, 'side') and c.side == "above"),
+            "below": sum(1 for c in clusters if hasattr(c, 'side') and c.side == "below"),
+            "sample": [{
+                "price": c.price,
+                "value": c.estimated_value,
+                "side": c.side,
+                "strength": c.strength
+            } for c in clusters[:3]] if clusters else []
+        }
+        
+        # Stage 8: Run magnet analysis
+        liquidation_data = {"liquidation_levels": full_liq.get("liquidation_levels", [])} if full_liq else None
+        
+        magnet = analyze_liquidity_magnet(
+            current_price=current_price,
+            aggregated_orderbook=orderbook,
+            liquidity_clusters=clusters,
+            liquidation_data=liquidation_data,
+            open_interest_data=None,
+            lang="en"
+        )
+        
+        debug_info["stages"]["8_magnet_result"] = {
+            "direction": magnet.target_direction,
+            "score": magnet.magnet_score,
+            "liquidity_above": magnet.liquidity_above_total,
+            "liquidity_below": magnet.liquidity_below_total,
+            "nearest_magnet_price": magnet.nearest_magnet_price,
+            "nearest_magnet_value": magnet.nearest_magnet_value
+        }
+        
+        # Stage 9: Run zone analysis
+        zones = analyze_liquidity_zones(
+            current_price=current_price,
+            aggregated_orderbook=orderbook,
+            liquidity_clusters=clusters,
+            liquidation_data=liquidation_data,
+            legacy_magnet=magnet,
+            lang="en"
+        )
+        
+        debug_info["stages"]["9_zone_result"] = {
+            "zones_detected": zones.zones_detected_count,
+            "zones_above": len(zones.zones_above),
+            "zones_below": len(zones.zones_below),
+            "total_above": zones.total_liquidity_above,
+            "total_below": zones.total_liquidity_below,
+            "dominant_direction": zones.dominant_direction
+        }
+        
+        # Summary diagnosis
+        issues = []
+        if not COINGLASS_API_KEY:
+            issues.append("No CoinGlass API key")
+        if heatmap_liq is None or heatmap_liq.get("total_levels", 0) == 0:
+            issues.append("CoinGlass heatmap returning no levels")
+        if orderbook_levels_above == 0 and orderbook_levels_below == 0:
+            issues.append("No significant orderbook levels")
+        if len(clusters) == 0:
+            issues.append("No liquidity clusters generated")
+        if magnet.liquidity_above_total == 0 and magnet.liquidity_below_total == 0:
+            issues.append("Magnet showing zero liquidity")
+        
+        debug_info["diagnosis"] = {
+            "issues_found": len(issues),
+            "issues": issues,
+            "status": "HEALTHY" if len(issues) == 0 else "ISSUES_DETECTED"
+        }
+        
+        return debug_info
+        
+    except Exception as e:
+        debug_info["error"] = str(e)
+        return debug_info
 
 @api_router.post("/signal-history/record")
 async def record_signal():

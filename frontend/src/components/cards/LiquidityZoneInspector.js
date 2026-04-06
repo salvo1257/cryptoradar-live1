@@ -269,6 +269,16 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
   const secondaryZone = zonesData?.secondary_liquidity_zone;
   const allZones = [...(zonesData?.zones_above || []), ...(zonesData?.zones_below || [])];
   const maxStrength = Math.max(...allZones.map(z => z.zone_strength), 1);
+  
+  // Check if we have actual data
+  const hasZoneData = zonesData?.zones_detected_count > 0 || 
+    zonesData?.total_liquidity_above > 0 || 
+    zonesData?.total_liquidity_below > 0;
+  
+  // Show data unavailable state when both totals are zero
+  const dataUnavailable = !hasZoneData && 
+    zonesData?.total_liquidity_above === 0 && 
+    zonesData?.total_liquidity_below === 0;
 
   return (
     <div 
@@ -321,6 +331,19 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
 
       {expanded && (
         <div className="p-4 pt-0 space-y-4">
+          {/* Data unavailable warning */}
+          {dataUnavailable && (
+            <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <div className="text-sm">
+                <span className="font-semibold">Liquidity data unavailable</span>
+                <p className="text-amber-400/70 text-xs mt-1">
+                  CoinGlass heatmap not accessible. Showing orderbook/cluster data only.
+                </p>
+              </div>
+            </div>
+          )}
+          
           {/* Current Price */}
           <div className="flex items-center justify-center gap-2 py-2 bg-slate-700/30 rounded-lg">
             <Target className="w-4 h-4 text-slate-400" />
