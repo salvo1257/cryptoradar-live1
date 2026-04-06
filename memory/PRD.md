@@ -1,40 +1,91 @@
-# CryptoRadar v3.1.0 - Product Requirements Document
-**Last Updated:** 2026-04-05
+# CryptoRadar v3.1.1 - Product Requirements Document
+**Last Updated:** 2026-04-06
 
-## 🚀 RELEASE v3.1.0 PREPARED (2026-04-05)
+## 🔴 CRITICAL FIX v3.1.1 - Signal Deduplication & Shadow Tracking (2026-04-06)
 
-### Release Package Generated
-- **File:** `/app/RELEASE_v3.1.0.md`
-- **Status:** READY FOR PRODUCTION
-- **Type:** Conservative / Non-Breaking
+### Problem Statement
+Two critical issues were corrupting the system and invalidating all statistics:
 
-### Release Contents
-1. ✅ Release Readiness Summary
-2. ✅ GitHub Release Title: `v3.1.0 - Data Integrity & Shadow Validation Framework`
-3. ✅ Version Tag: `v3.1.0`
-4. ✅ Professional Release Notes (English)
-5. ✅ Pre-Deploy Checklist
-6. ✅ Deployment Checklist
-7. ✅ Post-Deploy Smoke Test Checklist
-8. ✅ Rollback Checklist
+1. **Duplicate Signals**: Both V2 and V3 engines were sending the same signal multiple times within seconds/minutes
+   - Caused duplicated trades
+   - Corrupted statistics
+   - Invalid shadow validation data
 
-### Pre-Release Verification Results
-| Check | Status |
-|-------|--------|
-| Backend Health | ✅ PASS |
-| Frontend Health | ✅ PASS |
-| MongoDB | ✅ CONNECTED |
-| Kraken API | ✅ OK |
-| CoinGlass API | ✅ OK |
-| V3 Engine | ✅ ACTIVE (75% win rate) |
-| Data Freshness | ✅ MONITORING |
-| Shadow Engine | ✅ COLLECTING (0/30) |
+2. **Shadow Engine Not Tracking Outcomes**: Shadow validation was not recording outcomes correctly
+   - Signals hit targets but weren't registered
+   - Completely broke validation data collection
 
-### Constraints Honored
-- ❌ NO changes to V3 live trading logic
-- ❌ NO activation of shadow recommendations
-- ❌ NO breaking API changes
-- ❌ NO database migrations required
+### Solution Implemented
+
+#### FIX 1: Hash-Based Signal Deduplication
+
+**Algorithm:**
+```python
+signal_hash = SHA256(
+    direction + 
+    entry_zone_low (rounded) + 
+    entry_zone_high (rounded) + 
+    stop_loss (rounded) + 
+    event_type
+)[:16]
+```
+
+**Logic:**
+- Before ANY signal is recorded, check if `signal_hash` exists in last 10 minutes
+- If duplicate found → BLOCK signal, log warning, do NOT insert into database
+- If new → Register hash in cache, proceed with recording
+
+**Applied To:**
+- ✅ V3 Engine (`record_v3_entry_signal`)
+- ✅ V2 Engine (`auto_record_signal_change`)
+
+#### FIX 2: Real-Time Shadow Outcome Tracking
+
+**Components:**
+1. **Active Tracking Registry**: In-memory dict tracking all PENDING signals
+2. **Background Loop**: Runs every 10 seconds, fetches current price
+3. **Outcome Detection Logic**:
+   - LONG: price >= T2 → FULL_WIN, price >= T1 → partial, price <= SL → LOSS
+   - SHORT: price <= T2 → FULL_WIN, price <= T1 → partial, price >= SL → LOSS
+4. **Automatic Finalization**: When outcome reached, updates both `signal_history` and `shadow_validation_logs`
+5. **Expiry Fallback**: Signals >4 hours old are processed using historical candles
+
+**What's Tracked:**
+- Entry price, SL, T1, T2
+- Price check count
+- Max Favorable Excursion (MFE)
+- Max Adverse Excursion (MAE)
+- T1/T2/SL hit timestamps
+
+### New API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/system/dedup-status` | GET | View dedup cache status and entries |
+| `/api/system/shadow-tracking-status` | GET | View actively tracked signals |
+| `/api/system/recover-pending-signals` | POST | Recover PENDING signals for tracking after restart |
+| `/api/system/force-check-outcomes` | POST | Force immediate outcome check on all tracked signals |
+
+### Database Changes
+- `signal_hash` field added to signal records
+- `shadow_tracked` boolean added to V3 signals
+- `shadow_mfe_pct`, `shadow_mae_pct`, `shadow_price_checks` fields for tracking data
+
+### Configuration
+- `SIGNAL_DEDUP_WINDOW_MINUTES = 10`
+- Shadow tracking interval: 10 seconds
+- Signal expiry: 4 hours (then uses historical candles)
+
+### Verification Status
+- ✅ Dedup system: ACTIVE
+- ✅ Shadow tracking loop: RUNNING
+- ✅ All existing APIs: FUNCTIONAL
+
+### TEMPORARY RULE
+Until sufficient clean data is collected:
+- Previous statistical analysis should be considered INVALID
+- New signals will have `signal_hash` for dedup tracking
+- Shadow outcomes will be tracked in real-time
 
 ---
 

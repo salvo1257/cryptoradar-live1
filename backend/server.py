@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from enum import Enum
 import uuid
+import hashlib
 from datetime import datetime, timezone, timedelta
 import httpx
 import asyncio
@@ -1206,6 +1207,392 @@ Sygnał wygasł bez trafienia celów lub stopu.
 # V3 Alert Deduplication Tracking
 v3_alerts_sent = {}  # {setup_id: timestamp}
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIGNAL DEDUPLICATION SYSTEM - Prevents duplicate signal recording
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Stores: {signal_hash: {"timestamp": datetime, "signal_id": str, "direction": str}}
+signal_dedup_cache = {}
+SIGNAL_DEDUP_WINDOW_MINUTES = 10  # Window to block duplicate signals
+
+def generate_signal_hash(direction: str, entry_zone_low: float, entry_zone_high: float, 
+                         stop_loss: float, event_type: str) -> str:
+    """
+    Generate a deterministic hash for signal deduplication.
+    Same setup parameters = same hash = duplicate signal.
+    
+    Uses: direction + entry_zone_low + entry_zone_high + stop_loss + event_type
+    """
+    # Round values to avoid floating point issues
+    entry_low_rounded = round(entry_zone_low, 1)
+    entry_high_rounded = round(entry_zone_high, 1)
+    stop_rounded = round(stop_loss, 1)
+    
+    hash_input = f"{direction}|{entry_low_rounded}|{entry_high_rounded}|{stop_rounded}|{event_type}"
+    return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+def is_duplicate_signal(signal_hash: str) -> bool:
+    """
+    Check if a signal with this hash was already recorded within the dedup window.
+    Returns True if duplicate (should be blocked), False if new signal.
+    """
+    global signal_dedup_cache
+    
+    now = datetime.now(timezone.utc)
+    
+    # Clean up old entries
+    expired_hashes = []
+    for h, data in signal_dedup_cache.items():
+        age_minutes = (now - data["timestamp"]).total_seconds() / 60
+        if age_minutes > SIGNAL_DEDUP_WINDOW_MINUTES:
+            expired_hashes.append(h)
+    for h in expired_hashes:
+        del signal_dedup_cache[h]
+    
+    # Check if this signal exists in cache
+    if signal_hash in signal_dedup_cache:
+        existing = signal_dedup_cache[signal_hash]
+        age_minutes = (now - existing["timestamp"]).total_seconds() / 60
+        if age_minutes <= SIGNAL_DEDUP_WINDOW_MINUTES:
+            logger.warning(f"[DEDUP] Blocked duplicate signal hash={signal_hash[:8]}, "
+                          f"original was {age_minutes:.1f}m ago, direction={existing['direction']}")
+            return True
+    
+    return False
+
+def register_signal_hash(signal_hash: str, signal_id: str, direction: str) -> None:
+    """Register a new signal hash in the dedup cache."""
+    global signal_dedup_cache
+    signal_dedup_cache[signal_hash] = {
+        "timestamp": datetime.now(timezone.utc),
+        "signal_id": signal_id,
+        "direction": direction
+    }
+    logger.info(f"[DEDUP] Registered new signal hash={signal_hash[:8]}, signal_id={signal_id[:8]}, direction={direction}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHADOW OUTCOME TRACKING SYSTEM - Real-time outcome detection for shadow validation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Active shadow tracking: {signal_id: tracking_data}
+active_shadow_tracking = {}
+shadow_tracking_task = None  # Background task reference
+
+class ShadowOutcome(str, Enum):
+    PENDING = "PENDING"
+    FULL_WIN = "FULL_WIN"      # Target 2 hit
+    PARTIAL_WIN = "PARTIAL_WIN"  # Target 1 hit
+    LOSS = "LOSS"              # Stop loss hit
+    EXPIRED = "EXPIRED"        # Time limit reached without outcome
+
+async def register_signal_for_shadow_tracking(
+    signal_id: str,
+    direction: str,
+    entry_price: float,
+    stop_loss: float,
+    target_1: float,
+    target_2: float,
+    created_at: datetime = None
+) -> bool:
+    """
+    Register a new signal for active shadow outcome tracking.
+    This starts real-time monitoring of the signal.
+    """
+    global active_shadow_tracking
+    
+    if signal_id in active_shadow_tracking:
+        logger.debug(f"[SHADOW TRACK] Signal {signal_id[:8]} already registered")
+        return False
+    
+    tracking_data = {
+        "signal_id": signal_id,
+        "direction": direction,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+        "target_2": target_2,
+        "created_at": created_at or datetime.now(timezone.utc),
+        "outcome": ShadowOutcome.PENDING.value,
+        "outcome_price": None,
+        "outcome_time": None,
+        "target_1_hit": False,
+        "target_1_hit_time": None,
+        "target_2_hit": False,
+        "target_2_hit_time": None,
+        "stop_hit": False,
+        "stop_hit_time": None,
+        "price_checks": 0,
+        "max_favorable_price": entry_price,
+        "max_adverse_price": entry_price,
+    }
+    
+    active_shadow_tracking[signal_id] = tracking_data
+    logger.info(f"[SHADOW TRACK] ✅ Registered signal {signal_id[:8]} for tracking: "
+                f"{direction} entry={entry_price:.1f}, SL={stop_loss:.1f}, T1={target_1:.1f}, T2={target_2:.1f}")
+    
+    return True
+
+async def check_shadow_outcome(signal_id: str, current_price: float) -> Optional[Dict[str, Any]]:
+    """
+    Check if a tracked signal has reached an outcome.
+    Returns outcome data if reached, None if still pending.
+    """
+    global active_shadow_tracking
+    
+    if signal_id not in active_shadow_tracking:
+        return None
+    
+    tracking = active_shadow_tracking[signal_id]
+    direction = tracking["direction"]
+    entry_price = tracking["entry_price"]
+    stop_loss = tracking["stop_loss"]
+    target_1 = tracking["target_1"]
+    target_2 = tracking["target_2"]
+    
+    # Update price check count
+    tracking["price_checks"] += 1
+    
+    # Update MFE/MAE
+    if direction == "LONG":
+        tracking["max_favorable_price"] = max(tracking["max_favorable_price"], current_price)
+        tracking["max_adverse_price"] = min(tracking["max_adverse_price"], current_price)
+    else:
+        tracking["max_favorable_price"] = min(tracking["max_favorable_price"], current_price)
+        tracking["max_adverse_price"] = max(tracking["max_adverse_price"], current_price)
+    
+    now = datetime.now(timezone.utc)
+    outcome = None
+    
+    # Check outcome conditions
+    if direction == "LONG":
+        # Check stop loss
+        if current_price <= stop_loss and not tracking["stop_hit"]:
+            tracking["stop_hit"] = True
+            tracking["stop_hit_time"] = now
+            outcome = ShadowOutcome.LOSS.value
+            logger.info(f"[SHADOW TRACK] ❌ LOSS detected for {signal_id[:8]}: price={current_price:.1f} <= SL={stop_loss:.1f}")
+        
+        # Check target 1
+        if current_price >= target_1 and not tracking["target_1_hit"]:
+            tracking["target_1_hit"] = True
+            tracking["target_1_hit_time"] = now
+            logger.info(f"[SHADOW TRACK] 🎯 T1 HIT for {signal_id[:8]}: price={current_price:.1f} >= T1={target_1:.1f}")
+        
+        # Check target 2
+        if current_price >= target_2 and not tracking["target_2_hit"]:
+            tracking["target_2_hit"] = True
+            tracking["target_2_hit_time"] = now
+            outcome = ShadowOutcome.FULL_WIN.value
+            logger.info(f"[SHADOW TRACK] 🎉 FULL WIN for {signal_id[:8]}: price={current_price:.1f} >= T2={target_2:.1f}")
+    
+    else:  # SHORT
+        # Check stop loss
+        if current_price >= stop_loss and not tracking["stop_hit"]:
+            tracking["stop_hit"] = True
+            tracking["stop_hit_time"] = now
+            outcome = ShadowOutcome.LOSS.value
+            logger.info(f"[SHADOW TRACK] ❌ LOSS detected for {signal_id[:8]}: price={current_price:.1f} >= SL={stop_loss:.1f}")
+        
+        # Check target 1
+        if current_price <= target_1 and not tracking["target_1_hit"]:
+            tracking["target_1_hit"] = True
+            tracking["target_1_hit_time"] = now
+            logger.info(f"[SHADOW TRACK] 🎯 T1 HIT for {signal_id[:8]}: price={current_price:.1f} <= T1={target_1:.1f}")
+        
+        # Check target 2
+        if current_price <= target_2 and not tracking["target_2_hit"]:
+            tracking["target_2_hit"] = True
+            tracking["target_2_hit_time"] = now
+            outcome = ShadowOutcome.FULL_WIN.value
+            logger.info(f"[SHADOW TRACK] 🎉 FULL WIN for {signal_id[:8]}: price={current_price:.1f} <= T2={target_2:.1f}")
+    
+    # If outcome reached, return data
+    if outcome:
+        tracking["outcome"] = outcome
+        tracking["outcome_price"] = current_price
+        tracking["outcome_time"] = now
+        return {
+            "signal_id": signal_id,
+            "outcome": outcome,
+            "outcome_price": current_price,
+            "outcome_time": now,
+            "tracking_data": tracking.copy()
+        }
+    
+    return None
+
+async def finalize_shadow_outcome(signal_id: str, outcome_data: Dict[str, Any]) -> bool:
+    """
+    Finalize and persist a shadow outcome to the database.
+    Removes signal from active tracking.
+    """
+    global active_shadow_tracking
+    
+    try:
+        tracking = outcome_data.get("tracking_data", {})
+        
+        # Calculate P&L
+        entry_price = tracking.get("entry_price", 0)
+        outcome_price = outcome_data.get("outcome_price", 0)
+        direction = tracking.get("direction", "LONG")
+        
+        if direction == "LONG":
+            pnl_percent = ((outcome_price - entry_price) / entry_price) * 100 if entry_price else 0
+            mfe_pct = ((tracking.get("max_favorable_price", entry_price) - entry_price) / entry_price) * 100
+            mae_pct = ((tracking.get("max_adverse_price", entry_price) - entry_price) / entry_price) * 100
+        else:
+            pnl_percent = ((entry_price - outcome_price) / entry_price) * 100 if entry_price else 0
+            mfe_pct = ((entry_price - tracking.get("max_favorable_price", entry_price)) / entry_price) * 100
+            mae_pct = ((entry_price - tracking.get("max_adverse_price", entry_price)) / entry_price) * 100
+        
+        # Update signal_history collection
+        await signal_history_collection.update_one(
+            {"signal_id": signal_id},
+            {"$set": {
+                "outcome": outcome_data.get("outcome"),
+                "outcome_timestamp": outcome_data.get("outcome_time"),
+                "outcome_price": outcome_price,
+                "pnl_percent": round(pnl_percent, 2),
+                "target_1_hit": tracking.get("target_1_hit", False),
+                "target_2_hit": tracking.get("target_2_hit", False),
+                "stop_hit": tracking.get("stop_hit", False),
+                "shadow_tracked": True,
+                "shadow_mfe_pct": round(mfe_pct, 2),
+                "shadow_mae_pct": round(mae_pct, 2),
+                "shadow_price_checks": tracking.get("price_checks", 0),
+                "outcome_notes": f"Shadow tracked: {tracking.get('price_checks', 0)} price checks"
+            }}
+        )
+        
+        # Also update shadow_validation_logs if exists
+        await db["shadow_validation_logs"].update_one(
+            {"signal_id": signal_id},
+            {"$set": {
+                "final_outcome": outcome_data.get("outcome"),
+                "outcome_tracked_at": outcome_data.get("outcome_time"),
+                "shadow_tracking_result": {
+                    "pnl_percent": round(pnl_percent, 2),
+                    "mfe_percent": round(mfe_pct, 2),
+                    "mae_percent": round(mae_pct, 2),
+                    "target_1_hit": tracking.get("target_1_hit", False),
+                    "target_2_hit": tracking.get("target_2_hit", False),
+                    "stop_hit": tracking.get("stop_hit", False),
+                    "price_checks": tracking.get("price_checks", 0)
+                }
+            }}
+        )
+        
+        # Remove from active tracking
+        if signal_id in active_shadow_tracking:
+            del active_shadow_tracking[signal_id]
+        
+        logger.info(f"[SHADOW TRACK] ✅ Finalized outcome for {signal_id[:8]}: "
+                   f"{outcome_data.get('outcome')}, PnL={pnl_percent:.2f}%")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[SHADOW TRACK] Error finalizing outcome for {signal_id}: {e}")
+        return False
+
+async def check_expired_shadow_signals() -> int:
+    """
+    Check for signals that have expired (>4 hours old) without outcome.
+    Use historical candles to determine outcome.
+    Returns count of signals processed.
+    """
+    global active_shadow_tracking
+    
+    now = datetime.now(timezone.utc)
+    expired_signals = []
+    
+    for signal_id, tracking in active_shadow_tracking.items():
+        age_hours = (now - tracking["created_at"]).total_seconds() / 3600
+        if age_hours > 4:  # 4 hour expiry
+            expired_signals.append(signal_id)
+    
+    processed = 0
+    for signal_id in expired_signals:
+        tracking = active_shadow_tracking[signal_id]
+        
+        # Determine outcome based on what happened
+        if tracking["target_2_hit"]:
+            outcome = ShadowOutcome.FULL_WIN.value
+        elif tracking["target_1_hit"]:
+            outcome = ShadowOutcome.PARTIAL_WIN.value
+        elif tracking["stop_hit"]:
+            outcome = ShadowOutcome.LOSS.value
+        else:
+            outcome = ShadowOutcome.EXPIRED.value
+        
+        outcome_data = {
+            "signal_id": signal_id,
+            "outcome": outcome,
+            "outcome_price": tracking.get("max_favorable_price", tracking["entry_price"]),
+            "outcome_time": now,
+            "tracking_data": tracking.copy()
+        }
+        
+        await finalize_shadow_outcome(signal_id, outcome_data)
+        processed += 1
+        logger.info(f"[SHADOW TRACK] Expired signal {signal_id[:8]} processed as {outcome}")
+    
+    return processed
+
+async def shadow_tracking_loop():
+    """
+    Background loop that checks all active shadow signals every 10 seconds.
+    This is the main tracking engine.
+    """
+    logger.info("[SHADOW TRACK] 🚀 Starting shadow tracking loop (10s interval)")
+    
+    while True:
+        try:
+            if active_shadow_tracking:
+                # Get current price
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get("https://api.kraken.com/0/public/Ticker?pair=XBTUSD")
+                        data = response.json()
+                        if "result" in data and "XXBTZUSD" in data["result"]:
+                            current_price = float(data["result"]["XXBTZUSD"]["c"][0])
+                        else:
+                            await asyncio.sleep(10)
+                            continue
+                except Exception as price_err:
+                    logger.debug(f"[SHADOW TRACK] Price fetch error: {price_err}")
+                    await asyncio.sleep(10)
+                    continue
+                
+                # Check each active signal
+                signals_to_process = list(active_shadow_tracking.keys())
+                for signal_id in signals_to_process:
+                    if signal_id in active_shadow_tracking:
+                        outcome_data = await check_shadow_outcome(signal_id, current_price)
+                        if outcome_data:
+                            await finalize_shadow_outcome(signal_id, outcome_data)
+                
+                # Check for expired signals
+                await check_expired_shadow_signals()
+                
+                logger.debug(f"[SHADOW TRACK] Checked {len(signals_to_process)} signals, "
+                           f"{len(active_shadow_tracking)} still active")
+            
+            await asyncio.sleep(10)  # Check every 10 seconds
+            
+        except asyncio.CancelledError:
+            logger.info("[SHADOW TRACK] Tracking loop cancelled")
+            break
+        except Exception as e:
+            logger.error(f"[SHADOW TRACK] Loop error: {e}")
+            await asyncio.sleep(10)
+
+def start_shadow_tracking_task():
+    """Start the shadow tracking background task."""
+    global shadow_tracking_task
+    if shadow_tracking_task is None or shadow_tracking_task.done():
+        shadow_tracking_task = asyncio.create_task(shadow_tracking_loop())
+        logger.info("[SHADOW TRACK] Background task started")
+
 
 async def get_telegram_settings():
     """Fetch Telegram settings from database"""
@@ -1548,9 +1935,14 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
     """
     Record a V3 ENTRY_READY signal to the main signal_history collection.
     
+    CRITICAL FIX: Now includes:
+    1. Hash-based deduplication (blocks same setup within 10 minutes)
+    2. Automatic shadow outcome tracking registration
+    
     This ensures V3 signals:
     - Are tracked in the same collection as V2 signals
-    - Are processed by the outcome engine
+    - Are NOT duplicated within the dedup window
+    - Are automatically tracked for outcome detection
     - Appear in performance statistics
     
     Args:
@@ -1571,33 +1963,51 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         if phase != "ENTRY_READY":
             return {"recorded": False, "reason": f"Phase is {phase}, not ENTRY_READY"}
         
-        # Deduplication: Check if already recorded for this setup
-        if setup_id and setup_id in v3_signals_recorded:
-            return {"recorded": False, "reason": "Already recorded", "signal_id": v3_signals_recorded[setup_id]}
-        
         direction = setup_data.get("direction", "")
         if direction not in ["LONG", "SHORT"]:
             return {"recorded": False, "reason": f"Invalid direction: {direction}"}
+        
+        # Extract signal parameters for hash
+        entry_zone_low = setup_data.get("zone_low", 0)
+        entry_zone_high = setup_data.get("zone_high", 0)
+        stop_loss = setup_data.get("stop_loss", 0)
+        event_type = setup_data.get("event_type", "unknown")
+        target_1 = setup_data.get("target_1", 0)
+        target_2 = setup_data.get("target_2", 0)
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # HASH-BASED DEDUPLICATION CHECK
+        # ═══════════════════════════════════════════════════════════════════
+        signal_hash = generate_signal_hash(direction, entry_zone_low, entry_zone_high, stop_loss, event_type)
+        
+        if is_duplicate_signal(signal_hash):
+            logger.warning(f"[V3 Signal] BLOCKED - Duplicate signal detected: {direction} hash={signal_hash[:8]}")
+            return {"recorded": False, "reason": "DUPLICATE_BLOCKED", "signal_hash": signal_hash}
+        
+        # Legacy setup_id deduplication (backup check)
+        if setup_id and setup_id in v3_signals_recorded:
+            logger.warning(f"[V3 Signal] BLOCKED - Already recorded for setup {setup_id[:8]}")
+            return {"recorded": False, "reason": "Already recorded", "signal_id": v3_signals_recorded[setup_id]}
         
         # Generate signal ID
         signal_id = str(uuid.uuid4())
         
         # Calculate validity based on event type
-        event_type = setup_data.get("event_type", "unknown")
         validity_hours = 8 if event_type in ["liquidity_sweep_high", "liquidity_sweep_low"] else 12
         
         # Build comprehensive history entry matching V2 format
         history_entry = {
             "signal_id": signal_id,
+            "signal_hash": signal_hash,  # NEW: Store hash for future reference
             "timestamp": datetime.now(timezone.utc),
             "direction": direction,
             "confidence": setup_data.get("quality_score", 50),  # Use quality as confidence
             "estimated_move": 0.5,  # Default, could be calculated
-            "entry_zone_low": setup_data.get("zone_low", 0),
-            "entry_zone_high": setup_data.get("zone_high", 0),
-            "stop_loss": setup_data.get("stop_loss", 0),
-            "target_1": setup_data.get("target_1", 0),
-            "target_2": setup_data.get("target_2", 0),
+            "entry_zone_low": entry_zone_low,
+            "entry_zone_high": entry_zone_high,
+            "stop_loss": stop_loss,
+            "target_1": target_1,
+            "target_2": target_2,
             "risk_reward_ratio": setup_data.get("risk_reward_ratio", 1.0),
             "setup_type": event_type,
             "signal_engine_version": "v3",
@@ -1638,20 +2048,42 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             "stop_hit": False,
             "validity_hours": validity_hours,
             "price_at_check": None,
-            "outcome_notes": ""
+            "outcome_notes": "",
+            "shadow_tracked": True  # NEW: Mark as shadow tracked
         }
         
         # Insert into signal history
         await signal_history_collection.insert_one(history_entry)
         
-        # Track for deduplication
+        # Register signal hash in dedup cache
+        register_signal_hash(signal_hash, signal_id, direction)
+        
+        # Track for legacy deduplication
         v3_signals_recorded[setup_id] = signal_id
         
         # Cleanup old entries (keep only last 100)
         if len(v3_signals_recorded) > 100:
             v3_signals_recorded = dict(list(v3_signals_recorded.items())[-100:])
         
-        logger.info(f"[V3 Signal] Recorded ENTRY_READY signal {signal_id[:8]} for setup {setup_id[:8]} - {direction}")
+        logger.info(f"[V3 Signal] ✅ Recorded ENTRY_READY signal {signal_id[:8]} hash={signal_hash[:8]} - {direction}")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # SHADOW OUTCOME TRACKING - Register for real-time monitoring
+        # This ensures every signal is tracked until outcome is determined
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            await register_signal_for_shadow_tracking(
+                signal_id=signal_id,
+                direction=direction,
+                entry_price=current_price,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                created_at=datetime.now(timezone.utc)
+            )
+            logger.info(f"[V3 Signal] Registered {signal_id[:8]} for shadow outcome tracking")
+        except Exception as track_err:
+            logger.error(f"[V3 Signal] Error registering for tracking: {track_err}")
         
         # ═══════════════════════════════════════════════════════════════════
         # SHADOW LIQUIDITY TARGET ENGINE - Calculate in parallel (non-blocking)
@@ -1663,11 +2095,11 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                 direction=direction,
                 entry_price=current_price,
                 standard_targets={
-                    "target_1": setup_data.get("target_1", 0),
-                    "target_2": setup_data.get("target_2", 0),
+                    "target_1": target_1,
+                    "target_2": target_2,
                     "target_1_type": setup_data.get("target_1_type"),
                     "target_2_type": setup_data.get("target_2_type"),
-                    "stop_loss": setup_data.get("stop_loss", 0)
+                    "stop_loss": stop_loss
                 },
                 market_context=market_context
             ))
@@ -1692,10 +2124,12 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         
         return {
             "recorded": True, 
-            "signal_id": signal_id, 
+            "signal_id": signal_id,
+            "signal_hash": signal_hash,
             "setup_id": setup_id,
             "direction": direction,
-            "engine": "v3"
+            "engine": "v3",
+            "shadow_tracking": True
         }
         
     except Exception as e:
@@ -3234,7 +3668,7 @@ async def analyze_ohlc_for_outcome(signal_timestamp: datetime, validity_hours: i
                     "target_2_hit": False,
                     "stop_hit": False,
                     "in_progress": True,
-                    "notes": f"T1 reached, watching for T2 or stop"
+                    "notes": "T1 reached, watching for T2 or stop"
                 }
         
         # If nothing hit, check expiry
@@ -13404,6 +13838,8 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
     """
     Automatically record signal when state changes.
     Tracks: setup detected, setup confirmed, setup invalidated, signal expired
+    
+    CRITICAL FIX: Now includes hash-based deduplication to prevent duplicate signals.
     """
     global last_signal_state
     
@@ -13487,9 +13923,28 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
                     reason = "Aggiornamento periodico segnale operativo"
         
         if should_record:
+            # ═══════════════════════════════════════════════════════════════════
+            # V2 HASH-BASED DEDUPLICATION CHECK
+            # ═══════════════════════════════════════════════════════════════════
+            if new_raw_direction in ["LONG", "SHORT"] and status == "confirmed":
+                signal_hash = generate_signal_hash(
+                    new_raw_direction,
+                    new_signal.entry_zone_low,
+                    new_signal.entry_zone_high,
+                    new_signal.stop_loss,
+                    new_signal.setup_type or "v2_signal"
+                )
+                
+                if is_duplicate_signal(signal_hash):
+                    logger.warning(f"[V2 Signal] BLOCKED - Duplicate signal: {new_raw_direction} hash={signal_hash[:8]}")
+                    return {"recorded": False, "reason": "DUPLICATE_BLOCKED", "signal_hash": signal_hash}
+            else:
+                signal_hash = None
+            
             signal_id = str(uuid.uuid4())
             history_entry = {
                 "signal_id": signal_id,
+                "signal_hash": signal_hash,  # NEW: Store hash for dedup reference
                 "timestamp": datetime.now(timezone.utc),
                 "direction": new_raw_direction,
                 "signal_state": new_state,
@@ -13523,6 +13978,10 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
             }
             
             await signal_history_collection.insert_one(history_entry)
+            
+            # Register hash in dedup cache for OPERATIONAL signals
+            if signal_hash and status == "confirmed":
+                register_signal_hash(signal_hash, signal_id, new_raw_direction)
             
             # Send Telegram notification for OPERATIONAL signals
             if status == "confirmed" and new_state == SIGNAL_STATE_OPERATIONAL:
@@ -15467,6 +15926,193 @@ async def websocket_price(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEDUPLICATION & SHADOW TRACKING STATUS ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/system/dedup-status")
+async def get_dedup_status():
+    """
+    Get the status of the signal deduplication system.
+    Shows active dedup cache entries and configuration.
+    """
+    global signal_dedup_cache
+    
+    now = datetime.now(timezone.utc)
+    cache_entries = []
+    
+    for signal_hash, data in signal_dedup_cache.items():
+        age_minutes = (now - data["timestamp"]).total_seconds() / 60
+        cache_entries.append({
+            "hash": signal_hash[:8] + "...",
+            "direction": data["direction"],
+            "signal_id": data["signal_id"][:8] + "...",
+            "age_minutes": round(age_minutes, 1),
+            "will_expire_in_minutes": round(SIGNAL_DEDUP_WINDOW_MINUTES - age_minutes, 1)
+        })
+    
+    return {
+        "status": "active",
+        "dedup_window_minutes": SIGNAL_DEDUP_WINDOW_MINUTES,
+        "active_entries": len(signal_dedup_cache),
+        "entries": cache_entries,
+        "description": f"Signals with same hash within {SIGNAL_DEDUP_WINDOW_MINUTES} minutes are blocked"
+    }
+
+@api_router.get("/system/shadow-tracking-status")
+async def get_shadow_tracking_status():
+    """
+    Get the status of the shadow outcome tracking system.
+    Shows all actively tracked signals and their current state.
+    """
+    global active_shadow_tracking, shadow_tracking_task
+    
+    now = datetime.now(timezone.utc)
+    tracked_signals = []
+    
+    for signal_id, tracking in active_shadow_tracking.items():
+        age_hours = (now - tracking["created_at"]).total_seconds() / 3600
+        tracked_signals.append({
+            "signal_id": signal_id[:8] + "...",
+            "direction": tracking["direction"],
+            "entry_price": tracking["entry_price"],
+            "stop_loss": tracking["stop_loss"],
+            "target_1": tracking["target_1"],
+            "target_2": tracking["target_2"],
+            "age_hours": round(age_hours, 2),
+            "price_checks": tracking["price_checks"],
+            "target_1_hit": tracking["target_1_hit"],
+            "target_2_hit": tracking["target_2_hit"],
+            "stop_hit": tracking["stop_hit"],
+            "max_favorable_price": tracking["max_favorable_price"],
+            "max_adverse_price": tracking["max_adverse_price"],
+            "outcome": tracking["outcome"]
+        })
+    
+    task_running = shadow_tracking_task is not None and not shadow_tracking_task.done()
+    
+    return {
+        "status": "active" if task_running else "stopped",
+        "tracking_interval_seconds": 10,
+        "signals_being_tracked": len(active_shadow_tracking),
+        "tracked_signals": tracked_signals,
+        "description": "Real-time outcome tracking for all V3 signals"
+    }
+
+@api_router.post("/system/recover-pending-signals")
+async def recover_pending_signals_for_tracking():
+    """
+    Recover PENDING signals from database and register them for shadow tracking.
+    Use this after a restart to ensure no signals are lost.
+    """
+    try:
+        # Find all PENDING V3 signals not already being tracked
+        pending_signals = await signal_history_collection.find({
+            "outcome": "PENDING",
+            "signal_engine_version": "v3",
+            "direction": {"$in": ["LONG", "SHORT"]}
+        }).to_list(100)
+        
+        recovered = 0
+        already_tracked = 0
+        
+        for signal in pending_signals:
+            signal_id = signal.get("signal_id")
+            
+            if signal_id in active_shadow_tracking:
+                already_tracked += 1
+                continue
+            
+            # Check signal age - skip if too old (>8 hours)
+            created_at = signal.get("timestamp")
+            if created_at:
+                age_hours = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
+                if age_hours > 8:
+                    continue
+            
+            # Register for tracking
+            await register_signal_for_shadow_tracking(
+                signal_id=signal_id,
+                direction=signal.get("direction"),
+                entry_price=signal.get("btc_price", 0),
+                stop_loss=signal.get("stop_loss", 0),
+                target_1=signal.get("target_1", 0),
+                target_2=signal.get("target_2", 0),
+                created_at=created_at
+            )
+            recovered += 1
+        
+        logger.info(f"[Recovery] Recovered {recovered} signals for tracking, {already_tracked} already tracked")
+        
+        return {
+            "status": "success",
+            "recovered_count": recovered,
+            "already_tracked": already_tracked,
+            "total_pending_found": len(pending_signals),
+            "message": f"Recovered {recovered} PENDING V3 signals for shadow tracking"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error recovering signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/system/force-check-outcomes")
+async def force_check_all_tracked_outcomes():
+    """
+    Force an immediate outcome check on all tracked signals.
+    Useful for debugging or catching up after issues.
+    """
+    global active_shadow_tracking
+    
+    if not active_shadow_tracking:
+        return {"status": "no_signals", "message": "No signals currently being tracked"}
+    
+    try:
+        # Get current price
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get("https://api.kraken.com/0/public/Ticker?pair=XBTUSD")
+            data = response.json()
+            if "result" in data and "XXBTZUSD" in data["result"]:
+                current_price = float(data["result"]["XXBTZUSD"]["c"][0])
+            else:
+                raise HTTPException(status_code=503, detail="Could not fetch current price")
+        
+        results = []
+        signals_to_check = list(active_shadow_tracking.keys())
+        
+        for signal_id in signals_to_check:
+            if signal_id in active_shadow_tracking:
+                outcome_data = await check_shadow_outcome(signal_id, current_price)
+                if outcome_data:
+                    await finalize_shadow_outcome(signal_id, outcome_data)
+                    results.append({
+                        "signal_id": signal_id[:8],
+                        "outcome": outcome_data.get("outcome"),
+                        "finalized": True
+                    })
+                else:
+                    tracking = active_shadow_tracking.get(signal_id, {})
+                    results.append({
+                        "signal_id": signal_id[:8],
+                        "outcome": "PENDING",
+                        "finalized": False,
+                        "target_1_hit": tracking.get("target_1_hit", False),
+                        "stop_hit": tracking.get("stop_hit", False)
+                    })
+        
+        return {
+            "status": "checked",
+            "current_price": current_price,
+            "signals_checked": len(results),
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in force check: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Include the router in the main app
 app.include_router(api_router)
 
@@ -15627,13 +16273,14 @@ async def background_check_outcomes():
         scheduler_status["last_run"] = datetime.now(timezone.utc).isoformat()
         scheduler_status["last_result"] = {"error": str(e), "updated": 0}
 
+
 @app.on_event("startup")
 async def startup_event():
     """Verify critical connections on startup and start background scheduler"""
     global scheduler_status
     
     logger.info("=" * 50)
-    logger.info("CryptoRadar v2.1 - Starting up...")
+    logger.info("CryptoRadar v3.1.1 - Starting up...")
     logger.info("=" * 50)
     
     # Check MongoDB
@@ -15685,8 +16332,17 @@ async def startup_event():
         logger.error(f"❌ Background Scheduler: Failed to start - {e}")
         scheduler_status["running"] = False
     
+    # ============== START SHADOW TRACKING LOOP ==============
+    try:
+        start_shadow_tracking_task()
+        logger.info("✅ Shadow Tracking: Started (10s interval)")
+    except Exception as e:
+        logger.error(f"❌ Shadow Tracking: Failed to start - {e}")
+    
     logger.info("=" * 50)
     logger.info("CryptoRadar startup complete!")
+    logger.info(f"   - Signal Dedup Window: {SIGNAL_DEDUP_WINDOW_MINUTES} minutes")
+    logger.info("   - Shadow Tracking: Active")
     logger.info("=" * 50)
 
 @app.on_event("shutdown")
