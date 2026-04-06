@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { useApp } from '../../contexts/AppContext';
 import { V3MonitoringPanel } from '../cards/V3MonitoringPanel';
 import { ShadowTargetInspector } from '../cards/ShadowTargetInspector';
+import LiquidityZoneInspector from '../cards/LiquidityZoneInspector';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -446,6 +447,9 @@ export function AlertHistoryPage() {
       
       {/* V3 Monitoring Panel - Primary Validation Dashboard */}
       <V3MonitoringPanel language={language} />
+
+      {/* Liquidity Zone Engine - PREVIEW */}
+      <LiquidityZoneInspector lang={language} />
 
       {/* Shadow Liquidity Target Inspector - Analysis Dashboard */}
       <ShadowTargetInspector language={language} />

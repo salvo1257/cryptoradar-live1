@@ -1,7 +1,76 @@
 # CryptoRadar v3.2.0 - Product Requirements Document
 **Last Updated:** 2026-04-06
 
-## 🔴 CRITICAL SYSTEM UPGRADE v3.2.0 (2026-04-06)
+## 🆕 LIQUIDITY ZONE ENGINE v1.0 (PREVIEW) - 2026-04-06
+
+### Overview
+A new parallel enhancement that replaces point-based liquidity selection with **zone-based cluster detection**. This produces more realistic targets that align with actual market heatmap behavior.
+
+### Problem Solved
+- **Old System**: Selected nearest single liquidity point → often too close (0.2%-0.5%)
+- **New System**: Groups levels into zones/clusters → typical range 0.5%-3%
+
+### Key Features
+
+#### 1. Cluster Detection Algorithm
+- Groups nearby liquidity levels within 0.3% price distance
+- Each zone contains: list of levels, total value, price range
+
+#### 2. Zone Metrics Calculated
+- `zone_top` / `zone_bottom`: Price range of zone
+- `zone_center`: Weighted average by liquidity value
+- `zone_strength`: Total USD liquidity
+- `zone_density`: Liquidity per price range
+- `distance_pct`: Distance from current price
+
+#### 3. Zone Filtering
+- Minimum zone value: $5M
+- Minimum distance: 0.2%
+- Maximum distance: 5%
+
+#### 4. Zone Scoring (0-100)
+| Component | Weight | Criteria |
+|-----------|--------|----------|
+| Strength | 0-50 | log10(value) scaling |
+| Distance | 0-25 | Optimal: 0.5-2.5% |
+| Context | 0-25 | OI, compression, breakout prob |
+
+#### 5. Output Structure
+```json
+{
+  "primary_liquidity_zone": {...},
+  "secondary_liquidity_zone": {...},
+  "zones_above": [...],
+  "zones_below": [...],
+  "dominant_direction": "UP|DOWN|BALANCED",
+  "zone_vs_legacy_aligned": true|false
+}
+```
+
+### New API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/liquidity-zones` | GET | Zone engine full results |
+| `/api/liquidity-comparison` | GET | Side-by-side legacy vs zone comparison |
+
+### UI Component
+- **File**: `/app/frontend/src/components/cards/LiquidityZoneInspector.js`
+- Shows zone range visualization (top-bottom)
+- Displays total liquidity per zone
+- Shows distance percentage
+- Compares with legacy point-based magnet
+
+### Non-Destructive Integration
+- ✅ Legacy point-based magnet (`analyze_liquidity_magnet`) preserved
+- ✅ Zone engine runs in PARALLEL for comparison
+- ✅ NO modification to V3 signal generation
+- ✅ NO modification to Telegram alerts
+- ✅ PREVIEW mode only
+
+---
+
+## 🔴 CRITICAL FIXES (Earlier in Session)
 
 ### Three Critical Fixes Implemented
 

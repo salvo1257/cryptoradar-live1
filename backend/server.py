@@ -357,6 +357,59 @@ class LiquidityMagnet(BaseModel):
     explanation: str  # Summary explanation
     data_source: str = "Multi-Exchange + CoinGlass"
 
+# ============== LIQUIDITY ZONE ENGINE (PREVIEW) ==============
+# Zone-based liquidity detection - groups nearby levels into clusters
+# Runs in PARALLEL with legacy point magnet for comparison
+
+class LiquidityZoneLevel(BaseModel):
+    """Single liquidity level within a zone"""
+    price: float
+    value: float  # USD value
+    source: str  # "orderbook", "liquidation", "cluster"
+    
+class LiquidityZone(BaseModel):
+    """A cluster of nearby liquidity levels forming a zone"""
+    zone_id: str
+    direction: str  # "UP" (above price) or "DOWN" (below price)
+    zone_top: float  # Highest price in zone
+    zone_bottom: float  # Lowest price in zone
+    zone_center: float  # Weighted average by liquidity
+    zone_strength: float  # Total liquidity in USD
+    zone_density: float  # Liquidity per price range (USD per $)
+    distance_pct: float  # Distance from current price to zone center
+    num_levels: int  # How many levels in this zone
+    levels: List[LiquidityZoneLevel] = []  # Individual levels
+    score: float = 0  # Final zone score (0-100)
+    score_breakdown: Dict[str, float] = {}  # Component scores
+    
+class LiquidityZoneEngineResult(BaseModel):
+    """Output from the Liquidity Zone Engine"""
+    timestamp: datetime
+    current_price: float
+    
+    # Primary and secondary zones (highest scoring)
+    primary_liquidity_zone: Optional[LiquidityZone] = None
+    secondary_liquidity_zone: Optional[LiquidityZone] = None
+    
+    # All detected zones
+    zones_above: List[LiquidityZone] = []
+    zones_below: List[LiquidityZone] = []
+    zones_detected_count: int = 0
+    
+    # Direction analysis
+    dominant_direction: str  # "UP", "DOWN", "BALANCED"
+    total_liquidity_above: float = 0
+    total_liquidity_below: float = 0
+    
+    # Comparison with legacy
+    legacy_magnet_direction: Optional[str] = None
+    legacy_magnet_score: Optional[float] = None
+    zone_vs_legacy_aligned: bool = True
+    
+    # Engine metadata
+    engine_version: str = "zone_v1.0"
+    data_source: str = "Multi-Exchange + CoinGlass (Zone-Based)"
+
 # ============== LIQUIDITY LADDER ==============
 
 class LiquidityLevel(BaseModel):
@@ -9556,6 +9609,439 @@ def _build_magnet_explanation(
         return get_translation("magnet_explanation_weak", lang)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIQUIDITY ZONE ENGINE (PREVIEW MODE)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Zone-based liquidity detection - groups nearby levels into clusters
+# This is a PARALLEL enhancement - does NOT modify existing magnet logic
+# 
+# Key difference from point-based magnet:
+# - Groups levels within 0.3% into zones
+# - Evaluates clusters, not single points
+# - Produces more realistic targets (0.5% - 3%)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def analyze_liquidity_zones(
+    current_price: float,
+    aggregated_orderbook: dict,
+    liquidity_clusters: List = None,
+    liquidation_data: dict = None,
+    open_interest_data: dict = None,
+    market_energy_data: dict = None,
+    legacy_magnet: LiquidityMagnet = None,
+    lang: str = "it"
+) -> LiquidityZoneEngineResult:
+    """
+    Liquidity Zone Engine v1.0 - ZONE-BASED detection (PREVIEW)
+    
+    Groups nearby liquidity levels into zones/clusters for more realistic
+    target detection that aligns with real market heatmap behavior.
+    
+    Key Algorithm:
+    1. Collect all liquidity levels from multiple sources
+    2. Group levels within 0.3% price distance into zones
+    3. Calculate zone metrics (top, bottom, center, strength, density)
+    4. Filter weak zones (<$5M, too close, too far)
+    5. Score zones (0-100) based on strength, distance, context
+    6. Return primary/secondary zones with full metadata
+    
+    IMPORTANT: This runs in PARALLEL with legacy magnet for comparison.
+    Does NOT modify any live trading logic.
+    
+    Args:
+        current_price: Current BTC price
+        aggregated_orderbook: Multi-exchange orderbook data
+        liquidity_clusters: Pre-detected liquidity clusters
+        liquidation_data: CoinGlass liquidation data
+        open_interest_data: Open interest metrics
+        market_energy_data: Market energy/compression data
+        legacy_magnet: Result from legacy point-based magnet (for comparison)
+        lang: Language for explanations
+        
+    Returns:
+        LiquidityZoneEngineResult with detected zones and analysis
+    """
+    import math
+    import uuid
+    
+    # ════════════════ CONFIGURATION ════════════════
+    ZONE_GROUPING_THRESHOLD_PCT = 0.3  # Group levels within 0.3% distance
+    MIN_ZONE_LIQUIDITY = 5_000_000  # $5M minimum
+    MIN_DISTANCE_PCT = 0.2  # Ignore zones too close
+    MAX_DISTANCE_PCT = 5.0  # Ignore zones too far
+    
+    # ════════════════ STEP 1: COLLECT ALL LIQUIDITY LEVELS ════════════════
+    all_levels_above = []  # List of {price, value, source}
+    all_levels_below = []
+    
+    # From liquidity clusters
+    if liquidity_clusters:
+        for cluster in liquidity_clusters:
+            if hasattr(cluster, 'side'):
+                level = {
+                    "price": cluster.price if hasattr(cluster, 'price') else 0,
+                    "value": cluster.estimated_value if hasattr(cluster, 'estimated_value') else 0,
+                    "source": "cluster"
+                }
+                if level["value"] > 0:
+                    if cluster.side == "above":
+                        all_levels_above.append(level)
+                    else:
+                        all_levels_below.append(level)
+    
+    # From order book
+    if aggregated_orderbook:
+        bids = aggregated_orderbook.get("bids", [])
+        asks = aggregated_orderbook.get("asks", [])
+        
+        # Asks (above price)
+        if asks:
+            ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:100]]
+            avg_ask = sum(v for _, v in ask_volumes) / len(ask_volumes) if ask_volumes else 0
+            
+            for price, volume in ask_volumes:
+                if volume > avg_ask * 2:  # Significant level
+                    distance_pct = ((price - current_price) / current_price) * 100
+                    if 0 < distance_pct < MAX_DISTANCE_PCT:
+                        all_levels_above.append({
+                            "price": price,
+                            "value": volume * price,
+                            "source": "orderbook"
+                        })
+        
+        # Bids (below price)
+        if bids:
+            bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:100]]
+            avg_bid = sum(v for _, v in bid_volumes) / len(bid_volumes) if bid_volumes else 0
+            
+            for price, volume in bid_volumes:
+                if volume > avg_bid * 2:  # Significant level
+                    distance_pct = ((current_price - price) / current_price) * 100
+                    if 0 < distance_pct < MAX_DISTANCE_PCT:
+                        all_levels_below.append({
+                            "price": price,
+                            "value": volume * price,
+                            "source": "orderbook"
+                        })
+    
+    # From liquidation data
+    if liquidation_data:
+        liq_levels = liquidation_data.get("liquidation_levels", [])
+        for level in liq_levels:
+            if isinstance(level, dict):
+                liq_price = level.get("price", 0)
+                liq_value = level.get("value", 0)
+                
+                if liq_price > current_price:
+                    distance_pct = ((liq_price - current_price) / current_price) * 100
+                    if distance_pct < MAX_DISTANCE_PCT:
+                        all_levels_above.append({
+                            "price": liq_price,
+                            "value": liq_value,
+                            "source": "liquidation"
+                        })
+                elif liq_price < current_price:
+                    distance_pct = ((current_price - liq_price) / current_price) * 100
+                    if distance_pct < MAX_DISTANCE_PCT:
+                        all_levels_below.append({
+                            "price": liq_price,
+                            "value": liq_value,
+                            "source": "liquidation"
+                        })
+    
+    # ════════════════ STEP 2: GROUP LEVELS INTO ZONES ════════════════
+    def group_levels_into_zones(levels: List[dict], direction: str) -> List[dict]:
+        """
+        Group nearby liquidity levels into zones.
+        Levels within ZONE_GROUPING_THRESHOLD_PCT are grouped together.
+        """
+        if not levels:
+            return []
+        
+        # Sort by price (ascending for above, descending for below)
+        sorted_levels = sorted(levels, key=lambda x: x["price"], reverse=(direction == "DOWN"))
+        
+        zones = []
+        current_zone_levels = [sorted_levels[0]]
+        
+        for level in sorted_levels[1:]:
+            # Check if this level is within threshold of zone anchor
+            zone_anchor_price = current_zone_levels[0]["price"]
+            distance_pct = abs(level["price"] - zone_anchor_price) / zone_anchor_price * 100
+            
+            if distance_pct <= ZONE_GROUPING_THRESHOLD_PCT:
+                # Add to current zone
+                current_zone_levels.append(level)
+            else:
+                # Close current zone and start new one
+                if current_zone_levels:
+                    zones.append(current_zone_levels)
+                current_zone_levels = [level]
+        
+        # Don't forget last zone
+        if current_zone_levels:
+            zones.append(current_zone_levels)
+        
+        return zones
+    
+    zones_above_raw = group_levels_into_zones(all_levels_above, "UP")
+    zones_below_raw = group_levels_into_zones(all_levels_below, "DOWN")
+    
+    # ════════════════ STEP 3: CALCULATE ZONE METRICS ════════════════
+    def calculate_zone_metrics(zone_levels: List[dict], direction: str) -> dict:
+        """
+        Calculate metrics for a zone:
+        - zone_top, zone_bottom, zone_center (weighted)
+        - zone_strength (total liquidity)
+        - zone_density (liquidity per price range)
+        - distance_pct from current price
+        """
+        if not zone_levels:
+            return None
+        
+        prices = [l["price"] for l in zone_levels]
+        values = [l["value"] for l in zone_levels]
+        total_value = sum(values)
+        
+        zone_top = max(prices)
+        zone_bottom = min(prices)
+        price_range = zone_top - zone_bottom if zone_top != zone_bottom else 1
+        
+        # Weighted center by liquidity
+        if total_value > 0:
+            zone_center = sum(p * v for p, v in zip(prices, values)) / total_value
+        else:
+            zone_center = (zone_top + zone_bottom) / 2
+        
+        # Density (liquidity per dollar of price range)
+        zone_density = total_value / price_range if price_range > 0 else total_value
+        
+        # Distance from current price
+        if direction == "UP":
+            distance_pct = ((zone_center - current_price) / current_price) * 100
+        else:
+            distance_pct = ((current_price - zone_center) / current_price) * 100
+        
+        return {
+            "zone_top": zone_top,
+            "zone_bottom": zone_bottom,
+            "zone_center": zone_center,
+            "zone_strength": total_value,
+            "zone_density": zone_density,
+            "distance_pct": distance_pct,
+            "num_levels": len(zone_levels),
+            "levels": zone_levels,
+            "direction": direction
+        }
+    
+    # Calculate metrics for all zones
+    zones_above_metrics = [calculate_zone_metrics(z, "UP") for z in zones_above_raw]
+    zones_below_metrics = [calculate_zone_metrics(z, "DOWN") for z in zones_below_raw]
+    
+    # Filter out None values
+    zones_above_metrics = [z for z in zones_above_metrics if z is not None]
+    zones_below_metrics = [z for z in zones_below_metrics if z is not None]
+    
+    # ════════════════ STEP 4: FILTER WEAK ZONES ════════════════
+    def is_valid_zone(zone: dict) -> bool:
+        """Filter out zones that don't meet criteria"""
+        if zone["zone_strength"] < MIN_ZONE_LIQUIDITY:
+            return False
+        if zone["distance_pct"] < MIN_DISTANCE_PCT:
+            return False
+        if zone["distance_pct"] > MAX_DISTANCE_PCT:
+            return False
+        return True
+    
+    valid_zones_above = [z for z in zones_above_metrics if is_valid_zone(z)]
+    valid_zones_below = [z for z in zones_below_metrics if is_valid_zone(z)]
+    
+    # ════════════════ STEP 5: SCORE ZONES ════════════════
+    # Extract market context
+    oi_change_24h = 0
+    compression_level = 0
+    breakout_probability = "LOW"
+    
+    if open_interest_data:
+        oi_change_24h = open_interest_data.get("change_24h", 0)
+    
+    if market_energy_data:
+        compression_level = market_energy_data.get("compression_level", 0)
+        if isinstance(compression_level, str):
+            compression_level = {"LOW": 30, "MEDIUM": 50, "HIGH": 80}.get(compression_level, 50)
+        breakout_probability = market_energy_data.get("breakout_probability", "LOW")
+    
+    def score_zone(zone: dict) -> dict:
+        """
+        Calculate zone score (0-100):
+        - Liquidity strength (0-50)
+        - Distance optimality (0-25): best 0.5-2.5%
+        - Context alignment (0-25)
+        """
+        # ═══ LIQUIDITY STRENGTH SCORE (0-50) ═══
+        strength = zone["zone_strength"]
+        if strength > 0:
+            # log10 scale: $10M = 70, $50M = 77, $100M = 80
+            strength_score = min(50, math.log10(strength) * 7)
+        else:
+            strength_score = 0
+        
+        # ═══ DISTANCE SCORE (0-25) ═══
+        distance = zone["distance_pct"]
+        if 0.5 <= distance <= 2.5:
+            distance_score = 25  # Optimal range
+        elif MIN_DISTANCE_PCT <= distance < 0.5:
+            distance_score = 10  # Too close
+        elif 2.5 < distance <= 4.0:
+            distance_score = 18  # Extended but achievable
+        else:
+            distance_score = 5  # Edge cases
+        
+        # ═══ CONTEXT SCORE (0-25) ═══
+        context_score = 0
+        
+        # OI trend alignment
+        if oi_change_24h > 3:
+            context_score += 7  # Rising OI supports movement
+        elif oi_change_24h > 0:
+            context_score += 3
+        
+        # Compression (energy building)
+        if compression_level > 70:
+            context_score += 7
+        elif compression_level > 50:
+            context_score += 4
+        
+        # Breakout probability
+        if breakout_probability == "HIGH":
+            context_score += 7
+        elif breakout_probability == "MEDIUM":
+            context_score += 4
+        
+        # Density bonus (tight clusters are stronger)
+        if zone["zone_density"] > 1_000_000:
+            context_score += 4
+        
+        # Cap context score
+        context_score = min(25, context_score)
+        
+        # ═══ TOTAL SCORE ═══
+        total_score = strength_score + distance_score + context_score
+        
+        zone["score"] = round(total_score, 1)
+        zone["score_breakdown"] = {
+            "strength": round(strength_score, 1),
+            "distance": round(distance_score, 1),
+            "context": round(context_score, 1)
+        }
+        
+        return zone
+    
+    # Score all valid zones
+    valid_zones_above = [score_zone(z) for z in valid_zones_above]
+    valid_zones_below = [score_zone(z) for z in valid_zones_below]
+    
+    # Sort by score (highest first)
+    valid_zones_above = sorted(valid_zones_above, key=lambda z: z["score"], reverse=True)
+    valid_zones_below = sorted(valid_zones_below, key=lambda z: z["score"], reverse=True)
+    
+    # ════════════════ STEP 6: BUILD OUTPUT ZONES ════════════════
+    def build_liquidity_zone(zone: dict, zone_id: str) -> LiquidityZone:
+        """Convert zone dict to LiquidityZone model"""
+        return LiquidityZone(
+            zone_id=zone_id,
+            direction=zone["direction"],
+            zone_top=round(zone["zone_top"], 2),
+            zone_bottom=round(zone["zone_bottom"], 2),
+            zone_center=round(zone["zone_center"], 2),
+            zone_strength=round(zone["zone_strength"], 0),
+            zone_density=round(zone["zone_density"], 0),
+            distance_pct=round(zone["distance_pct"], 2),
+            num_levels=zone["num_levels"],
+            levels=[LiquidityZoneLevel(
+                price=round(l["price"], 2),
+                value=round(l["value"], 0),
+                source=l["source"]
+            ) for l in zone.get("levels", [])[:10]],  # Limit to 10 levels
+            score=zone["score"],
+            score_breakdown=zone["score_breakdown"]
+        )
+    
+    # Build zone lists
+    zones_above_output = [build_liquidity_zone(z, f"zone_up_{i}") for i, z in enumerate(valid_zones_above)]
+    zones_below_output = [build_liquidity_zone(z, f"zone_down_{i}") for i, z in enumerate(valid_zones_below)]
+    
+    # ════════════════ STEP 7: SELECT PRIMARY & SECONDARY ════════════════
+    all_zones = zones_above_output + zones_below_output
+    all_zones_sorted = sorted(all_zones, key=lambda z: z.score, reverse=True)
+    
+    primary_zone = all_zones_sorted[0] if all_zones_sorted else None
+    
+    # Secondary: prefer opposite direction if available
+    secondary_zone = None
+    if len(all_zones_sorted) > 1:
+        for z in all_zones_sorted[1:]:
+            if primary_zone and z.direction != primary_zone.direction:
+                secondary_zone = z
+                break
+        if secondary_zone is None and len(all_zones_sorted) > 1:
+            secondary_zone = all_zones_sorted[1]
+    
+    # ════════════════ STEP 8: DETERMINE DOMINANT DIRECTION ════════════════
+    total_above = sum(z.zone_strength for z in zones_above_output)
+    total_below = sum(z.zone_strength for z in zones_below_output)
+    
+    if total_above > total_below * 1.3:
+        dominant_direction = "UP"
+    elif total_below > total_above * 1.3:
+        dominant_direction = "DOWN"
+    else:
+        dominant_direction = "BALANCED"
+    
+    # ════════════════ STEP 9: COMPARE WITH LEGACY MAGNET ════════════════
+    zone_vs_legacy_aligned = True
+    legacy_direction = None
+    legacy_score = None
+    
+    if legacy_magnet:
+        legacy_direction = legacy_magnet.target_direction
+        legacy_score = legacy_magnet.magnet_score
+        
+        if primary_zone:
+            # Check if zone and legacy agree on direction
+            if primary_zone.direction == "UP" and legacy_direction == "DOWN":
+                zone_vs_legacy_aligned = False
+            elif primary_zone.direction == "DOWN" and legacy_direction == "UP":
+                zone_vs_legacy_aligned = False
+    
+    # ════════════════ STEP 10: BUILD RESULT ════════════════
+    zones_detected_count = len(zones_above_output) + len(zones_below_output)
+    
+    logger.debug(f"[Zone Engine] Detected {zones_detected_count} zones: "
+                f"{len(zones_above_output)} above, {len(zones_below_output)} below. "
+                f"Primary: {primary_zone.zone_center if primary_zone else 'None'} "
+                f"@ {primary_zone.distance_pct if primary_zone else 0:.2f}% "
+                f"(${primary_zone.zone_strength/1e6 if primary_zone else 0:.1f}M)")
+    
+    return LiquidityZoneEngineResult(
+        timestamp=datetime.now(timezone.utc),
+        current_price=current_price,
+        primary_liquidity_zone=primary_zone,
+        secondary_liquidity_zone=secondary_zone,
+        zones_above=zones_above_output,
+        zones_below=zones_below_output,
+        zones_detected_count=zones_detected_count,
+        dominant_direction=dominant_direction,
+        total_liquidity_above=round(total_above, 0),
+        total_liquidity_below=round(total_below, 0),
+        legacy_magnet_direction=legacy_direction,
+        legacy_magnet_score=legacy_score,
+        zone_vs_legacy_aligned=zone_vs_legacy_aligned,
+        engine_version="zone_v1.0",
+        data_source="Multi-Exchange + CoinGlass (Zone-Based)"
+    )
+
+
 # ============== WHALE ALERT ENGINE ==============
 
 def analyze_whale_activity(
@@ -14183,6 +14669,183 @@ async def get_liquidity_magnet(lang: str = Query(default="it", description="Lang
     )
     
     return magnet
+
+@api_router.get("/liquidity-zones", response_model=LiquidityZoneEngineResult)
+async def get_liquidity_zones(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+    """
+    PREVIEW: Liquidity Zone Engine - Zone-based liquidity detection.
+    
+    This is a parallel enhancement that groups nearby liquidity levels into
+    zones/clusters for more realistic target detection.
+    
+    Key differences from point-based magnet:
+    - Groups levels within 0.3% into zones
+    - Evaluates clusters, not single points
+    - Produces more realistic targets (0.5% - 3%)
+    
+    Returns:
+    - Primary and secondary liquidity zones
+    - All detected zones above/below price
+    - Comparison with legacy point-based magnet
+    
+    NOTE: This is PREVIEW mode only. Does not affect live trading logic.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    # Fetch all required data
+    ticker_task = fetch_kraken_ticker()
+    aggregated_ob_task = get_aggregated_orderbook()
+    candles_task = fetch_kraken_ohlc(240)  # 4H for liquidity clusters
+    
+    ticker, aggregated_orderbook, candles = await asyncio.gather(
+        ticker_task, aggregated_ob_task, candles_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    # Get OI data and liquidation data
+    oi_task = fetch_coinglass_open_interest()
+    liq_task = fetch_coinglass_liquidation()
+    
+    oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
+    
+    open_interest_data = None
+    if oi_data:
+        open_interest_data = {
+            "change_1h": oi_data.get("change_1h", 0),
+            "change_24h": oi_data.get("change_24h", 0)
+        }
+    
+    liquidation_data = None
+    if liq_data:
+        liquidation_data = {
+            "liquidation_levels": liq_data.get("liquidation_levels", [])
+        }
+    
+    # Generate liquidity clusters
+    clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
+    
+    # First get legacy magnet for comparison
+    legacy_magnet = analyze_liquidity_magnet(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data=open_interest_data,
+        lang=lang
+    )
+    
+    # Now analyze with Zone Engine
+    zones_result = analyze_liquidity_zones(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data=open_interest_data,
+        market_energy_data=None,  # Can be enhanced later
+        legacy_magnet=legacy_magnet,
+        lang=lang
+    )
+    
+    return zones_result
+
+@api_router.get("/liquidity-comparison")
+async def get_liquidity_comparison(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+    """
+    PREVIEW: Compare Legacy Point-Based Magnet vs New Zone-Based Engine.
+    
+    Returns side-by-side comparison for analysis and validation.
+    Useful for verifying the zone engine produces better targets.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    # Fetch all required data
+    ticker_task = fetch_kraken_ticker()
+    aggregated_ob_task = get_aggregated_orderbook()
+    candles_task = fetch_kraken_ohlc(240)
+    
+    ticker, aggregated_orderbook, candles = await asyncio.gather(
+        ticker_task, aggregated_ob_task, candles_task
+    )
+    
+    current_price = ticker["price"] if ticker else 0
+    
+    # Get OI and liquidation data
+    oi_task = fetch_coinglass_open_interest()
+    liq_task = fetch_coinglass_liquidation()
+    
+    oi_data, liq_data = await asyncio.gather(oi_task, liq_task)
+    
+    open_interest_data = {"change_1h": oi_data.get("change_1h", 0), "change_24h": oi_data.get("change_24h", 0)} if oi_data else None
+    liquidation_data = {"liquidation_levels": liq_data.get("liquidation_levels", [])} if liq_data else None
+    
+    # Generate clusters
+    clusters, _ = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
+    
+    # Get legacy magnet
+    legacy_magnet = analyze_liquidity_magnet(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data=open_interest_data,
+        lang=lang
+    )
+    
+    # Get zone engine result
+    zones_result = analyze_liquidity_zones(
+        current_price=current_price,
+        aggregated_orderbook=aggregated_orderbook,
+        liquidity_clusters=clusters,
+        liquidation_data=liquidation_data,
+        open_interest_data=open_interest_data,
+        legacy_magnet=legacy_magnet,
+        lang=lang
+    )
+    
+    # Build comparison
+    primary_zone = zones_result.primary_liquidity_zone
+    
+    return {
+        "current_price": current_price,
+        "comparison": {
+            "legacy_point_magnet": {
+                "type": "point-based",
+                "direction": legacy_magnet.target_direction,
+                "target_price": legacy_magnet.nearest_magnet_price,
+                "distance_pct": legacy_magnet.nearest_magnet_distance_percent,
+                "value_usd": legacy_magnet.nearest_magnet_value,
+                "score": legacy_magnet.magnet_score,
+                "strength": legacy_magnet.magnet_strength
+            },
+            "zone_engine": {
+                "type": "zone-based",
+                "direction": primary_zone.direction if primary_zone else "NONE",
+                "zone_top": primary_zone.zone_top if primary_zone else None,
+                "zone_bottom": primary_zone.zone_bottom if primary_zone else None,
+                "zone_center": primary_zone.zone_center if primary_zone else None,
+                "distance_pct": primary_zone.distance_pct if primary_zone else None,
+                "zone_strength_usd": primary_zone.zone_strength if primary_zone else 0,
+                "score": primary_zone.score if primary_zone else 0,
+                "num_levels": primary_zone.num_levels if primary_zone else 0
+            }
+        },
+        "alignment": {
+            "directions_match": zones_result.zone_vs_legacy_aligned,
+            "legacy_direction": legacy_magnet.target_direction,
+            "zone_direction": zones_result.dominant_direction
+        },
+        "summary": {
+            "zones_detected": zones_result.zones_detected_count,
+            "zones_above": len(zones_result.zones_above),
+            "zones_below": len(zones_result.zones_below),
+            "total_liquidity_above": zones_result.total_liquidity_above,
+            "total_liquidity_below": zones_result.total_liquidity_below
+        },
+        "recommendation": "Zone engine provides cluster-based targets that better reflect real market heatmap behavior"
+    }
 
 @api_router.post("/signal-history/record")
 async def record_signal():
