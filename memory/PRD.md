@@ -1,5 +1,56 @@
-# CryptoRadar v3.2.3 - Product Requirements Document
+# CryptoRadar v3.2.4 - Product Requirements Document
 **Last Updated:** 2026-04-07
+
+## ✅ SHADOW TARGET TRACKING SYSTEM FIX (2026-04-07)
+
+### Problem
+Shadow Targets inspector was NOT working:
+- Signals collected but outcomes NEVER tracked
+- Quality = 0%, T1 hits = 0 → indicates no tracking logic
+- System acting as static storage, not analysis engine
+
+### Solution: Real-Time Background Tracking Loop
+
+**Implementation:**
+1. **Background Tracking Loop** (10s interval)
+   - Checks price via Kraken API every 10 seconds
+   - Monitors all active signals for outcome conditions
+   - Auto-expires signals after 4 hours
+
+2. **Outcome Detection Logic**
+   - LONG: T1 hit if price >= target_1, LOSS if price <= stop_loss
+   - SHORT: T1 hit if price <= target_1, LOSS if price >= stop_loss
+   - T2 hit triggers FULL_WIN
+   - 4h timeout triggers EXPIRED
+
+3. **MFE/MAE Tracking**
+   - Max Favorable Excursion (MFE): Best price reached
+   - Max Adverse Excursion (MAE): Worst price reached
+   - Updated on every price check
+
+4. **Database Updates**
+   - `shadow_liquidity_targets.validation` field populated
+   - `signal_history` updated with outcome
+   - Metrics: pnl_percent, mfe_percent, mae_percent, time_to_outcome
+
+5. **Startup Restoration**
+   - Pending signals restored to active tracking on server restart
+   - No lost tracking state
+
+**API Endpoints:**
+- `GET /api/v3/shadow-tracking-status` - Live tracking status
+- `GET /api/v3/shadow-targets` - Enhanced with performance_metrics
+
+**Test Results (2026-04-07):**
+| Test | Expected | Result |
+|------|----------|--------|
+| Tracking Loop | ACTIVE | ✅ PASS |
+| Price Checks | Incrementing | ✅ PASS (9+ checks) |
+| MFE/MAE | Tracking | ✅ PASS |
+| Startup Restore | Signals restored | ✅ PASS (2 signals) |
+| API Response | live_tracking field | ✅ PASS |
+
+---
 
 ## ✅ NEUTRAL HARD RULE IMPLEMENTATION (2026-04-07)
 

@@ -1535,6 +1535,32 @@ async def finalize_shadow_outcome(signal_id: str, outcome_data: Dict[str, Any]) 
             }}
         )
         
+        # CRITICAL: Also update shadow_liquidity_targets validation field
+        await db["shadow_liquidity_targets"].update_one(
+            {"signal_id": signal_id},
+            {"$set": {
+                "validation": {
+                    "status": "completed",
+                    "standard_t1_hit": tracking.get("target_1_hit", False),
+                    "standard_t2_hit": tracking.get("target_2_hit", False),
+                    "shadow_t1_hit": tracking.get("target_1_hit", False),
+                    "shadow_t2_hit": tracking.get("target_2_hit", False),
+                    "stop_hit": tracking.get("stop_hit", False),
+                    "mfe_percent": round(mfe_pct, 2),
+                    "mae_percent": round(mae_pct, 2),
+                    "final_outcome": outcome_data.get("outcome"),
+                    "outcome_price": outcome_price,
+                    "outcome_time": outcome_data.get("outcome_time"),
+                    "pnl_percent": round(pnl_percent, 2),
+                    "price_checks": tracking.get("price_checks", 0),
+                    "time_to_outcome_seconds": (outcome_data.get("outcome_time") - tracking.get("created_at")).total_seconds() if tracking.get("created_at") else None
+                },
+                "outcome": outcome_data.get("outcome"),
+                "mfe_percent": round(mfe_pct, 2),
+                "mae_percent": round(mae_pct, 2)
+            }}
+        )
+        
         # Remove from active tracking
         if signal_id in active_shadow_tracking:
             del active_shadow_tracking[signal_id]
@@ -1559,9 +1585,14 @@ async def check_expired_shadow_signals() -> int:
     expired_signals = []
     
     for signal_id, tracking in active_shadow_tracking.items():
-        age_hours = (now - tracking["created_at"]).total_seconds() / 3600
-        if age_hours > 4:  # 4 hour expiry
-            expired_signals.append(signal_id)
+        created = tracking.get("created_at")
+        if created:
+            # Handle both naive and aware datetimes
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_hours = (now - created).total_seconds() / 3600
+            if age_hours > 4:  # 4 hour expiry
+                expired_signals.append(signal_id)
     
     processed = 0
     for signal_id in expired_signals:
@@ -1645,6 +1676,87 @@ def start_shadow_tracking_task():
     if shadow_tracking_task is None or shadow_tracking_task.done():
         shadow_tracking_task = asyncio.create_task(shadow_tracking_loop())
         logger.info("[SHADOW TRACK] Background task started")
+
+async def restore_pending_shadow_signals():
+    """
+    Restore pending signals to active tracking on startup.
+    This ensures signals continue tracking after server restart.
+    """
+    global active_shadow_tracking
+    
+    try:
+        # Find signals that are marked as shadow_tracked but have PENDING outcome
+        # Look back 12 hours max (signals older than that should be expired anyway)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=12)
+        
+        pending_signals = await signal_history_collection.find({
+            "shadow_tracked": True,
+            "outcome": "PENDING",
+            "timestamp": {"$gte": cutoff}
+        }).to_list(50)
+        
+        restored = 0
+        for sig in pending_signals:
+            signal_id = sig.get("signal_id")
+            if not signal_id or signal_id in active_shadow_tracking:
+                continue
+            
+            direction = sig.get("direction")
+            entry_price = sig.get("btc_price") or sig.get("entry_zone_low", 0)
+            stop_loss = sig.get("stop_loss", 0)
+            target_1 = sig.get("target_1", 0)
+            target_2 = sig.get("target_2", 0)
+            created_at = sig.get("timestamp")
+            
+            if all([direction, entry_price, stop_loss, target_1]):
+                await register_signal_for_shadow_tracking(
+                    signal_id=signal_id,
+                    direction=direction,
+                    entry_price=float(entry_price),
+                    stop_loss=float(stop_loss),
+                    target_1=float(target_1),
+                    target_2=float(target_2) if target_2 else float(target_1) * 1.01,
+                    created_at=created_at
+                )
+                restored += 1
+        
+        # Also restore from shadow_liquidity_targets with pending validation
+        pending_shadow = await db["shadow_liquidity_targets"].find({
+            "validation.status": "pending",
+            "created_at": {"$gte": cutoff}
+        }).to_list(50)
+        
+        for shadow in pending_shadow:
+            signal_id = shadow.get("signal_id")
+            if not signal_id or signal_id in active_shadow_tracking:
+                continue
+            
+            direction = shadow.get("direction")
+            entry_price = shadow.get("entry_price") or shadow.get("current_price", 0)
+            std_targets = shadow.get("standard_targets", {})
+            stop_loss = std_targets.get("stop_loss", 0)
+            target_1 = std_targets.get("target_1", 0)
+            target_2 = std_targets.get("target_2", 0)
+            created_at = shadow.get("created_at")
+            
+            if all([direction, entry_price, stop_loss, target_1]):
+                await register_signal_for_shadow_tracking(
+                    signal_id=signal_id,
+                    direction=direction,
+                    entry_price=float(entry_price),
+                    stop_loss=float(stop_loss),
+                    target_1=float(target_1),
+                    target_2=float(target_2) if target_2 else float(target_1) * 1.01,
+                    created_at=created_at
+                )
+                restored += 1
+        
+        logger.info(f"[SHADOW TRACK] ✅ Restored {restored} pending signals for tracking")
+        return restored
+        
+    except Exception as e:
+        logger.error(f"[SHADOW TRACK] Error restoring pending signals: {e}")
+        return 0
 
 
 async def get_telegram_settings():
@@ -13987,6 +14099,91 @@ async def get_v3_signal_tracking_status():
     }
 
 
+@api_router.get("/v3/shadow-tracking-status")
+async def get_shadow_tracking_status():
+    """
+    Get REAL-TIME status of shadow outcome tracking system.
+    
+    Shows:
+    - Active signals being tracked in memory
+    - Current tracking loop status
+    - Recent price checks
+    - Performance of tracking system
+    """
+    global active_shadow_tracking, shadow_tracking_task
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get all active tracking data
+    active_signals = []
+    for sig_id, tracking in active_shadow_tracking.items():
+        created = tracking.get("created_at")
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_seconds = (now - created).total_seconds() if created else 0
+        
+        # Calculate current MFE/MAE
+        entry = tracking.get("entry_price", 0)
+        direction = tracking.get("direction", "LONG")
+        max_fav = tracking.get("max_favorable_price", entry)
+        max_adv = tracking.get("max_adverse_price", entry)
+        
+        if direction == "LONG" and entry:
+            current_mfe = ((max_fav - entry) / entry) * 100
+            current_mae = ((max_adv - entry) / entry) * 100
+        elif entry:
+            current_mfe = ((entry - max_fav) / entry) * 100
+            current_mae = ((entry - max_adv) / entry) * 100
+        else:
+            current_mfe = 0
+            current_mae = 0
+        
+        active_signals.append({
+            "signal_id": sig_id,
+            "direction": direction,
+            "entry_price": round(entry, 2),
+            "stop_loss": round(tracking.get("stop_loss", 0), 2),
+            "target_1": round(tracking.get("target_1", 0), 2),
+            "target_2": round(tracking.get("target_2", 0), 2),
+            "age_minutes": round(age_seconds / 60, 1),
+            "price_checks": tracking.get("price_checks", 0),
+            "t1_hit": tracking.get("target_1_hit", False),
+            "t2_hit": tracking.get("target_2_hit", False),
+            "stop_hit": tracking.get("stop_hit", False),
+            "current_mfe_pct": round(current_mfe, 2),
+            "current_mae_pct": round(current_mae, 2),
+            "max_favorable_price": round(max_fav, 2),
+            "max_adverse_price": round(max_adv, 2),
+            "outcome": tracking.get("outcome", "PENDING")
+        })
+    
+    # Check tracking loop status
+    loop_running = shadow_tracking_task is not None and not shadow_tracking_task.done()
+    
+    # Get validated count from DB
+    validated_count = await db["shadow_liquidity_targets"].count_documents({"validation.status": "completed"})
+    pending_count = await db["shadow_liquidity_targets"].count_documents({"validation.status": "pending"})
+    
+    return {
+        "status": "ACTIVE" if loop_running else "STOPPED",
+        "tracking_loop_running": loop_running,
+        "check_interval_seconds": 10,
+        "expiry_hours": 4,
+        
+        "active_tracking": {
+            "count": len(active_signals),
+            "signals": active_signals
+        },
+        
+        "database_status": {
+            "validated_signals": validated_count,
+            "pending_signals": pending_count
+        },
+        
+        "note": "Tracking loop checks price every 10 seconds. Signals expire after 4 hours without outcome."
+    }
+
+
 @api_router.post("/v3/test-record-signal")
 async def test_record_v3_signal():
     """
@@ -14107,16 +14304,12 @@ async def backfill_v3_signals():
 @api_router.get("/v3/shadow-targets")
 async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
     """
-    SHADOW MODE ANALYSIS v0.2: View shadow liquidity target data.
-    
-    This endpoint returns shadow targets calculated in parallel with live V3 targets.
-    Data is for analysis only - does NOT affect live trading decisions.
+    SHADOW MODE ANALYSIS v0.3: View shadow liquidity target data with REAL-TIME tracking.
     
     Returns:
         - Recent shadow target calculations with strength-based scoring
-        - Comparison with standard targets
-        - Data quality metrics
-        - Exit plan suggestions
+        - LIVE tracking status for pending signals
+        - Performance metrics: % T1 hits, % T2 hits, % SL hits, avg MFE, avg MAE
         - Validation results (when available)
     """
     try:
@@ -14135,54 +14328,96 @@ async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
         # Calculate aggregate statistics
         total_count = await collection.count_documents({})
         validated_count = await collection.count_documents({"validation.status": "completed"})
+        pending_count = await collection.count_documents({"validation.status": "pending"})
         
-        # Quality distribution
-        quality_scores = [d.get("data_quality", {}).get("overall_quality", 0) for d in shadow_targets]
-        avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0
+        # TRACKING METRICS - Real performance data
+        validated_docs = await collection.find({"validation.status": "completed"}).to_list(1000)
         
-        # Target comparison stats
-        t1_diffs = [d.get("comparison", {}).get("t1_difference_percent", 0) for d in shadow_targets if d.get("comparison")]
-        avg_t1_diff = sum(t1_diffs) / len(t1_diffs) if t1_diffs else 0
+        t1_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("standard_t1_hit"))
+        t2_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("standard_t2_hit"))
+        sl_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("stop_hit"))
         
-        # Strength score stats (new in v0.2)
-        strength_scores = [
-            d.get("liquidity_targets", {}).get("primary_magnet", {}).get("strength_score", 0) 
-            for d in shadow_targets 
-            if d.get("liquidity_targets", {}).get("primary_magnet", {}).get("strength_score")
-        ]
-        avg_strength = sum(strength_scores) / len(strength_scores) if strength_scores else 0
+        mfe_values = [d.get("validation", {}).get("mfe_percent", 0) for d in validated_docs if d.get("validation", {}).get("mfe_percent") is not None]
+        mae_values = [d.get("validation", {}).get("mae_percent", 0) for d in validated_docs if d.get("validation", {}).get("mae_percent") is not None]
+        
+        avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
+        avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0
+        
+        t1_pct = (t1_hits / validated_count * 100) if validated_count > 0 else 0
+        t2_pct = (t2_hits / validated_count * 100) if validated_count > 0 else 0
+        sl_pct = (sl_hits / validated_count * 100) if validated_count > 0 else 0
+        
+        # Outcome distribution
+        outcomes = {}
+        for d in validated_docs:
+            outcome = d.get("validation", {}).get("final_outcome", "UNKNOWN")
+            outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        
+        # Active tracking status (from memory)
+        active_tracking_count = len(active_shadow_tracking)
+        active_signals = []
+        now = datetime.now(timezone.utc)
+        for sig_id, tracking in active_shadow_tracking.items():
+            created = tracking.get("created_at")
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_min = round((now - created).total_seconds() / 60, 1) if created else 0
+            
+            active_signals.append({
+                "signal_id": sig_id[:12],
+                "direction": tracking.get("direction"),
+                "entry_price": tracking.get("entry_price"),
+                "target_1": tracking.get("target_1"),
+                "target_2": tracking.get("target_2"),
+                "stop_loss": tracking.get("stop_loss"),
+                "price_checks": tracking.get("price_checks", 0),
+                "t1_hit": tracking.get("target_1_hit", False),
+                "age_minutes": age_min
+            })
         
         return {
             "status": "SHADOW_MODE_ACTIVE",
-            "engine_version": "shadow_liquidity_v0.2",
+            "engine_version": "shadow_liquidity_v0.3",
             "total_collected": total_count,
             "total_validated": validated_count,
+            "total_pending": pending_count,
             "showing": len(shadow_targets),
             
-            "aggregate_stats": {
-                "avg_data_quality": round(avg_quality, 1),
-                "avg_t1_difference_percent": round(avg_t1_diff, 2),
-                "avg_primary_magnet_strength": round(avg_strength, 1),
-                "signals_with_liquidity_t1": sum(1 for d in shadow_targets if d.get("liquidity_targets", {}).get("target_1")),
-                "signals_with_liquidity_t2": sum(1 for d in shadow_targets if d.get("liquidity_targets", {}).get("target_2")),
-                "signals_validated": validated_count
+            # NEW: Live tracking status
+            "live_tracking": {
+                "active_signals": active_tracking_count,
+                "tracking_interval_seconds": 10,
+                "signals_being_tracked": active_signals[:10]  # Show first 10
             },
             
-            "data_source_coverage": {
-                "has_liquidation_data": sum(1 for d in shadow_targets if d.get("data_quality", {}).get("has_liquidation_data")),
-                "has_orderbook_data": sum(1 for d in shadow_targets if d.get("data_quality", {}).get("has_orderbook_data")),
-                "has_cluster_data": sum(1 for d in shadow_targets if d.get("data_quality", {}).get("has_cluster_data")),
-                "has_magnet_data": sum(1 for d in shadow_targets if d.get("data_quality", {}).get("has_magnet_data"))
+            # NEW: Performance metrics (what UI needs)
+            "performance_metrics": {
+                "t1_hit_percent": round(t1_pct, 1),
+                "t2_hit_percent": round(t2_pct, 1),
+                "sl_hit_percent": round(sl_pct, 1),
+                "avg_mfe_percent": round(avg_mfe, 2),
+                "avg_mae_percent": round(avg_mae, 2),
+                "sample_size": validated_count,
+                "outcome_distribution": outcomes
+            },
+            
+            "aggregate_stats": {
+                "signals_validated": validated_count,
+                "signals_pending": pending_count,
+                "t1_hits_count": t1_hits,
+                "t2_hits_count": t2_hits,
+                "sl_hits_count": sl_hits
             },
             
             "recent_targets": shadow_targets,
             
-            "note": "This is SHADOW MODE data - does not affect live V3 targets. Targets now ranked by STRENGTH, not proximity."
+            "note": "LIVE TRACKING ACTIVE - Signals tracked every 10s. Metrics update in real-time."
         }
         
     except Exception as e:
         logger.error(f"Error fetching shadow targets: {e}")
-        return {"error": str(e), "status": "ERROR"}
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
 
 
 @api_router.get("/v3/shadow-performance")
@@ -17605,8 +17840,12 @@ async def startup_event():
     
     # ============== START SHADOW TRACKING LOOP ==============
     try:
+        # First restore any pending signals from previous session
+        restored = await restore_pending_shadow_signals()
+        
+        # Then start the tracking loop
         start_shadow_tracking_task()
-        logger.info("✅ Shadow Tracking: Started (10s interval)")
+        logger.info(f"✅ Shadow Tracking: Started (10s interval, {restored} signals restored)")
     except Exception as e:
         logger.error(f"❌ Shadow Tracking: Failed to start - {e}")
     
