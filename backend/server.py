@@ -9861,13 +9861,24 @@ def analyze_liquidity_magnet(
     else:
         data_source_str = f"Multi-Exchange + CoinGlass (v2.2, significance={primary_significance})"
     
+    # When no_clear_magnet is True, use current_price and 0.0 as placeholders
+    # (Pydantic model requires float, not None for these required fields)
+    if no_clear_magnet:
+        nearest_price = round(current_price, 2)
+        nearest_distance = 0.0
+        nearest_value = 0.0
+    else:
+        nearest_price = round(primary_magnet.get("price", current_price), 2)
+        nearest_distance = round(primary_distance, 2)
+        nearest_value = round(primary_magnet.get("value", 0), 0)
+    
     return LiquidityMagnet(
         magnet_score=round(magnet_score, 1),
         target_direction=target_direction,
         magnet_strength=magnet_strength,
-        nearest_magnet_price=round(primary_magnet.get("price", current_price), 2) if not no_clear_magnet else None,
-        nearest_magnet_distance_percent=round(primary_distance, 2) if not no_clear_magnet else None,
-        nearest_magnet_value=round(primary_magnet.get("value", 0), 0),
+        nearest_magnet_price=nearest_price,
+        nearest_magnet_distance_percent=nearest_distance,
+        nearest_magnet_value=nearest_value,
         secondary_magnet_price=round(secondary_magnet["price"], 2) if secondary_magnet and not no_clear_magnet else None,
         secondary_magnet_distance_percent=round(-secondary_magnet["distance_pct"] if secondary_magnet.get("side") == "below" else secondary_magnet["distance_pct"], 2) if secondary_magnet and not no_clear_magnet else None,
         secondary_magnet_value=round(secondary_magnet["value"], 0) if secondary_magnet else None,

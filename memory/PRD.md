@@ -1,5 +1,35 @@
-# CryptoRadar v3.2.2 - Product Requirements Document
+# CryptoRadar v3.2.3 - Product Requirements Document
 **Last Updated:** 2026-04-07
+
+## ✅ NEUTRAL HARD RULE IMPLEMENTATION (2026-04-07)
+
+### Problem
+When liquidity exists on BOTH sides within 0.1% of current price, the system was still assigning a directional bias. This created false signals when price is trapped inside a dense liquidity cluster.
+
+### Solution: "LIQUIDITY TOO CLOSE" Hard Rule
+
+**Logic:**
+- If closest liquidity ABOVE < 0.1% AND closest liquidity BELOW < 0.1%
+- THEN: direction = "NEUTRAL", magnet_strength = "LOW"
+- Signal flag: "NO CLEAR MAGNET - LIQUIDITY TOO CLOSE"
+- Data source: "v2.2, NON_ACTIONABLE - liquidity too close"
+
+**Implementation Details:**
+- `no_clear_magnet` flag set when both sides < 0.1% (NO_MAGNET_THRESHOLD)
+- Score forced to 25 (minimum)
+- `sweep_expectation` = "NON_ACTIONABLE"
+- `attraction_ratio` = 1.0 (perfectly balanced)
+- `nearest_magnet_price` = current_price (placeholder, not actionable)
+- `nearest_magnet_distance_percent` = 0.0
+
+**Test Results (2026-04-07):**
+| Test | Condition | Result |
+|------|-----------|--------|
+| Both < 0.1% | Primary 0.08%, Secondary 0.03% | ✅ NEUTRAL + LOW |
+| Signal flag | Contains "TOO CLOSE" | ✅ PASS |
+| Data source | NON_ACTIONABLE | ✅ PASS |
+
+---
 
 ## 🔧 TARGET SELECTION IMPROVEMENT (2026-04-07)
 
