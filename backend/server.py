@@ -9410,6 +9410,9 @@ def analyze_liquidity_magnet(
     OPTIMAL_DISTANCE_MIN = 0.5  # Optimal range start
     OPTIMAL_DISTANCE_MAX = 3.0  # Optimal range end
     
+    # HARD RULE: No direction if liquidity too close on BOTH sides
+    NO_MAGNET_THRESHOLD = 0.1  # If both sides within 0.1% = NO CLEAR MAGNET
+    
     # ======== 1. AGGREGATE LIQUIDITY DATA ========
     liquidity_above_total = 0
     liquidity_below_total = 0
@@ -9713,32 +9716,62 @@ def analyze_liquidity_magnet(
     logger.debug(f"[Magnet v2.1] Selection: optimal={len(all_optimal)}, good={len(all_good)}, noise={len(all_noise)}")
     logger.debug(f"[Magnet v2.1] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% [{primary_magnet.get('significance', 'UNKNOWN')}]")
     
+    # ══════════════════════════════════════════════════════════════════════
+    # HARD RULE: NO MAGNET IF LIQUIDITY TOO CLOSE ON BOTH SIDES
+    # If both above and below have nearest liquidity within 0.1%, this is
+    # NOT a magnet - price is already inside liquidity, no movement to capture
+    # ══════════════════════════════════════════════════════════════════════
+    
+    # Find closest liquidity on each side
+    closest_above_dist = min([z.get("distance_pct", 999) for z in valid_above], default=999)
+    closest_below_dist = min([z.get("distance_pct", 999) for z in valid_below], default=999)
+    
+    no_clear_magnet = False
+    
+    if closest_above_dist <= NO_MAGNET_THRESHOLD and closest_below_dist <= NO_MAGNET_THRESHOLD:
+        # BOTH sides have liquidity within 0.1% - NO CLEAR MAGNET
+        no_clear_magnet = True
+        logger.info(f"[Magnet v2.2] NO CLEAR MAGNET - liquidity too close on both sides "
+                   f"(above: {closest_above_dist:.2f}%, below: {closest_below_dist:.2f}%)")
+        signals.clear()
+        signals.append("NO CLEAR MAGNET - LIQUIDITY TOO CLOSE")
+    
     # ======== 6. DETERMINE TARGET DIRECTION ========
     total_above_score = sum(z.get("value", 0) for z in valid_above)  # Use VALUE for direction
     total_below_score = sum(z.get("value", 0) for z in valid_below)
     total_score = total_above_score + total_below_score
     
-    if total_score > 0:
-        score_ratio = total_above_score / total_below_score if total_below_score > 0 else 10.0
-    else:
+    if no_clear_magnet:
+        # HARD RULE: No direction when liquidity too close on both sides
+        target_direction = "NEUTRAL"
         score_ratio = 1.0
-    
-    if score_ratio > 1.3:
-        target_direction = "UP"
-        signals.append(get_translation("magnet_stronger_above", lang, score_ratio))
-    elif score_ratio < 0.77 and score_ratio > 0:
-        target_direction = "DOWN"
-        inverse_ratio = 1/score_ratio if score_ratio > 0 else 1.0
-        signals.append(get_translation("magnet_stronger_below", lang, inverse_ratio))
+    elif total_score > 0:
+        score_ratio = total_above_score / total_below_score if total_below_score > 0 else 10.0
+        
+        if score_ratio > 1.3:
+            target_direction = "UP"
+            signals.append(get_translation("magnet_stronger_above", lang, score_ratio))
+        elif score_ratio < 0.77 and score_ratio > 0:
+            target_direction = "DOWN"
+            inverse_ratio = 1/score_ratio if score_ratio > 0 else 1.0
+            signals.append(get_translation("magnet_stronger_below", lang, inverse_ratio))
+        else:
+            target_direction = "BALANCED"
+            signals.append(get_translation("magnet_balanced", lang))
     else:
         target_direction = "BALANCED"
+        score_ratio = 1.0
         signals.append(get_translation("magnet_balanced", lang))
     
     # ======== 7. CALCULATE OVERALL MAGNET SCORE ========
     # Based on the strength of the primary magnet AND its significance
     primary_significance = primary_magnet.get("significance", "UNKNOWN")
     
-    if primary_magnet.get("total_score", 0) > 0:
+    # HARD RULE: If no clear magnet, force LOW score
+    if no_clear_magnet:
+        magnet_score = 25  # Very low score - non-actionable
+        primary_significance = "NON_ACTIONABLE"
+    elif primary_magnet.get("total_score", 0) > 0:
         raw_score = primary_magnet.get("total_score", 0)
         
         # Penalize score if primary is WEAK (noise)
@@ -9755,7 +9788,12 @@ def analyze_liquidity_magnet(
         magnet_score = 45  # Neutral when no valid data
     
     # ======== 8. DETERMINE MAGNET STRENGTH (based on significance) ========
-    if primary_significance == "WEAK":
+    # HARD RULE: No clear magnet = LOW strength, non-actionable
+    if no_clear_magnet:
+        magnet_strength = "LOW"
+        # Clear any previous signals and set the warning
+        signals = ["NO CLEAR MAGNET - LIQUIDITY TOO CLOSE"]
+    elif primary_significance == "WEAK":
         magnet_strength = "WEAK"
         signals.append(get_translation("magnet_weak_distance", lang) if hasattr(get_translation, '__call__') else "Target too close - low significance")
     elif target_direction == "BALANCED":
@@ -9774,8 +9812,10 @@ def analyze_liquidity_magnet(
     # ======== 9. SWEEP EXPECTATION ========
     sweep_expectation = "NO_CLEAR_SWEEP"
     
-    # Only set sweep if primary is not WEAK
-    if primary_significance != "WEAK":
+    # HARD RULE: No sweep expectation if no clear magnet
+    if no_clear_magnet:
+        sweep_expectation = "NON_ACTIONABLE"
+    elif primary_significance != "WEAK":
         if target_direction == "UP" and secondary_magnet and secondary_magnet.get("side") == "below":
             if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
                 sweep_expectation = "SWEEP_DOWN_FIRST"
@@ -9785,7 +9825,7 @@ def analyze_liquidity_magnet(
                 sweep_expectation = "SWEEP_UP_FIRST"
                 signals.append(get_translation("sweep_up_first", lang, secondary_magnet["price"]))
         
-        if magnet_score >= 70 and target_direction != "BALANCED":
+        if magnet_score >= 70 and target_direction not in ["BALANCED", "NEUTRAL"]:
             if target_direction == "UP":
                 sweep_expectation = "SWEEP_UP_FIRST"
             else:
@@ -9796,26 +9836,40 @@ def analyze_liquidity_magnet(
     if primary_side == "below":
         primary_distance = -primary_distance  # Negative for below
     
-    explanation = _build_magnet_explanation(
-        magnet_score, target_direction, magnet_strength,
-        primary_magnet.get("price", current_price), primary_distance,
-        liquidity_above_total, liquidity_below_total,
-        sweep_expectation, lang
-    )
+    # Build explanation - special case for NO CLEAR MAGNET
+    if no_clear_magnet:
+        explanation = "NO CLEAR MAGNET - Price is inside liquidity on both sides. No directional attraction. Wait for price to move away from immediate liquidity before taking action."
+    else:
+        explanation = _build_magnet_explanation(
+            magnet_score, target_direction, magnet_strength,
+            primary_magnet.get("price", current_price), primary_distance,
+            liquidity_above_total, liquidity_below_total,
+            sweep_expectation, lang
+        )
     
     # Log selection details
-    logger.debug(f"[Magnet v2.1] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
-                f"[{primary_significance}] (score={primary_magnet.get('total_score', 0):.0f}), Dir={target_direction}")
+    if no_clear_magnet:
+        logger.info(f"[Magnet v2.2] NO CLEAR MAGNET - both sides within {NO_MAGNET_THRESHOLD}% "
+                   f"(above: {closest_above_dist:.2f}%, below: {closest_below_dist:.2f}%)")
+    else:
+        logger.debug(f"[Magnet v2.2] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
+                    f"[{primary_significance}] (score={primary_magnet.get('total_score', 0):.0f}), Dir={target_direction}")
+    
+    # Build data source string
+    if no_clear_magnet:
+        data_source_str = "Multi-Exchange + CoinGlass (v2.2, NON_ACTIONABLE - liquidity too close)"
+    else:
+        data_source_str = f"Multi-Exchange + CoinGlass (v2.2, significance={primary_significance})"
     
     return LiquidityMagnet(
         magnet_score=round(magnet_score, 1),
         target_direction=target_direction,
         magnet_strength=magnet_strength,
-        nearest_magnet_price=round(primary_magnet.get("price", current_price), 2),
-        nearest_magnet_distance_percent=round(primary_distance, 2),
+        nearest_magnet_price=round(primary_magnet.get("price", current_price), 2) if not no_clear_magnet else None,
+        nearest_magnet_distance_percent=round(primary_distance, 2) if not no_clear_magnet else None,
         nearest_magnet_value=round(primary_magnet.get("value", 0), 0),
-        secondary_magnet_price=round(secondary_magnet["price"], 2) if secondary_magnet else None,
-        secondary_magnet_distance_percent=round(-secondary_magnet["distance_pct"] if secondary_magnet.get("side") == "below" else secondary_magnet["distance_pct"], 2) if secondary_magnet else None,
+        secondary_magnet_price=round(secondary_magnet["price"], 2) if secondary_magnet and not no_clear_magnet else None,
+        secondary_magnet_distance_percent=round(-secondary_magnet["distance_pct"] if secondary_magnet.get("side") == "below" else secondary_magnet["distance_pct"], 2) if secondary_magnet and not no_clear_magnet else None,
         secondary_magnet_value=round(secondary_magnet["value"], 0) if secondary_magnet else None,
         liquidity_above_total=round(liquidity_above_total, 0),
         liquidity_below_total=round(liquidity_below_total, 0),
@@ -9823,7 +9877,7 @@ def analyze_liquidity_magnet(
         attraction_ratio=round(score_ratio, 2),
         signals=signals[:5],
         explanation=explanation,
-        data_source=f"Multi-Exchange + CoinGlass (v2.1, significance={primary_significance})"
+        data_source=data_source_str
     )
 
 
