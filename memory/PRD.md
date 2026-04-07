@@ -1,5 +1,62 @@
-# CryptoRadar v3.2.1 - Product Requirements Document
-**Last Updated:** 2026-04-06
+# CryptoRadar v3.2.2 - Product Requirements Document
+**Last Updated:** 2026-04-07
+
+## 🔧 TARGET SELECTION IMPROVEMENT (2026-04-07)
+
+### Problem
+After reducing filters, system was selecting targets too close (0.04%-0.05%) which is noise, not meaningful liquidity.
+
+### Solution: Intelligent Target Selection v2.1
+
+**New Logic:**
+1. **Detect all liquidity** (keep low thresholds)
+2. **Categorize by quality tier:**
+   - OPTIMAL: 0.5%-3% distance + $3M+ value
+   - GOOD: 0.3%-0.5% or 3%-4% distance
+   - NOISE: < 0.3% distance (too close)
+3. **Select from best tier available:**
+   - Priority: OPTIMAL > GOOD > NOISE
+   - Within tier: highest VALUE wins
+4. **Flag weak targets:**
+   - WEAK = distance < 0.3% or low value
+   - STRONG = optimal distance + good value
+
+**Scoring Changes:**
+| Component | Old Weight | New Weight |
+|-----------|------------|------------|
+| Value | 0-50 | 0-60 (DOMINANT) |
+| Distance | 0-30 | 0-25 (penalize < 0.3%) |
+| Context | 0-20 | 0-15 (reduced) |
+
+**Distance Scoring:**
+| Distance | Old Score | New Score |
+|----------|-----------|-----------|
+| < 0.3% (noise) | 15 | 3 |
+| 0.3-0.5% | 15 | 10 |
+| 0.5-3% (optimal) | 30 | 25 |
+| 3-4% | 20 | 18 |
+| > 4% | 5 | 8 |
+
+**Output Enhancement:**
+```json
+{
+  "magnet_strength": "WEAK",  // WEAK/MODERATE/STRONG/VERY_STRONG
+  "data_source": "Multi-Exchange + CoinGlass (v2.1, significance=WEAK)"
+}
+```
+
+### Edge Case Handling
+- If ONLY noise targets exist → still return them
+- BUT flag as WEAK and penalize score by 40%
+- UI shows "low significance" warning
+
+### Current Behavior
+- Magnet correctly shows WEAK for 0.03% targets
+- Score penalized: 57.8 instead of ~80
+- Data source includes significance flag
+- Zone Engine uses same tiered selection
+
+---
 
 ## 🔧 LIQUIDITY PIPELINE FIX (2026-04-06)
 

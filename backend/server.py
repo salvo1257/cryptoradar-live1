@@ -9400,9 +9400,15 @@ def analyze_liquidity_magnet(
     signals = []
     
     # ======== CONFIGURATION ========
-    MIN_LIQUIDITY_VALUE = 1_000_000  # $1M minimum (lowered from $5M for preview)
-    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum (lowered from 0.2% for preview)
+    # Detection thresholds (keep low to capture all data)
+    MIN_LIQUIDITY_VALUE = 1_000_000  # $1M minimum for detection
+    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum for detection
     MAX_DISTANCE_PCT = 5.0  # 5% maximum distance
+    
+    # Target selection thresholds (higher for quality)
+    WEAK_DISTANCE_THRESHOLD = 0.3  # Below this = weak/noise
+    OPTIMAL_DISTANCE_MIN = 0.5  # Optimal range start
+    OPTIMAL_DISTANCE_MAX = 3.0  # Optimal range end
     
     # ======== 1. AGGREGATE LIQUIDITY DATA ========
     liquidity_above_total = 0
@@ -9527,68 +9533,98 @@ def analyze_liquidity_magnet(
         - distance_score (0-30): Optimal range scoring
         - context_score (0-20): Market context bonus
         - total_score: Sum of all scores
+        - significance: STRONG/WEAK flag
         """
         value = zone.get("value", 0)
         distance = zone.get("distance_pct", 0)
         
-        # ═══ STEP 1: FILTER - Skip if below thresholds ═══
+        # ═══ STEP 1: FILTER - Skip if below detection thresholds ═══
         if value < MIN_LIQUIDITY_VALUE or distance < MIN_DISTANCE_PCT:
             zone["value_score"] = 0
             zone["distance_score"] = 0
             zone["context_score"] = 0
             zone["total_score"] = 0
             zone["filtered_out"] = True
+            zone["significance"] = "FILTERED"
             return zone
         
         zone["filtered_out"] = False
         
-        # ═══ STEP 2: VALUE SCORE (0-50) ═══
-        # log10 scaling: $10M = 70, $100M = 80, $1B = 90
-        # Capped at 50 for this component
+        # ═══ STEP 2: VALUE SCORE (0-60) - DOMINANT FACTOR ═══
+        # Increased from 0-50 to 0-60 to prioritize liquidity size
+        # log10 scaling: $1M = 60, $10M = 70, $100M = 80
         if value > 0:
-            value_score = min(50, math.log10(value) * 10)
+            value_score = min(60, math.log10(value) * 10)
         else:
             value_score = 0
         zone["value_score"] = round(value_score, 1)
         
-        # ═══ STEP 3: DISTANCE SCORE (0-30) ═══
-        # Optimal range: 0.5% - 2.5% = 30 points (best R:R targets)
-        # Too close (0.2-0.5%): 15 points (low reward)
-        # Bit far (2.5-4%): 20 points (achievable but extended)
-        # Very far (>4%): 5 points (unlikely to reach)
-        if 0.5 <= distance <= 2.5:
-            distance_score = 30  # Optimal range
-        elif MIN_DISTANCE_PCT <= distance < 0.5:
-            distance_score = 15  # Too close
-        elif 2.5 < distance <= 4.0:
-            distance_score = 20  # Extended but achievable
+        # ═══ STEP 3: DISTANCE SCORE (0-25) - OPTIMAL RANGE PREFERRED ═══
+        # NEW: Heavily penalize too-close targets, reward optimal range
+        # Optimal range: 0.5% - 3.0% = MAX points
+        # Too close (< 0.3%): MINIMAL points (noise)
+        # Close but weak (0.3-0.5%): LOW points
+        # Extended (3-4%): MEDIUM points
+        # Very far (>4%): LOW points
+        
+        if distance < WEAK_DISTANCE_THRESHOLD:
+            # Too close - this is noise, not a real target
+            distance_score = 3  # Minimal score
+            zone["is_noise"] = True
+        elif WEAK_DISTANCE_THRESHOLD <= distance < OPTIMAL_DISTANCE_MIN:
+            # Close but not noise - weak target
+            distance_score = 10
+            zone["is_noise"] = False
+        elif OPTIMAL_DISTANCE_MIN <= distance <= OPTIMAL_DISTANCE_MAX:
+            # OPTIMAL RANGE - maximum score
+            distance_score = 25
+            zone["is_noise"] = False
+        elif OPTIMAL_DISTANCE_MAX < distance <= 4.0:
+            # Extended but achievable
+            distance_score = 18
+            zone["is_noise"] = False
         else:
-            distance_score = 5  # Very far
+            # Very far
+            distance_score = 8
+            zone["is_noise"] = False
+        
         zone["distance_score"] = distance_score
         
-        # ═══ STEP 4: CONTEXT SCORE (0-20) ═══
+        # ═══ STEP 4: CONTEXT SCORE (0-15) - Reduced weight ═══
         context_score = 0
         
         # OI change supporting movement
         if oi_change_24h > 3:
-            context_score += 5  # Rising OI = more fuel
+            context_score += 4
         
         # Compression suggesting breakout
         if compression_level > 70 or compression_level == "HIGH":
-            context_score += 5  # Compression = energy building
+            context_score += 4
         
         # High breakout probability
         if breakout_probability == "HIGH":
-            context_score += 5
+            context_score += 4
         
         # Major strength zones get bonus
         if zone.get("strength") == "major":
-            context_score += 5
+            context_score += 3
         
-        zone["context_score"] = context_score
+        zone["context_score"] = min(15, context_score)
         
         # ═══ STEP 5: TOTAL SCORE ═══
-        zone["total_score"] = value_score + distance_score + context_score
+        zone["total_score"] = zone["value_score"] + zone["distance_score"] + zone["context_score"]
+        
+        # ═══ STEP 6: SIGNIFICANCE FLAG ═══
+        # STRONG: Optimal distance + good value
+        # WEAK: Too close (noise) or low value
+        if distance < WEAK_DISTANCE_THRESHOLD:
+            zone["significance"] = "WEAK"
+        elif distance >= OPTIMAL_DISTANCE_MIN and distance <= OPTIMAL_DISTANCE_MAX and value >= 3_000_000:
+            zone["significance"] = "STRONG"
+        elif value >= 5_000_000:
+            zone["significance"] = "MODERATE"
+        else:
+            zone["significance"] = "WEAK"
         
         return zone
     
@@ -9596,49 +9632,90 @@ def analyze_liquidity_magnet(
     above_zones = [calculate_strength_score(z) for z in above_zones]
     below_zones = [calculate_strength_score(z) for z in below_zones]
     
-    # ======== 4. FILTER AND SORT BY STRENGTH (NOT DISTANCE!) ========
+    # ======== 4. INTELLIGENT TARGET SELECTION ========
+    # Priority: OPTIMAL distance zones > STRONG zones > any valid zones
     valid_above = [z for z in above_zones if not z.get("filtered_out", True)]
     valid_below = [z for z in below_zones if not z.get("filtered_out", True)]
     
-    # Sort by total_score (STRENGTH), not distance
-    valid_above_sorted = sorted(valid_above, key=lambda z: z.get("total_score", 0), reverse=True)
-    valid_below_sorted = sorted(valid_below, key=lambda z: z.get("total_score", 0), reverse=True)
+    # Separate zones by quality tier
+    def categorize_zones(zones):
+        optimal = []  # Distance 0.5-3%, value > $3M
+        good = []     # Distance 0.3-0.5% or 3-4%, value > $1M
+        noise = []    # Distance < 0.3%
+        
+        for z in zones:
+            dist = z.get("distance_pct", 0)
+            val = z.get("value", 0)
+            
+            if OPTIMAL_DISTANCE_MIN <= dist <= OPTIMAL_DISTANCE_MAX and val >= 3_000_000:
+                optimal.append(z)
+            elif dist < WEAK_DISTANCE_THRESHOLD:
+                noise.append(z)
+            else:
+                good.append(z)
+        
+        return optimal, good, noise
     
-    # ======== 5. SELECT PRIMARY AND SECONDARY MAGNETS ========
-    # Combine all valid zones and pick top 2 by score
-    all_valid = []
-    for z in valid_above_sorted:
-        z["side"] = "above"
-        all_valid.append(z)
-    for z in valid_below_sorted:
-        z["side"] = "below"
-        all_valid.append(z)
+    optimal_above, good_above, noise_above = categorize_zones(valid_above)
+    optimal_below, good_below, noise_below = categorize_zones(valid_below)
     
-    all_valid_sorted = sorted(all_valid, key=lambda z: z.get("total_score", 0), reverse=True)
+    # Sort each tier by VALUE (not total_score) - value is dominant
+    for tier in [optimal_above, good_above, noise_above, optimal_below, good_below, noise_below]:
+        tier.sort(key=lambda z: z.get("value", 0), reverse=True)
     
-    # Primary magnet = highest score
-    if all_valid_sorted:
-        primary_magnet = all_valid_sorted[0]
-        primary_side = primary_magnet.get("side", "above")
+    # ======== 5. SELECT PRIMARY MAGNET ========
+    # Priority: optimal > good > noise
+    all_optimal = optimal_above + optimal_below
+    all_good = good_above + good_below
+    all_noise = noise_above + noise_below
+    
+    # Sort combined lists by value
+    all_optimal.sort(key=lambda z: z.get("value", 0), reverse=True)
+    all_good.sort(key=lambda z: z.get("value", 0), reverse=True)
+    all_noise.sort(key=lambda z: z.get("value", 0), reverse=True)
+    
+    # Select primary magnet from best available tier
+    if all_optimal:
+        primary_magnet = all_optimal[0]
+        primary_magnet["selection_reason"] = "optimal_range"
+    elif all_good:
+        primary_magnet = all_good[0]
+        primary_magnet["selection_reason"] = "good_range"
+    elif all_noise:
+        primary_magnet = all_noise[0]
+        primary_magnet["selection_reason"] = "fallback_noise"
+        primary_magnet["significance"] = "WEAK"  # Override to weak
     else:
-        primary_magnet = {"price": current_price, "value": 0, "distance_pct": 0, "total_score": 0, "side": "above"}
-        primary_side = "above"
+        primary_magnet = {"price": current_price, "value": 0, "distance_pct": 0, "total_score": 0, "side": "above", "significance": "NONE"}
     
-    # Secondary magnet = second highest (preferably opposite side)
+    primary_side = primary_magnet.get("side", "above")
+    
+    # Add side info
+    for z in valid_above:
+        z["side"] = "above"
+    for z in valid_below:
+        z["side"] = "below"
+    
+    # Select secondary magnet (prefer opposite side)
     secondary_magnet = None
-    if len(all_valid_sorted) > 1:
-        # Try to find opposite side first
-        for z in all_valid_sorted[1:]:
-            if z.get("side") != primary_side:
-                secondary_magnet = z
-                break
-        # If no opposite side, use second best regardless
-        if secondary_magnet is None:
-            secondary_magnet = all_valid_sorted[1]
+    opposite_optimal = optimal_below if primary_side == "above" else optimal_above
+    opposite_good = good_below if primary_side == "above" else good_above
+    opposite_noise = noise_below if primary_side == "above" else noise_above
+    
+    if opposite_optimal:
+        secondary_magnet = opposite_optimal[0]
+    elif opposite_good:
+        secondary_magnet = opposite_good[0]
+    elif opposite_noise:
+        secondary_magnet = opposite_noise[0]
+    
+    # Log selection for debugging
+    logger.debug(f"[Magnet v2.1] Selection: optimal={len(all_optimal)}, good={len(all_good)}, noise={len(all_noise)}")
+    logger.debug(f"[Magnet v2.1] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% [{primary_magnet.get('significance', 'UNKNOWN')}]")
     
     # ======== 6. DETERMINE TARGET DIRECTION ========
-    total_above_score = sum(z.get("total_score", 0) for z in valid_above)
-    total_below_score = sum(z.get("total_score", 0) for z in valid_below)
+    total_above_score = sum(z.get("value", 0) for z in valid_above)  # Use VALUE for direction
+    total_below_score = sum(z.get("value", 0) for z in valid_below)
     total_score = total_above_score + total_below_score
     
     if total_score > 0:
@@ -9658,28 +9735,32 @@ def analyze_liquidity_magnet(
         signals.append(get_translation("magnet_balanced", lang))
     
     # ======== 7. CALCULATE OVERALL MAGNET SCORE ========
-    # Based on the strength of the primary magnet
+    # Based on the strength of the primary magnet AND its significance
+    primary_significance = primary_magnet.get("significance", "UNKNOWN")
+    
     if primary_magnet.get("total_score", 0) > 0:
-        # Scale: 0-30 score = weak, 30-50 = moderate, 50-70 = strong, 70+ = very strong
         raw_score = primary_magnet.get("total_score", 0)
         
+        # Penalize score if primary is WEAK (noise)
+        if primary_significance == "WEAK":
+            raw_score = raw_score * 0.6  # 40% penalty
+        
         if target_direction == "BALANCED":
-            # Balanced stays in 40-60 range
             magnet_score = 40 + min(raw_score / 5, 20)
         else:
-            # Directional: map score to 0-100 scale
-            magnet_score = min(raw_score + 20, 100)  # Boost directional
-            
-            # Ensure strong directional magnets score high
-            if raw_score > 50:
+            magnet_score = min(raw_score + 20, 100)
+            if raw_score > 50 and primary_significance != "WEAK":
                 magnet_score = max(magnet_score, 70)
     else:
         magnet_score = 45  # Neutral when no valid data
     
-    # ======== 8. DETERMINE MAGNET STRENGTH ========
-    if target_direction == "BALANCED":
+    # ======== 8. DETERMINE MAGNET STRENGTH (based on significance) ========
+    if primary_significance == "WEAK":
+        magnet_strength = "WEAK"
+        signals.append(get_translation("magnet_weak_distance", lang) if hasattr(get_translation, '__call__') else "Target too close - low significance")
+    elif target_direction == "BALANCED":
         magnet_strength = "MODERATE"
-    elif magnet_score >= 81:
+    elif primary_significance == "STRONG" and magnet_score >= 65:
         magnet_strength = "VERY_STRONG"
         signals.append(get_translation("magnet_very_strong", lang))
     elif magnet_score >= 65:
@@ -9693,21 +9774,22 @@ def analyze_liquidity_magnet(
     # ======== 9. SWEEP EXPECTATION ========
     sweep_expectation = "NO_CLEAR_SWEEP"
     
-    if target_direction == "UP" and secondary_magnet and secondary_magnet.get("side") == "below":
-        if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
-            sweep_expectation = "SWEEP_DOWN_FIRST"
-            signals.append(get_translation("sweep_down_first", lang, secondary_magnet["price"]))
-    elif target_direction == "DOWN" and secondary_magnet and secondary_magnet.get("side") == "above":
-        if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
-            sweep_expectation = "SWEEP_UP_FIRST"
-            signals.append(get_translation("sweep_up_first", lang, secondary_magnet["price"]))
-    
-    # High magnet score with clear direction = direct sweep
-    if magnet_score >= 70 and target_direction != "BALANCED":
-        if target_direction == "UP":
-            sweep_expectation = "SWEEP_UP_FIRST"
-        else:
-            sweep_expectation = "SWEEP_DOWN_FIRST"
+    # Only set sweep if primary is not WEAK
+    if primary_significance != "WEAK":
+        if target_direction == "UP" and secondary_magnet and secondary_magnet.get("side") == "below":
+            if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
+                sweep_expectation = "SWEEP_DOWN_FIRST"
+                signals.append(get_translation("sweep_down_first", lang, secondary_magnet["price"]))
+        elif target_direction == "DOWN" and secondary_magnet and secondary_magnet.get("side") == "above":
+            if secondary_magnet.get("value", 0) > MIN_LIQUIDITY_VALUE and secondary_magnet.get("distance_pct", 0) < 2:
+                sweep_expectation = "SWEEP_UP_FIRST"
+                signals.append(get_translation("sweep_up_first", lang, secondary_magnet["price"]))
+        
+        if magnet_score >= 70 and target_direction != "BALANCED":
+            if target_direction == "UP":
+                sweep_expectation = "SWEEP_UP_FIRST"
+            else:
+                sweep_expectation = "SWEEP_DOWN_FIRST"
     
     # ======== 10. BUILD EXPLANATION ========
     primary_distance = primary_magnet.get("distance_pct", 0)
@@ -9721,9 +9803,9 @@ def analyze_liquidity_magnet(
         sweep_expectation, lang
     )
     
-    # Log strength-based selection
-    logger.debug(f"[Magnet v2.0] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
-                f"(score={primary_magnet.get('total_score', 0):.0f}), Direction={target_direction}")
+    # Log selection details
+    logger.debug(f"[Magnet v2.1] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
+                f"[{primary_significance}] (score={primary_magnet.get('total_score', 0):.0f}), Dir={target_direction}")
     
     return LiquidityMagnet(
         magnet_score=round(magnet_score, 1),
@@ -9741,7 +9823,7 @@ def analyze_liquidity_magnet(
         attraction_ratio=round(score_ratio, 2),
         signals=signals[:5],
         explanation=explanation,
-        data_source="Multi-Exchange + CoinGlass (Strength-Based v2.0)"
+        data_source=f"Multi-Exchange + CoinGlass (v2.1, significance={primary_significance})"
     )
 
 
@@ -9838,9 +9920,14 @@ def analyze_liquidity_zones(
     
     # ════════════════ CONFIGURATION ════════════════
     ZONE_GROUPING_THRESHOLD_PCT = 0.3  # Group levels within 0.3% distance
-    MIN_ZONE_LIQUIDITY = 1_000_000  # $1M minimum (lowered for preview to get data)
-    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum (very close zones allowed in preview)
+    MIN_ZONE_LIQUIDITY = 1_000_000  # $1M minimum for detection
+    MIN_DISTANCE_PCT = 0.01  # 0.01% minimum for detection
     MAX_DISTANCE_PCT = 5.0  # Ignore zones too far
+    
+    # Selection thresholds (for quality targets)
+    WEAK_DISTANCE_THRESHOLD = 0.3  # Below this = weak/noise
+    OPTIMAL_DISTANCE_MIN = 0.5
+    OPTIMAL_DISTANCE_MAX = 3.0
     
     # ════════════════ STEP 1: COLLECT ALL LIQUIDITY LEVELS ════════════════
     all_levels_above = []  # List of {price, value, source}
@@ -10064,67 +10151,74 @@ def analyze_liquidity_zones(
     
     def score_zone(zone: dict) -> dict:
         """
-        Calculate zone score (0-100):
-        - Liquidity strength (0-50)
-        - Distance optimality (0-25): best 0.5-2.5%
-        - Context alignment (0-25)
+        Calculate zone score (0-100) with significance flag:
+        - Liquidity strength (0-60): DOMINANT factor
+        - Distance optimality (0-25): Optimal range preferred
+        - Context alignment (0-15)
+        - significance: STRONG/MODERATE/WEAK
         """
-        # ═══ LIQUIDITY STRENGTH SCORE (0-50) ═══
         strength = zone["zone_strength"]
+        distance = zone["distance_pct"]
+        
+        # ═══ LIQUIDITY STRENGTH SCORE (0-60) - DOMINANT ═══
         if strength > 0:
-            # log10 scale: $10M = 70, $50M = 77, $100M = 80
-            strength_score = min(50, math.log10(strength) * 7)
+            strength_score = min(60, math.log10(strength) * 10)
         else:
             strength_score = 0
         
-        # ═══ DISTANCE SCORE (0-25) ═══
-        distance = zone["distance_pct"]
-        if 0.5 <= distance <= 2.5:
-            distance_score = 25  # Optimal range
-        elif MIN_DISTANCE_PCT <= distance < 0.5:
-            distance_score = 10  # Too close
-        elif 2.5 < distance <= 4.0:
-            distance_score = 18  # Extended but achievable
+        # ═══ DISTANCE SCORE (0-25) - OPTIMAL RANGE PREFERRED ═══
+        # Heavily penalize too-close zones (noise)
+        if distance < WEAK_DISTANCE_THRESHOLD:
+            distance_score = 3  # Noise - minimal score
+            zone["is_noise"] = True
+        elif WEAK_DISTANCE_THRESHOLD <= distance < OPTIMAL_DISTANCE_MIN:
+            distance_score = 10  # Close but not noise
+            zone["is_noise"] = False
+        elif OPTIMAL_DISTANCE_MIN <= distance <= OPTIMAL_DISTANCE_MAX:
+            distance_score = 25  # OPTIMAL range
+            zone["is_noise"] = False
+        elif OPTIMAL_DISTANCE_MAX < distance <= 4.0:
+            distance_score = 18  # Extended
+            zone["is_noise"] = False
         else:
-            distance_score = 5  # Edge cases
+            distance_score = 5  # Very far
+            zone["is_noise"] = False
         
-        # ═══ CONTEXT SCORE (0-25) ═══
+        # ═══ CONTEXT SCORE (0-15) ═══
         context_score = 0
         
-        # OI trend alignment
         if oi_change_24h > 3:
-            context_score += 7  # Rising OI supports movement
+            context_score += 5
         elif oi_change_24h > 0:
+            context_score += 2
+        
+        if compression_level > 70:
+            context_score += 5
+        elif compression_level > 50:
             context_score += 3
         
-        # Compression (energy building)
-        if compression_level > 70:
-            context_score += 7
-        elif compression_level > 50:
-            context_score += 4
-        
-        # Breakout probability
         if breakout_probability == "HIGH":
-            context_score += 7
-        elif breakout_probability == "MEDIUM":
-            context_score += 4
+            context_score += 5
         
-        # Density bonus (tight clusters are stronger)
-        if zone["zone_density"] > 1_000_000:
-            context_score += 4
-        
-        # Cap context score
-        context_score = min(25, context_score)
+        context_score = min(15, context_score)
         
         # ═══ TOTAL SCORE ═══
-        total_score = strength_score + distance_score + context_score
-        
-        zone["score"] = round(total_score, 1)
+        zone["score"] = round(strength_score + distance_score + context_score, 1)
         zone["score_breakdown"] = {
             "strength": round(strength_score, 1),
             "distance": round(distance_score, 1),
             "context": round(context_score, 1)
         }
+        
+        # ═══ SIGNIFICANCE FLAG ═══
+        if distance < WEAK_DISTANCE_THRESHOLD:
+            zone["significance"] = "WEAK"
+        elif OPTIMAL_DISTANCE_MIN <= distance <= OPTIMAL_DISTANCE_MAX and strength >= 3_000_000:
+            zone["significance"] = "STRONG"
+        elif strength >= 5_000_000:
+            zone["significance"] = "MODERATE"
+        else:
+            zone["significance"] = "WEAK"
         
         return zone
     
@@ -10132,11 +10226,72 @@ def analyze_liquidity_zones(
     valid_zones_above = [score_zone(z) for z in valid_zones_above]
     valid_zones_below = [score_zone(z) for z in valid_zones_below]
     
-    # Sort by score (highest first)
-    valid_zones_above = sorted(valid_zones_above, key=lambda z: z["score"], reverse=True)
-    valid_zones_below = sorted(valid_zones_below, key=lambda z: z["score"], reverse=True)
+    # ════════════════ STEP 6: INTELLIGENT ZONE SELECTION ════════════════
+    # Separate zones by quality tier
+    def categorize_zones(zones):
+        optimal = []  # Optimal distance + good value
+        good = []     # Acceptable range
+        noise = []    # Too close
+        
+        for z in zones:
+            if z.get("significance") == "STRONG":
+                optimal.append(z)
+            elif z.get("is_noise", False) or z.get("significance") == "WEAK":
+                noise.append(z)
+            else:
+                good.append(z)
+        
+        # Sort each tier by VALUE (strength)
+        optimal.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+        good.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+        noise.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+        
+        return optimal, good, noise
     
-    # ════════════════ STEP 6: BUILD OUTPUT ZONES ════════════════
+    optimal_above, good_above, noise_above = categorize_zones(valid_zones_above)
+    optimal_below, good_below, noise_below = categorize_zones(valid_zones_below)
+    
+    # Combine for selection
+    all_optimal = optimal_above + optimal_below
+    all_good = good_above + good_below
+    all_noise = noise_above + noise_below
+    
+    # Sort by value
+    all_optimal.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+    all_good.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+    all_noise.sort(key=lambda z: z.get("zone_strength", 0), reverse=True)
+    
+    # Select primary zone from best available tier
+    primary_zone_dict = None
+    if all_optimal:
+        primary_zone_dict = all_optimal[0]
+    elif all_good:
+        primary_zone_dict = all_good[0]
+    elif all_noise:
+        primary_zone_dict = all_noise[0]
+        primary_zone_dict["significance"] = "WEAK"  # Force weak flag
+    
+    # Select secondary from opposite side
+    secondary_zone_dict = None
+    if primary_zone_dict:
+        primary_side = primary_zone_dict.get("direction")
+        opposite_optimal = [z for z in all_optimal if z.get("direction") != primary_side]
+        opposite_good = [z for z in all_good if z.get("direction") != primary_side]
+        opposite_noise = [z for z in all_noise if z.get("direction") != primary_side]
+        
+        if opposite_optimal:
+            secondary_zone_dict = opposite_optimal[0]
+        elif opposite_good:
+            secondary_zone_dict = opposite_good[0]
+        elif opposite_noise:
+            secondary_zone_dict = opposite_noise[0]
+    
+    # Log selection
+    logger.debug(f"[Zone v1.1] Selection: optimal={len(all_optimal)}, good={len(all_good)}, noise={len(all_noise)}")
+    if primary_zone_dict:
+        logger.debug(f"[Zone v1.1] Primary: ${primary_zone_dict.get('zone_strength', 0)/1e6:.1f}M @ {primary_zone_dict.get('distance_pct', 0):.2f}% [{primary_zone_dict.get('significance', 'UNKNOWN')}]")
+    
+    # ════════════════ STEP 7: BUILD OUTPUT ZONES ════════════════
     def build_liquidity_zone(zone: dict, zone_id: str) -> LiquidityZone:
         """Convert zone dict to LiquidityZone model"""
         return LiquidityZone(
@@ -10158,27 +10313,15 @@ def analyze_liquidity_zones(
             score_breakdown=zone["score_breakdown"]
         )
     
-    # Build zone lists
+    # Build zone lists (all valid zones for display)
     zones_above_output = [build_liquidity_zone(z, f"zone_up_{i}") for i, z in enumerate(valid_zones_above)]
     zones_below_output = [build_liquidity_zone(z, f"zone_down_{i}") for i, z in enumerate(valid_zones_below)]
     
-    # ════════════════ STEP 7: SELECT PRIMARY & SECONDARY ════════════════
-    all_zones = zones_above_output + zones_below_output
-    all_zones_sorted = sorted(all_zones, key=lambda z: z.score, reverse=True)
+    # ════════════════ STEP 8: BUILD PRIMARY & SECONDARY FROM SELECTION ════════════════
+    primary_zone = build_liquidity_zone(primary_zone_dict, "primary") if primary_zone_dict else None
+    secondary_zone = build_liquidity_zone(secondary_zone_dict, "secondary") if secondary_zone_dict else None
     
-    primary_zone = all_zones_sorted[0] if all_zones_sorted else None
-    
-    # Secondary: prefer opposite direction if available
-    secondary_zone = None
-    if len(all_zones_sorted) > 1:
-        for z in all_zones_sorted[1:]:
-            if primary_zone and z.direction != primary_zone.direction:
-                secondary_zone = z
-                break
-        if secondary_zone is None and len(all_zones_sorted) > 1:
-            secondary_zone = all_zones_sorted[1]
-    
-    # ════════════════ STEP 8: DETERMINE DOMINANT DIRECTION ════════════════
+    # ════════════════ STEP 9: DETERMINE DOMINANT DIRECTION ════════════════
     total_above = sum(z.zone_strength for z in zones_above_output)
     total_below = sum(z.zone_strength for z in zones_below_output)
     
