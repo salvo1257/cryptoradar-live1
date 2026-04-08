@@ -2,7 +2,6 @@ import React from 'react';
 import { Menu, RefreshCw, HelpCircle, Globe } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { Button } from './ui/button';
-import { Switch } from './ui/switch';
 import {
   Select,
   SelectContent,
@@ -111,11 +110,41 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Right section */}
-      <div className="flex items-center gap-2 md:gap-4">
-        {/* Timeframe selector */}
+      {/* Right section - Mobile optimized */}
+      <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
+        {/* Learn mode toggle - ALWAYS visible first on mobile, 44px touch target */}
+        <button
+          onClick={() => setLearnMode(!learnMode)}
+          className={cn(
+            "flex items-center justify-center gap-1.5",
+            "min-w-[44px] min-h-[44px]",
+            "px-2 rounded-lg",
+            "bg-crypto-surface/50 border border-crypto-border/50",
+            "hover:bg-crypto-surface hover:border-whale/30",
+            "active:scale-95 transition-all duration-150",
+            learnMode && "border-whale/50 bg-whale/10"
+          )}
+          data-testid="learn-mode-toggle"
+          aria-label={learnMode ? "Disable learn mode" : "Enable learn mode"}
+        >
+          <HelpCircle className={cn(
+            "w-5 h-5 flex-shrink-0 transition-colors",
+            learnMode ? "text-whale" : "text-zinc-500"
+          )} />
+          <div className={cn(
+            "hidden sm:block relative w-9 h-5 rounded-full transition-colors",
+            learnMode ? "bg-whale" : "bg-zinc-700"
+          )}>
+            <div className={cn(
+              "absolute top-[3px] w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform",
+              learnMode ? "translate-x-[18px]" : "translate-x-1"
+            )} />
+          </div>
+        </button>
+
+        {/* Timeframe selector - hidden on very small screens */}
         <Select value={timeframe} onValueChange={setTimeframe}>
-          <SelectTrigger className="w-[70px] md:w-[80px] h-8 bg-crypto-surface border-crypto-border text-xs font-mono" data-testid="timeframe-select">
+          <SelectTrigger className="hidden xs:flex w-[60px] sm:w-[70px] md:w-[80px] h-8 bg-crypto-surface border-crypto-border text-xs font-mono" data-testid="timeframe-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-crypto-card border-crypto-border">
@@ -149,24 +178,13 @@ export function TopBar() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Learn mode toggle */}
-        <div className="hidden md:flex items-center gap-2">
-          <HelpCircle className={cn("w-4 h-4", learnMode ? "text-whale" : "text-zinc-500")} />
-          <Switch 
-            checked={learnMode} 
-            onCheckedChange={setLearnMode}
-            className="data-[state=checked]:bg-whale"
-            data-testid="learn-mode-toggle"
-          />
-        </div>
-
-        {/* Refresh button */}
+        {/* Refresh button - hidden on smallest screens */}
         <Button 
           variant="ghost" 
           size="sm" 
           onClick={refreshAll}
           disabled={isLoading}
-          className="h-8 px-2"
+          className="hidden sm:flex h-8 px-2"
           data-testid="refresh-btn"
         >
           <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
