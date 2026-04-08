@@ -1,5 +1,52 @@
-# CryptoRadar v3.2.5 - Product Requirements Document
+# CryptoRadar v3.2.6 - Product Requirements Document
 **Last Updated:** 2026-04-08
+
+## ✅ DECISION ENGINE LAYER (2026-04-08)
+
+### Objective
+Transform multiple signals into ONE clear final action (LONG/SHORT/WAIT).
+NO changes to existing scoring or indicator logic - only aggregation layer.
+
+### Implementation: DecisionEngineCard.js
+
+**Decision Rules (Priority Based):**
+
+**RULE 1 - BLOCK CONDITIONS → WAIT**
+- If Liquidity = NEUTRAL
+- If Regime = COMPRESSION  
+- If R:R < 0.3
+
+**RULE 2 - STRONG ALIGNMENT → LONG/SHORT**
+- If ALL aligned: Bias + Whale + OI + Liquidity direction
+- 3+ signals same direction with 0 opposing → directional trade
+
+**RULE 3 - CONFLICT → WAIT**
+- If bullish AND bearish signals present
+- Label: "Segnali contrastanti"
+
+**UI Display:**
+- ✅ LONG (green badge)
+- 🔴 SHORT (red badge)
+- ⚪ WAIT (neutral gray)
+
+**Warning Filter:**
+- Max 2 warnings shown
+- Rest hidden
+
+**Files Changed:**
+- `/app/frontend/src/components/cards/DecisionEngineCard.js` (NEW)
+- `/app/frontend/src/components/cards/index.js` (export added)
+- `/app/frontend/src/components/pages/DashboardPage.js` (placed at top)
+
+**Test Results (2026-04-08):**
+| Scenario | Expected | Actual |
+|----------|----------|--------|
+| Liquidity NEUTRAL | WAIT + Block | ✅ ATTENDI + Blocco attivo |
+| Regime COMPRESSION | WAIT + Block | ✅ Included in warnings |
+| Conflicting signals | WAIT + Label | ✅ Segnali contrastanti |
+| Mobile visibility | Visible | ✅ Works on 375px |
+
+---
 
 ## ✅ EXPLANATION SYSTEM CONSISTENCY FIX (2026-04-08)
 

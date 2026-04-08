@@ -14,7 +14,8 @@ import {
   MarketEnergyCard,
   LiquidityMagnetCard,
   PriceMeasurementTool,
-  V3SignalCard
+  V3SignalCard,
+  DecisionEngineCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
 import { DataFreshnessIndicator } from '../cards/DataFreshnessIndicator';
@@ -86,6 +87,12 @@ export function DashboardPage() {
 
   return (
     <div className="p-6 space-y-8" data-testid="dashboard-page">
+      
+      {/* ═══════════════════════════════════════════════════════════════════
+          DECISION ENGINE - ONE CLEAR FINAL ACTION
+          Aggregates all signals into LONG/SHORT/WAIT
+      ═══════════════════════════════════════════════════════════════════ */}
+      <DecisionEngineCard language={language} />
       
       {/* ═══════════════════════════════════════════════════════════════════
           DATA INTEGRITY STATUS - Always visible at top

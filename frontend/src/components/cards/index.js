@@ -14,3 +14,4 @@ export { LiquidityMagnetCard } from './LiquidityMagnetCard';
 export { PriceMeasurementTool } from './PriceMeasurementTool';
 export { V3SignalCard } from './V3SignalCard';
 export { DataFreshnessIndicator, DataFreshnessBadge } from './DataFreshnessIndicator';
+export { DecisionEngineCard } from './DecisionEngineCard';
