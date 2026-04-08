@@ -4,9 +4,10 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function SupportResistanceCard({ compact = false }) {
-  const { t, supportResistance, learnMode } = useApp();
+  const { t, supportResistance, learnMode, language } = useApp();
   const { levels = [], current_price = 0, data_source = '' } = supportResistance || {};
 
   const supports = levels.filter(l => l.level_type === 'support').slice(0, compact ? 3 : 5);
@@ -146,6 +147,20 @@ export function SupportResistanceCard({ compact = false }) {
           </div>
         </ScrollArea>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="support_resistance"
+        language={language}
+        contextData={{
+          currentPrice: current_price,
+          supports: supports,
+          resistances: resistances,
+          nearestSupport: supports[0],
+          nearestResistance: resistances[0]
+        }}
+      />
     </div>
   );
 }

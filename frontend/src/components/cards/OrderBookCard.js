@@ -2,9 +2,10 @@ import React from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function OrderBookCard() {
-  const { t, orderBook } = useApp();
+  const { t, orderBook, learnMode, language } = useApp();
 
   if (!orderBook) {
     return (
@@ -126,6 +127,21 @@ export function OrderBookCard() {
           </div>
         </div>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="orderbook"
+        language={language}
+        contextData={{
+          direction: orderBook.imbalance_direction,
+          imbalance: orderBook.imbalance,
+          bidDepth: orderBook.bid_depth,
+          askDepth: orderBook.ask_depth,
+          topBidWall: orderBook.top_bid_wall,
+          topAskWall: orderBook.top_ask_wall
+        }}
+      />
     </div>
   );
 }

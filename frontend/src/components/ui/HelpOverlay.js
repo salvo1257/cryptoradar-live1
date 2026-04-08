@@ -276,6 +276,38 @@ function getHelpContent(cardType, language, ctx) {
     },
 
     // ═══════════════════════════════════════════════════════════════════
+    // ORDERBOOK - Bid/Ask Pressure
+    // ═══════════════════════════════════════════════════════════════════
+    orderbook: {
+      it: {
+        whatItIs: getOrderbookWhatItIs(ctx, 'it'),
+        whyItHappens: getOrderbookWhyItHappens(ctx, 'it'),
+        howToRead: getOrderbookAction(ctx, 'it')
+      },
+      en: {
+        whatItIs: getOrderbookWhatItIs(ctx, 'en'),
+        whyItHappens: getOrderbookWhyItHappens(ctx, 'en'),
+        howToRead: getOrderbookAction(ctx, 'en')
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SUPPORT/RESISTANCE - Key Price Levels
+    // ═══════════════════════════════════════════════════════════════════
+    support_resistance: {
+      it: {
+        whatItIs: getSupportResistanceWhatItIs(ctx, 'it'),
+        whyItHappens: getSupportResistanceWhyItHappens(ctx, 'it'),
+        howToRead: getSupportResistanceAction(ctx, 'it')
+      },
+      en: {
+        whatItIs: getSupportResistanceWhatItIs(ctx, 'en'),
+        whyItHappens: getSupportResistanceWhyItHappens(ctx, 'en'),
+        howToRead: getSupportResistanceAction(ctx, 'en')
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
     // LIQUIDITY LADDER (fallback)
     // ═══════════════════════════════════════════════════════════════════
     liquidity_ladder: {
@@ -309,9 +341,16 @@ function getHelpContent(cardType, language, ctx) {
   };
 
   const content = helpTexts[cardType];
-  if (!content) return null;
+  if (!content) {
+    // Fallback for missing card types
+    return {
+      whatItIs: language === 'it' ? 'Dati insufficienti per spiegazione.' : 'Insufficient data for explanation.',
+      whyItHappens: language === 'it' ? 'Attendi aggiornamento dati.' : 'Waiting for data update.',
+      howToRead: language === 'it' ? 'Nessuna azione richiesta.' : 'No action required.'
+    };
+  }
   
-  return isIt ? content.it : content.en;
+  return language === 'it' ? content.it : content.en;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1290,6 +1329,219 @@ function getQualityWhyItHappens(ctx, lang) {
     return `Some confluences present but not all → higher risk.`;
   }
   return `Conflicting or missing confluences → high trap risk.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORDERBOOK HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getOrderbookWhatItIs(ctx, lang) {
+  const imbalance = ctx.imbalance || 0;
+  const direction = ctx.direction || 'balanced';
+  
+  if (lang === 'it') {
+    if (!ctx.imbalance && ctx.imbalance !== 0) {
+      return 'Dati insufficienti per spiegazione.';
+    }
+    if (direction === 'bullish' || imbalance > 5) {
+      return `Pressione BID dominante (${imbalance > 0 ? '+' : ''}${imbalance.toFixed(1)}%). Più compratori in attesa.`;
+    }
+    if (direction === 'bearish' || imbalance < -5) {
+      return `Pressione ASK dominante (${imbalance.toFixed(1)}%). Più venditori in attesa.`;
+    }
+    return `Orderbook bilanciato (${imbalance > 0 ? '+' : ''}${imbalance.toFixed(1)}%). Equilibrio tra compratori e venditori.`;
+  }
+  
+  if (!ctx.imbalance && ctx.imbalance !== 0) {
+    return 'Insufficient data for explanation.';
+  }
+  if (direction === 'bullish' || imbalance > 5) {
+    return `BID pressure dominant (${imbalance > 0 ? '+' : ''}${imbalance.toFixed(1)}%). More buyers waiting.`;
+  }
+  if (direction === 'bearish' || imbalance < -5) {
+    return `ASK pressure dominant (${imbalance.toFixed(1)}%). More sellers waiting.`;
+  }
+  return `Balanced orderbook (${imbalance > 0 ? '+' : ''}${imbalance.toFixed(1)}%). Equilibrium between buyers and sellers.`;
+}
+
+function getOrderbookWhyItHappens(ctx, lang) {
+  const bidDepth = ctx.bidDepth || 0;
+  const askDepth = ctx.askDepth || 0;
+  const topBidWall = ctx.topBidWall;
+  const topAskWall = ctx.topAskWall;
+  
+  if (lang === 'it') {
+    if (!bidDepth && !askDepth) {
+      return 'Attendi aggiornamento dati.';
+    }
+    const bidM = (bidDepth / 1000000).toFixed(1);
+    const askM = (askDepth / 1000000).toFixed(1);
+    
+    if (topBidWall && topBidWall.quantity > 5) {
+      return `Wall BID significativo a $${topBidWall.price?.toLocaleString() || 'N/A'} (${topBidWall.quantity?.toFixed(1) || 0} BTC). Supporto immediato.`;
+    }
+    if (topAskWall && topAskWall.quantity > 5) {
+      return `Wall ASK significativo a $${topAskWall.price?.toLocaleString() || 'N/A'} (${topAskWall.quantity?.toFixed(1) || 0} BTC). Resistenza immediata.`;
+    }
+    return `Profondità BID: $${bidM}M | ASK: $${askM}M. Il lato più pesante tende ad assorbire gli ordini.`;
+  }
+  
+  if (!bidDepth && !askDepth) {
+    return 'Waiting for data update.';
+  }
+  const bidM = (bidDepth / 1000000).toFixed(1);
+  const askM = (askDepth / 1000000).toFixed(1);
+  
+  if (topBidWall && topBidWall.quantity > 5) {
+    return `Significant BID wall at $${topBidWall.price?.toLocaleString() || 'N/A'} (${topBidWall.quantity?.toFixed(1) || 0} BTC). Immediate support.`;
+  }
+  if (topAskWall && topAskWall.quantity > 5) {
+    return `Significant ASK wall at $${topAskWall.price?.toLocaleString() || 'N/A'} (${topAskWall.quantity?.toFixed(1) || 0} BTC). Immediate resistance.`;
+  }
+  return `BID depth: $${bidM}M | ASK: $${askM}M. The heavier side tends to absorb orders.`;
+}
+
+function getOrderbookAction(ctx, lang) {
+  const direction = ctx.direction || 'balanced';
+  const imbalance = Math.abs(ctx.imbalance || 0);
+  
+  if (lang === 'it') {
+    if (imbalance > 20) {
+      return direction === 'bullish' 
+        ? 'Forte sbilanciamento BUY. Probabile spike rialzista. Entry lungo possibile.'
+        : 'Forte sbilanciamento SELL. Probabile spike ribassista. Entry corto possibile.';
+    }
+    if (imbalance > 10) {
+      return 'Sbilanciamento moderato. Osserva la reazione ai wall principali.';
+    }
+    return 'Equilibrio → nessun segnale forte. Aspetta rottura di un wall significativo.';
+  }
+  
+  if (imbalance > 20) {
+    return direction === 'bullish'
+      ? 'Strong BUY imbalance. Likely bullish spike. Long entry possible.'
+      : 'Strong SELL imbalance. Likely bearish spike. Short entry possible.';
+  }
+  if (imbalance > 10) {
+    return 'Moderate imbalance. Watch reaction at main walls.';
+  }
+  return 'Balanced → no strong signal. Wait for significant wall break.';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPPORT/RESISTANCE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getSupportResistanceWhatItIs(ctx, lang) {
+  const supports = ctx.supports || [];
+  const resistances = ctx.resistances || [];
+  const nearestSupport = ctx.nearestSupport;
+  const nearestResistance = ctx.nearestResistance;
+  
+  if (lang === 'it') {
+    if (supports.length === 0 && resistances.length === 0) {
+      return 'Dati insufficienti per spiegazione.';
+    }
+    
+    let text = `${resistances.length} resistenze sopra, ${supports.length} supporti sotto.`;
+    
+    if (nearestResistance) {
+      text += ` Resistenza più vicina: $${nearestResistance.price?.toLocaleString() || 'N/A'} (+${nearestResistance.distance_percent?.toFixed(2) || '?'}%).`;
+    }
+    if (nearestSupport) {
+      text += ` Supporto più vicino: $${nearestSupport.price?.toLocaleString() || 'N/A'} (${nearestSupport.distance_percent?.toFixed(2) || '?'}%).`;
+    }
+    return text;
+  }
+  
+  if (supports.length === 0 && resistances.length === 0) {
+    return 'Insufficient data for explanation.';
+  }
+  
+  let text = `${resistances.length} resistances above, ${supports.length} supports below.`;
+  
+  if (nearestResistance) {
+    text += ` Nearest resistance: $${nearestResistance.price?.toLocaleString() || 'N/A'} (+${nearestResistance.distance_percent?.toFixed(2) || '?'}%).`;
+  }
+  if (nearestSupport) {
+    text += ` Nearest support: $${nearestSupport.price?.toLocaleString() || 'N/A'} (${nearestSupport.distance_percent?.toFixed(2) || '?'}%).`;
+  }
+  return text;
+}
+
+function getSupportResistanceWhyItHappens(ctx, lang) {
+  const nearestSupport = ctx.nearestSupport;
+  const nearestResistance = ctx.nearestResistance;
+  
+  if (lang === 'it') {
+    if (!nearestSupport && !nearestResistance) {
+      return 'Attendi aggiornamento dati.';
+    }
+    
+    // Check which is closer
+    const supportDist = Math.abs(nearestSupport?.distance_percent || 999);
+    const resistDist = Math.abs(nearestResistance?.distance_percent || 999);
+    
+    if (supportDist < resistDist && supportDist < 1) {
+      return `Prezzo vicino al supporto. I compratori difendono questo livello. Possibile rimbalzo.`;
+    }
+    if (resistDist < supportDist && resistDist < 1) {
+      return `Prezzo vicino alla resistenza. I venditori difendono questo livello. Possibile rigetto.`;
+    }
+    return `Prezzo tra supporto e resistenza. Attesa di rottura o rimbalzo su uno dei livelli.`;
+  }
+  
+  if (!nearestSupport && !nearestResistance) {
+    return 'Waiting for data update.';
+  }
+  
+  const supportDist = Math.abs(nearestSupport?.distance_percent || 999);
+  const resistDist = Math.abs(nearestResistance?.distance_percent || 999);
+  
+  if (supportDist < resistDist && supportDist < 1) {
+    return `Price near support. Buyers defend this level. Possible bounce.`;
+  }
+  if (resistDist < supportDist && resistDist < 1) {
+    return `Price near resistance. Sellers defend this level. Possible rejection.`;
+  }
+  return `Price between support and resistance. Waiting for breakout or bounce at one of the levels.`;
+}
+
+function getSupportResistanceAction(ctx, lang) {
+  const nearestSupport = ctx.nearestSupport;
+  const nearestResistance = ctx.nearestResistance;
+  
+  if (lang === 'it') {
+    if (!nearestSupport && !nearestResistance) {
+      return 'Nessuna azione richiesta.';
+    }
+    
+    const supportDist = Math.abs(nearestSupport?.distance_percent || 999);
+    const resistDist = Math.abs(nearestResistance?.distance_percent || 999);
+    
+    if (supportDist < 0.5) {
+      return `Vicino al supporto → osserva reazione. Rimbalzo = long. Rottura = short.`;
+    }
+    if (resistDist < 0.5) {
+      return `Vicino alla resistenza → osserva reazione. Rigetto = short. Rottura = long.`;
+    }
+    return `Usa questi livelli come target (TP) o invalidazione (SL). Non entrare direttamente sui livelli.`;
+  }
+  
+  if (!nearestSupport && !nearestResistance) {
+    return 'No action required.';
+  }
+  
+  const supportDist = Math.abs(nearestSupport?.distance_percent || 999);
+  const resistDist = Math.abs(nearestResistance?.distance_percent || 999);
+  
+  if (supportDist < 0.5) {
+    return `Near support → watch reaction. Bounce = long. Break = short.`;
+  }
+  if (resistDist < 0.5) {
+    return `Near resistance → watch reaction. Rejection = short. Break = long.`;
+  }
+  return `Use these levels as targets (TP) or invalidation (SL). Don't enter directly at levels.`;
 }
 
 export default HelpOverlay;

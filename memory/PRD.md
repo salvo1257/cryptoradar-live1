@@ -1,5 +1,48 @@
-# CryptoRadar v3.2.4 - Product Requirements Document
-**Last Updated:** 2026-04-07
+# CryptoRadar v3.2.5 - Product Requirements Document
+**Last Updated:** 2026-04-08
+
+## ✅ EXPLANATION SYSTEM CONSISTENCY FIX (2026-04-08)
+
+### Problem
+Some components showed "Cosa succede / Perché / Azione" explanations while others didn't when Learn Mode was ON.
+
+### Solution: Unified Explanation System
+
+**Implementation:**
+1. Added HelpOverlay to all required cards:
+   - ✅ Liquidity Magnet (already had it)
+   - ✅ OrderBook Card (added)
+   - ✅ Support/Resistance Card (added)
+   - ✅ Whale Activity Card (already had it)
+
+2. Added new helper functions in HelpOverlay.js:
+   - `getOrderbookWhatItIs()` / `getOrderbookWhyItHappens()` / `getOrderbookAction()`
+   - `getSupportResistanceWhatItIs()` / `getSupportResistanceWhyItHappens()` / `getSupportResistanceAction()`
+
+3. Added fallback for missing data:
+   ```
+   "Dati insufficienti per spiegazione." (IT)
+   "Insufficient data for explanation." (EN)
+   ```
+
+**Consistent Format:**
+```json
+{
+  "cosa_succede": "What is happening in this module",
+  "perche": "Why this is happening (context/analysis)",
+  "azione": "What action to consider"
+}
+```
+
+**Test Results (2026-04-08):**
+| Module | Cosa succede | Perché | Azione |
+|--------|-------------|--------|--------|
+| Liquidity Magnet | ✅ | ✅ | ✅ |
+| OrderBook | ✅ | ✅ | ✅ |
+| Support/Resistance | ✅ | ✅ | ✅ |
+| Whale Activity | ✅ | ✅ | ✅ |
+
+---
 
 ## ✅ SHADOW TARGET TRACKING SYSTEM FIX (2026-04-07)
 
