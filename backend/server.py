@@ -2154,6 +2154,42 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             logger.warning(f"[V3 Signal] BLOCKED - Already recorded for setup {setup_id[:8]}")
             return {"recorded": False, "reason": "Already recorded", "signal_id": v3_signals_recorded[setup_id]}
         
+        # ═══════════════════════════════════════════════════════════════════
+        # SAME-DIRECTION SIGNAL LOCK CHECK
+        # Execution constraint: Cannot have multiple OPEN signals in same direction
+        # 
+        # OPEN statuses: ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2
+        # CLOSED statuses: WIN, LOSS, EXPIRED, CANCELLED, PARTIAL_WIN, FULL_WIN
+        # ═══════════════════════════════════════════════════════════════════
+        OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2"]
+        
+        # Check if there's an existing OPEN signal in the same direction
+        existing_open_signal = await signal_history_collection.find_one({
+            "signal_engine_version": "v3",
+            "direction": direction,
+            "outcome": {"$in": OPEN_SIGNAL_STATUSES}
+        }, sort=[("timestamp", -1)])
+        
+        if existing_open_signal:
+            existing_signal_id = existing_open_signal.get("signal_id", "unknown")[:8]
+            existing_outcome = existing_open_signal.get("outcome", "UNKNOWN")
+            existing_timestamp = existing_open_signal.get("timestamp", "N/A")
+            
+            logger.warning(
+                f"[V3 Signal] 🔒 SAME_DIRECTION_LOCKED - {direction} signal blocked. "
+                f"Previous signal still open: {existing_signal_id} (status={existing_outcome}, created={existing_timestamp})"
+            )
+            
+            return {
+                "recorded": False, 
+                "reason": "SAME_DIRECTION_LOCKED",
+                "blocked_direction": direction,
+                "existing_signal_id": existing_open_signal.get("signal_id"),
+                "existing_status": existing_outcome,
+                "existing_timestamp": str(existing_timestamp),
+                "message": f"Cannot create {direction} signal - previous {direction} signal still open (status: {existing_outcome})"
+            }
+        
         # Generate signal ID
         signal_id = str(uuid.uuid4())
         
@@ -9414,10 +9450,17 @@ async def process_v3_signal(
                         "energy_score": None,
                         "compression_level": None
                     }
-                    asyncio.create_task(record_v3_entry_signal(setup_dict, current_price, market_context))
                     
-                    # Send V3 ENTRY_READY Telegram alert
-                    asyncio.create_task(send_v3_entry_alert(setup_dict, current_price))
+                    # Record signal first - this includes SAME_DIRECTION_LOCK check
+                    record_result = await record_v3_entry_signal(setup_dict, current_price, market_context)
+                    
+                    # ONLY send Telegram alert if signal was successfully recorded
+                    # This prevents notifications for blocked signals (SAME_DIRECTION_LOCKED, DUPLICATE_BLOCKED)
+                    if record_result.get("recorded", False):
+                        asyncio.create_task(send_v3_entry_alert(setup_dict, current_price))
+                    else:
+                        block_reason = record_result.get("reason", "unknown")
+                        logger.info(f"[V3 Signal] Telegram alert SKIPPED - Signal not recorded ({block_reason})")
             
             # Check for invalidation (price moved too far from zone)
             if abs(distance_percent) > 2.0:  # More than 2% from zone
@@ -14097,6 +14140,120 @@ async def get_v3_signal_tracking_status():
         "tracking_healthy": v3_signals_count >= 0,  # Will be more meaningful when we have data
         "v3_signals_recorded_cache": len(v3_signals_recorded)
     }
+
+
+@api_router.get("/v3/signal-lock-status")
+async def get_v3_signal_lock_status():
+    """
+    Get current same-direction signal lock status.
+    
+    Shows which directions are currently LOCKED due to open signals.
+    A direction is LOCKED if there's an OPEN signal in that direction.
+    
+    OPEN statuses: ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2
+    CLOSED statuses: WIN, LOSS, EXPIRED, CANCELLED, PARTIAL_WIN, FULL_WIN
+    """
+    OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2"]
+    CLOSED_SIGNAL_STATUSES = ["WIN", "LOSS", "EXPIRED", "CANCELLED", "PARTIAL_WIN", "FULL_WIN"]
+    
+    # Check for open LONG signal
+    open_long = await signal_history_collection.find_one({
+        "signal_engine_version": "v3",
+        "direction": "LONG",
+        "outcome": {"$in": OPEN_SIGNAL_STATUSES}
+    }, sort=[("timestamp", -1)])
+    
+    # Check for open SHORT signal
+    open_short = await signal_history_collection.find_one({
+        "signal_engine_version": "v3",
+        "direction": "SHORT",
+        "outcome": {"$in": OPEN_SIGNAL_STATUSES}
+    }, sort=[("timestamp", -1)])
+    
+    # Build lock status
+    long_locked = open_long is not None
+    short_locked = open_short is not None
+    
+    result = {
+        "long_locked": long_locked,
+        "short_locked": short_locked,
+        "open_statuses": OPEN_SIGNAL_STATUSES,
+        "closed_statuses": CLOSED_SIGNAL_STATUSES,
+        "open_signals": {
+            "LONG": {
+                "locked": long_locked,
+                "signal_id": open_long.get("signal_id")[:8] if open_long else None,
+                "outcome": open_long.get("outcome") if open_long else None,
+                "timestamp": str(open_long.get("timestamp")) if open_long else None,
+                "entry_price": open_long.get("btc_price") if open_long else None
+            } if long_locked else None,
+            "SHORT": {
+                "locked": short_locked,
+                "signal_id": open_short.get("signal_id")[:8] if open_short else None,
+                "outcome": open_short.get("outcome") if open_short else None,
+                "timestamp": str(open_short.get("timestamp")) if open_short else None,
+                "entry_price": open_short.get("btc_price") if open_short else None
+            } if short_locked else None
+        },
+        "can_generate": {
+            "LONG": not long_locked,
+            "SHORT": not short_locked
+        },
+        "note": "New signals in locked directions will be blocked and logged as SAME_DIRECTION_LOCKED"
+    }
+    
+    return result
+
+
+@api_router.post("/v3/close-signal/{signal_id}")
+async def close_v3_signal(signal_id: str, outcome: str = Query(..., description="WIN, LOSS, EXPIRED, or CANCELLED")):
+    """
+    Manually close/update a V3 signal outcome.
+    
+    This unlocks the direction for new signals.
+    
+    Valid outcomes: WIN, LOSS, EXPIRED, CANCELLED, PARTIAL_WIN, FULL_WIN
+    """
+    VALID_CLOSED_OUTCOMES = ["WIN", "LOSS", "EXPIRED", "CANCELLED", "PARTIAL_WIN", "FULL_WIN"]
+    
+    if outcome not in VALID_CLOSED_OUTCOMES:
+        return {"error": f"Invalid outcome. Must be one of: {VALID_CLOSED_OUTCOMES}"}
+    
+    # Find the signal
+    signal = await signal_history_collection.find_one({"signal_id": signal_id})
+    
+    if not signal:
+        # Try partial match
+        signal = await signal_history_collection.find_one({"signal_id": {"$regex": f"^{signal_id}"}})
+    
+    if not signal:
+        return {"error": f"Signal not found: {signal_id}"}
+    
+    old_outcome = signal.get("outcome")
+    direction = signal.get("direction")
+    
+    # Update the signal
+    result = await signal_history_collection.update_one(
+        {"signal_id": signal.get("signal_id")},
+        {"$set": {
+            "outcome": outcome,
+            "outcome_timestamp": datetime.now(timezone.utc),
+            "outcome_notes": f"Manually closed from {old_outcome} to {outcome}"
+        }}
+    )
+    
+    if result.modified_count > 0:
+        logger.info(f"[V3 Signal] Manually closed signal {signal_id[:8]} - {direction}: {old_outcome} → {outcome}")
+        return {
+            "success": True,
+            "signal_id": signal.get("signal_id"),
+            "direction": direction,
+            "old_outcome": old_outcome,
+            "new_outcome": outcome,
+            "direction_now_unlocked": True
+        }
+    
+    return {"error": "Failed to update signal"}
 
 
 @api_router.get("/v3/shadow-tracking-status")

@@ -1,5 +1,76 @@
-# CryptoRadar v3.2.6 - Product Requirements Document
-**Last Updated:** 2026-04-08
+# CryptoRadar v3.2.7 - Product Requirements Document
+**Last Updated:** 2026-04-09
+
+## ✅ SAME-DIRECTION SIGNAL LOCK (2026-04-09)
+
+### Objective
+Prevent multiple active signals in the same direction at the same time.
+This is an execution constraint layer - NO changes to core signal logic, scoring, or entry/exit conditions.
+
+### Business Rule
+- If there is an OPEN LONG signal → block new LONG signals
+- If there is an OPEN SHORT signal → block new SHORT signals
+- Exchange/account cannot accept two same-direction trades simultaneously
+
+### Status Definitions
+
+**OPEN Statuses (signal still active):**
+- `ENTRY_READY`
+- `ACTIVE`
+- `PENDING`
+- `T1_HIT_WAITING_T2`
+
+**CLOSED Statuses (signal complete):**
+- `WIN`
+- `LOSS`
+- `EXPIRED`
+- `CANCELLED`
+- `PARTIAL_WIN`
+- `FULL_WIN`
+
+### Implementation
+
+**Lock Check Location:** `/app/backend/server.py` in `record_v3_entry_signal()` function
+- Added after hash-based deduplication check
+- Queries `signal_history` for open signals in same direction
+- If found: blocks signal, logs `SAME_DIRECTION_LOCKED`, skips Telegram
+
+**Files Changed:**
+- `/app/backend/server.py`:
+  - Added same-direction lock check in `record_v3_entry_signal()`
+  - Modified signal recording flow (line ~9453) to await record result before sending Telegram
+  - Added `/api/v3/signal-lock-status` endpoint
+  - Added `/api/v3/close-signal/{signal_id}` endpoint for manual closure
+
+### API Endpoints
+
+**GET /api/v3/signal-lock-status**
+```json
+{
+  "long_locked": false,
+  "short_locked": true,
+  "can_generate": {"LONG": true, "SHORT": false},
+  "open_signals": {"SHORT": {"signal_id": "ce19e11e", "outcome": "PENDING"}}
+}
+```
+
+**POST /api/v3/close-signal/{signal_id}?outcome=WIN**
+Manually closes a signal to unlock the direction.
+
+### Log Format
+```
+[V3 Signal] 🔒 SAME_DIRECTION_LOCKED - SHORT signal blocked. Previous signal still open: ce19e11e (status=PENDING, created=2026-04-09 13:56:11)
+```
+
+### Test Results (2026-04-09)
+| Test | Result |
+|------|--------|
+| Lock status API | ✅ Returns correct lock state |
+| SHORT locked (PENDING) | ✅ Blocked correctly |
+| LONG unlocked | ✅ Can generate |
+| Telegram skip on block | ✅ Implemented |
+
+---
 
 ## ✅ DECISION ENGINE LAYER (2026-04-08)
 
