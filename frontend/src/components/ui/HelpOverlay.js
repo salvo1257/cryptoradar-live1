@@ -1,9 +1,12 @@
 import React from 'react';
 import { Lightbulb, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle, Info, Zap, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { translations } from '../../translations';
 
 /**
- * HelpOverlay v2.0 - Context-Aware Market Reading Assistant
+ * HelpOverlay v2.1 - Context-Aware Market Reading Assistant
+ * 
+ * Supports: English (en), Italian (it), German (de), Polish (pl)
  * 
  * Explains WHY the market behaves this way, not just WHAT to do.
  * Each explanation includes:
@@ -11,6 +14,24 @@ import { cn } from '../../lib/utils';
  * 2. What's happening behind the scenes (liquidity, whales, flow)
  * 3. Risk assessment and action guidance
  */
+
+// Get translated labels from centralized translations
+const getLabels = (language) => {
+  const t = translations[language] || translations.en;
+  return {
+    whatHappening: t.whatHappening || "What's happening",
+    why: t.why || "Why",
+    action: t.action || "Action",
+    insufficientData: t.insufficientData || "Insufficient data for explanation",
+    waitingData: language === 'de' ? 'Warte auf Datenaktualisierung.' : 
+                 language === 'pl' ? 'Oczekiwanie na aktualizację danych.' :
+                 language === 'it' ? 'Attendi aggiornamento dati.' : 'Waiting for data update.',
+    noAction: language === 'de' ? 'Keine Aktion erforderlich.' :
+              language === 'pl' ? 'Brak wymaganych działań.' :
+              language === 'it' ? 'Nessuna azione richiesta.' : 'No action required.'
+  };
+};
+
 export function HelpOverlay({ 
   show, 
   cardType, 
@@ -22,6 +43,8 @@ export function HelpOverlay({
 
   const content = getHelpContent(cardType, language, contextData);
   if (!content) return null;
+
+  const labels = getLabels(language);
 
   // Determine risk level indicator
   const getRiskIndicator = () => {
@@ -61,7 +84,7 @@ export function HelpOverlay({
           {/* What's happening */}
           <div>
             <span className="text-amber-400 font-semibold">
-              {language === 'it' ? 'Cosa succede: ' : 'What\'s happening: '}
+              {labels.whatHappening}: 
             </span>
             <span className="text-zinc-300">{content.whatItIs}</span>
           </div>
@@ -69,7 +92,7 @@ export function HelpOverlay({
           {/* Why - Market mechanics */}
           <div className="flex items-start gap-1.5">
             <span className="text-amber-400 font-semibold flex-shrink-0">
-              {language === 'it' ? 'Perché: ' : 'Why: '}
+              {labels.why}: 
             </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {getSentimentIndicator()}
@@ -81,7 +104,7 @@ export function HelpOverlay({
           {/* Action */}
           <div>
             <span className="text-amber-400 font-semibold">
-              {language === 'it' ? 'Azione: ' : 'Action: '}
+              {labels.action}: 
             </span>
             <span className="text-zinc-400">{content.howToRead}</span>
           </div>

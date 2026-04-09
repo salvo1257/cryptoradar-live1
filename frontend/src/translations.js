@@ -1,6 +1,16 @@
-// CryptoRadar Translations - Complete Italian/English for Trading Intelligence
+/**
+ * CryptoRadar v3.2 - Complete Multi-Language Translation System
+ * 
+ * Supported languages: English (en), Italian (it), German (de), Polish (pl)
+ * 
+ * RULE: If a translation is missing, return "[Missing: key]" for debugging
+ * NO mixed language content allowed.
+ */
 
 export const translations = {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ENGLISH (en) - Complete reference
+  // ═══════════════════════════════════════════════════════════════════════════
   en: {
     // Navigation
     dashboard: "Dashboard",
@@ -17,6 +27,34 @@ export const translations = {
     manual: "Manual",
     settings: "Settings",
     
+    // Connection Status
+    live: "LIVE",
+    delayed: "DELAYED",
+    offline: "OFFLINE",
+    connected: "CONNECTED",
+    disconnected: "DISCONNECTED",
+    connecting: "CONNECTING",
+    
+    // General Status Labels
+    active: "ACTIVE",
+    inactive: "INACTIVE",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    available: "Available",
+    unavailable: "Unavailable",
+    notAvailable: "N/A",
+    notConfigured: "NOT CONFIGURED",
+    configured: "CONFIGURED",
+    valid: "VALID",
+    invalid: "INVALID",
+    error: "ERROR",
+    success: "SUCCESS",
+    failed: "FAILED",
+    pending: "PENDING",
+    loading: "Loading...",
+    noData: "No data available",
+    updated: "Updated",
+    
     // Market Bias
     marketBias: "Market Bias",
     bullish: "BULLISH",
@@ -29,18 +67,15 @@ export const translations = {
     exchangeConsensus: "Exchange Consensus",
     nextTarget: "Next Target",
     
-    // Connection Status
-    live: "LIVE",
-    delayed: "DELAYED",
-    offline: "OFFLINE",
-    
-    // Trade Signal
+    // Trade Signal / Direction
     tradeSignal: "Trade Signal",
     long: "LONG",
     short: "SHORT",
+    wait: "WAIT",
     noTrade: "NO TRADE",
     setupInConfirmation: "SETUP IN CONFIRMATION",
     operational: "OPERATIONAL",
+    nonOperational: "NON-OPERATIONAL",
     confirming: "Confirming",
     consecutiveSignals: "Consecutive signals",
     timeInSetup: "Time in setup",
@@ -50,6 +85,7 @@ export const translations = {
     target: "Target",
     target1: "Target 1",
     target2: "Target 2",
+    target3: "Target 3",
     riskReward: "Risk/Reward",
     estimatedMovePercent: "Expected Move",
     setupType: "Setup Type",
@@ -58,7 +94,6 @@ export const translations = {
     standardSetup: "Standard",
     setupTypeExplainer: "Sweep Reversal = manipulation-based reversal. Trend Continuation = breakout continuation.",
     standard: "Standard",
-    sweepReversal: "Sweep Reversal",
     continuation: "Continuation",
     validFor: "Valid For",
     reasoning: "Reasoning",
@@ -71,7 +106,25 @@ export const translations = {
     whaleConfirms: "Whale Confirms Direction",
     invalidation: "Invalidation",
     
-    // Quality Gate (v2.8)
+    // Decision Engine / Final Action
+    finalAction: "FINAL ACTION",
+    conflictLabel: "Conflicting signals",
+    blockReason: "Block active",
+    alignedSignals: "Aligned signals",
+    compression: "Market in compression",
+    neutralLiquidity: "Neutral liquidity",
+    lowRR: "R:R too low - non-operational signal",
+    weakRR: "Weak R:R (0.3-0.5) - educational only",
+    whaleAligned: "Whales aligned",
+    whaleUnavailable: "Whale: data unavailable - not considered",
+    biasAligned: "Bias confirmed",
+    oiRising: "OI rising",
+    oiFalling: "OI falling",
+    liquidityAligned: "Directional liquidity",
+    educationalOnly: "Educational context only",
+    insufficientSignals: "Insufficient signals",
+    
+    // Quality Gate
     qualityGate: "Quality Gate",
     qualityScore: "Quality Score",
     qualityLevel: "Quality Level",
@@ -94,6 +147,7 @@ export const translations = {
     pathAnalysis: "Path Analysis",
     nearestAbove: "Nearest Above",
     nearestBelow: "Nearest Below",
+    liquidityClusters: "Liquidity Clusters",
     
     // Whale Activity
     whaleActivity: "Whale Activity",
@@ -112,7 +166,6 @@ export const translations = {
     aggressiveBuying: "Aggressive Buying Detected",
     aggressiveSelling: "Aggressive Selling Detected",
     none: "None",
-    // Whale Activity v2.0
     oiDivergence: "OI Divergence",
     short_closing: "Shorts Closing",
     short_opening: "Shorts Opening",
@@ -150,6 +203,7 @@ export const translations = {
     imbalance: "Imbalance",
     bidDepth: "Bid Depth",
     askDepth: "Ask Depth",
+    totalDepth: "Total Depth",
     
     // Open Interest & Funding
     openInterest: "Open Interest",
@@ -168,11 +222,12 @@ export const translations = {
     sentiment: "Sentiment",
     overcrowded: "Overcrowded",
     payer: "Payer",
+    longsPay: "Longs Pay",
+    shortsPay: "Shorts Pay",
     
     // Market Energy
     marketEnergy: "Market Energy",
     energyScore: "Energy Score",
-    compression: "Compression",
     rangeWidth: "Current Range",
     compressionThreshold: "Compression Threshold",
     expansionReadiness: "Expansion Readiness",
@@ -184,11 +239,15 @@ export const translations = {
     high: "HIGH",
     medium: "MEDIUM",
     low: "LOW",
-    strong: "STRONG",
-    moderate: "MODERATE",
-    weak: "WEAK",
     building: "BUILDING",
-    learnMarketEnergy: "Market Energy detects when BTC is building energy before a significant move by analyzing price compression, volatility, OI behavior, and liquidity buildup.",
+    
+    // Market Regime
+    marketRegime: "Market Regime",
+    trending: "TRENDING",
+    ranging: "RANGING",
+    volatile: "VOLATILE",
+    accumulating: "ACCUMULATING",
+    distributing: "DISTRIBUTING",
     
     // Liquidity Magnet
     liquidityMagnet: "Liquidity Magnet",
@@ -196,31 +255,21 @@ export const translations = {
     magnetStrength: "Magnet Strength",
     nearestMagnet: "Nearest Magnet",
     secondaryMagnet: "Secondary Magnet",
-    distance: "Distance",
     estimatedValue: "Est. Value",
     attractionStrength: "Attraction Strength",
-    sweepExpectation: "Sweep Expectation",
     veryStrong: "VERY STRONG",
     sweepUpFirst: "Sweep UP first",
     sweepDownFirst: "Sweep DOWN first",
     noClearSweep: "No clear sweep",
     up: "UP",
     down: "DOWN",
-    balanced: "BALANCED",
-    learnLiquidityMagnet: "Liquidity Magnet measures how strongly BTC price is attracted toward nearby liquidity zones, helping identify where price is most likely to move next.",
-    
-    longsPay: "Longs Pay",
-    shortsPay: "Shorts Pay",
     
     // News
     newsTitle: "Market News",
     importance: "Importance",
-    high: "High",
-    medium: "Medium",
-    low: "Low",
     source: "Source",
     
-    // Alert History
+    // Signal History
     signalHistory: "Signal History",
     totalSignals: "Total Signals",
     last24h: "Last 24H",
@@ -237,8 +286,6 @@ export const translations = {
     entry: "Entry",
     price: "Price",
     volume: "Volume",
-    up: "UP",
-    down: "DOWN",
     above: "Above",
     below: "Below",
     refresh: "Refresh",
@@ -247,30 +294,30 @@ export const translations = {
     createAlert: "Create Alert",
     condition: "Condition",
     telegram: "Telegram",
-    enabled: "Enabled",
-    disabled: "Disabled",
     save: "Save",
     cancel: "Cancel",
     delete: "Delete",
+    close: "Close",
+    confirm: "Confirm",
     addNote: "Add Note",
     english: "English",
     italian: "Italiano",
     german: "Deutsch",
     polish: "Polski",
     documentation: "Documentation",
-    loading: "Loading...",
-    noData: "No data available",
-    updated: "Updated",
     dataSource: "Data Source",
     multiExchange: "Multi-Exchange",
-    none: "None",
+    aggregated: "Aggregated",
+    singleSource: "Single Source",
     
-    // Telegram Settings
+    // Settings Page
     telegramSettings: "Telegram Notifications",
     telegramBotToken: "Bot Token",
     telegramChatId: "Chat ID",
     telegramEnabled: "Enable Telegram",
     telegramTest: "Test Connection",
+    testConnection: "Test Connection",
+    testing: "Testing...",
     telegramTestSuccess: "Test message sent successfully!",
     telegramTestFail: "Failed to send test message",
     telegramNotConfigured: "Please configure Telegram credentials first",
@@ -279,13 +326,43 @@ export const translations = {
     notifySignalOutcomes: "Trade Outcomes (WIN/LOSS)",
     telegramHowTo: "How to get Bot Token and Chat ID",
     telegramInstructions: "1. Open Telegram and search for @BotFather\n2. Send /newbot and follow instructions\n3. Copy the Bot Token\n4. For Chat ID, send a message to your bot, then visit:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    sound: "Sound",
+    alertSound: "Alert Sound",
+    signalNotifications: "Signal Notifications",
+    operationalSignals: "Operational Signals",
+    signalNotificationsDesc: "When a LONG/SHORT signal becomes operational",
+    notifySignalInvalidations: "Signal Invalidations",
+    signalInvalidationsDesc: "When a signal is invalidated",
+    notifySignalOutcomes: "Trade Outcomes",
+    signalOutcomesDesc: "WIN, LOSS, Partial Win, Expired",
+    
+    // API & Data Sources Settings
+    apiDataSources: "API & Data Sources",
+    apiDataSourcesSubtitle: "Configuration and connection status",
+    adminOnly: "Admin Only",
+    role: "Role",
+    apiKey: "API Key",
+    status: "Status",
+    lastCheck: "Last Check",
+    futureSources: "Future Sources (Not Yet Integrated)",
+    noChanges: "API key changes require server restart. UI modification coming in future version.",
+    planLimitation: "Plan Limitation",
+    networkError: "Network Error",
+    
+    // Telegram Instructions
+    telegramStep1: "Open Telegram and search for",
+    telegramStep2: "Send /newbot and follow instructions",
+    telegramStep3: "Copy the Bot Token provided",
+    telegramStep4: "For Chat ID, message your bot, then visit:",
+    enterBotToken: "Enter your Telegram bot token",
+    enterChatId: "Enter your Telegram chat ID",
     
     // OHLC Verification
     ohlcVerified: "OHLC Verified",
     ohlcVerifiedDesc: "Outcome calculated by analyzing historical candle HIGH/LOW data, not just current price.",
     candlesAnalyzed: "candles analyzed",
     
-    // Learn mode explanations
+    // Learn Mode Explanations
     learnMarketBias: "Market Bias analyzes multiple indicators to determine overall market direction. Confidence shows how strong the signal is.",
     learnSupportResistance: "Support levels are prices where buying pressure historically prevents further decline. Resistance levels are where selling pressure prevents further rise.",
     learnLiquidity: "Liquidity clusters show where large amounts of stop-losses or liquidations may accumulate, potentially causing rapid price movements.",
@@ -295,8 +372,52 @@ export const translations = {
     learnTrapRisk: "Trap risk indicates the probability of a false breakout that could trap traders on the wrong side.",
     learnSqueeze: "Squeeze probability shows the likelihood of a volatility compression followed by a sharp move.",
     learnTradeSignal: "The Trade Signal synthesizes all intelligence modules into one actionable recommendation with entry, stop, and targets.",
-    learnLiquidityLadder: "The Liquidity Ladder shows the sequence of liquidity levels above and below price, predicting potential sweep zones."
+    learnLiquidityLadder: "The Liquidity Ladder shows the sequence of liquidity levels above and below price, predicting potential sweep zones.",
+    learnMarketEnergy: "Market Energy detects when BTC is building energy before a significant move by analyzing price compression, volatility, OI behavior, and liquidity buildup.",
+    learnLiquidityMagnet: "Liquidity Magnet measures how strongly BTC price is attracted toward nearby liquidity zones, helping identify where price is most likely to move next.",
+    learnOrderBook: "Order Book shows current bid and ask walls across exchanges, revealing where large limit orders may support or resist price movement.",
+    learnOpenInterest: "Open Interest measures total outstanding futures contracts, indicating market participation and potential liquidation cascade levels.",
+    learnFundingRate: "Funding Rate shows whether longs or shorts are paying a premium, indicating market positioning extremes.",
+    learnDecisionEngine: "Decision Engine aggregates all signals into one clear action recommendation: LONG, SHORT, or WAIT.",
+    
+    // Learn Mode Structure
+    whatHappening: "What's happening",
+    why: "Why",
+    action: "Action",
+    insufficientData: "Insufficient data for explanation",
+    
+    // Errors & Messages
+    errorFetching: "Error fetching data",
+    errorSaving: "Error saving",
+    savedSuccessfully: "Saved successfully",
+    connectionFailed: "Connection failed",
+    retrying: "Retrying...",
+    translationMissing: "Translation missing",
+    
+    // Shadow Targets
+    shadowTargets: "Shadow Targets",
+    liquidityTargets: "Liquidity Targets",
+    standardTargets: "Standard Targets",
+    mfeMaxFavorable: "MFE (Max Favorable)",
+    maeMaxAdverse: "MAE (Max Adverse)",
+    dataQuality: "Data Quality",
+    
+    // Time labels
+    minutes: "minutes",
+    hours: "hours",
+    days: "days",
+    ago: "ago",
+    
+    // Documentation
+    operationalManual: "Operational Manual",
+    technicalManual: "Technical Manual",
+    deploymentGuide: "Deployment Guide",
+    systemHealthCheck: "System Health Check"
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ITALIAN (it) - Complete translation
+  // ═══════════════════════════════════════════════════════════════════════════
   it: {
     // Navigation
     dashboard: "Dashboard",
@@ -313,6 +434,34 @@ export const translations = {
     manual: "Manuale",
     settings: "Impostazioni",
     
+    // Connection Status
+    live: "LIVE",
+    delayed: "RITARDATO",
+    offline: "OFFLINE",
+    connected: "CONNESSO",
+    disconnected: "DISCONNESSO",
+    connecting: "CONNESSIONE",
+    
+    // General Status Labels
+    active: "ATTIVO",
+    inactive: "INATTIVO",
+    enabled: "Attivato",
+    disabled: "Disattivato",
+    available: "Disponibile",
+    unavailable: "Non disponibile",
+    notAvailable: "N/D",
+    notConfigured: "NON CONFIGURATO",
+    configured: "CONFIGURATO",
+    valid: "VALIDO",
+    invalid: "NON VALIDO",
+    error: "ERRORE",
+    success: "SUCCESSO",
+    failed: "FALLITO",
+    pending: "IN ATTESA",
+    loading: "Caricamento...",
+    noData: "Nessun dato disponibile",
+    updated: "Aggiornato",
+    
     // Market Bias
     marketBias: "Bias di Mercato",
     bullish: "RIALZISTA",
@@ -325,18 +474,15 @@ export const translations = {
     exchangeConsensus: "Consenso Exchange",
     nextTarget: "Prossimo Obiettivo",
     
-    // Connection Status
-    live: "LIVE",
-    delayed: "RITARDATO",
-    offline: "OFFLINE",
-    
-    // Trade Signal
+    // Trade Signal / Direction
     tradeSignal: "Segnale Operativo",
     long: "LONG",
     short: "SHORT",
+    wait: "ATTENDI",
     noTrade: "NESSUNA OPERAZIONE",
     setupInConfirmation: "SETUP IN CONFERMA",
     operational: "OPERATIVO",
+    nonOperational: "NON OPERATIVO",
     confirming: "In Conferma",
     consecutiveSignals: "Segnali consecutivi",
     timeInSetup: "In setup da",
@@ -346,15 +492,15 @@ export const translations = {
     target: "Obiettivo",
     target1: "Obiettivo 1",
     target2: "Obiettivo 2",
+    target3: "Obiettivo 3",
     riskReward: "Rischio/Rendimento",
     estimatedMovePercent: "Movimento Atteso",
     setupType: "Tipo Setup",
-    sweepReversal: "Sweep Reversal",
+    sweepReversal: "Sweep e Inversione",
     trendContinuation: "Continuazione Trend",
     standardSetup: "Standard",
     setupTypeExplainer: "Sweep Reversal = inversione basata su manipolazione. Trend Continuation = continuazione dopo breakout.",
     standard: "Standard",
-    sweepReversal: "Sweep e Inversione",
     continuation: "Continuazione",
     validFor: "Valido Per",
     reasoning: "Ragionamento",
@@ -367,7 +513,25 @@ export const translations = {
     whaleConfirms: "Balene Confermano",
     invalidation: "Invalidazione",
     
-    // Quality Gate (v2.8)
+    // Decision Engine / Final Action
+    finalAction: "AZIONE FINALE",
+    conflictLabel: "Segnali contrastanti",
+    blockReason: "Blocco attivo",
+    alignedSignals: "Segnali allineati",
+    compression: "Mercato in compressione",
+    neutralLiquidity: "Liquidità neutrale",
+    lowRR: "R:R troppo basso - segnale non operativo",
+    weakRR: "R:R debole (0.3-0.5) - solo educativo",
+    whaleAligned: "Whale allineate",
+    whaleUnavailable: "Whale: dato non disponibile - non considerato",
+    biasAligned: "Bias confermato",
+    oiRising: "OI in aumento",
+    oiFalling: "OI in calo",
+    liquidityAligned: "Liquidità direzionale",
+    educationalOnly: "Solo contesto educativo",
+    insufficientSignals: "Segnali insufficienti",
+    
+    // Quality Gate
     qualityGate: "Cancello Qualità",
     qualityScore: "Punteggio Qualità",
     qualityLevel: "Livello Qualità",
@@ -390,6 +554,7 @@ export const translations = {
     pathAnalysis: "Analisi Percorso",
     nearestAbove: "Più Vicino Sopra",
     nearestBelow: "Più Vicino Sotto",
+    liquidityClusters: "Cluster Liquidità",
     
     // Whale Activity
     whaleActivity: "Attività Balene",
@@ -408,7 +573,6 @@ export const translations = {
     aggressiveBuying: "Acquisto Aggressivo Rilevato",
     aggressiveSelling: "Vendita Aggressiva Rilevata",
     none: "Nessuno",
-    // Whale Activity v2.0
     oiDivergence: "Divergenza OI",
     short_closing: "Chiusura Short",
     short_opening: "Apertura Short",
@@ -446,6 +610,7 @@ export const translations = {
     imbalance: "Squilibrio",
     bidDepth: "Profondità Bid",
     askDepth: "Profondità Ask",
+    totalDepth: "Profondità Totale",
     
     // Open Interest & Funding
     openInterest: "Open Interest",
@@ -462,13 +627,14 @@ export const translations = {
     falling: "In Discesa",
     annualized: "Annualizzato",
     sentiment: "Sentiment",
-    overcrowded: "Affollato",
-    payer: "Pagatore",
+    overcrowded: "Sovraffollato",
+    payer: "Pagante",
+    longsPay: "Long Pagano",
+    shortsPay: "Short Pagano",
     
     // Market Energy
     marketEnergy: "Energia Mercato",
     energyScore: "Punteggio Energia",
-    compression: "Compressione",
     rangeWidth: "Range Attuale",
     compressionThreshold: "Soglia Compressione",
     expansionReadiness: "Prontezza Espansione",
@@ -480,7 +646,13 @@ export const translations = {
     high: "ALTA",
     medium: "MEDIA",
     low: "BASSA",
-    learnMarketEnergy: "Energia Mercato rileva quando BTC sta accumulando energia prima di un movimento significativo analizzando compressione prezzo, volatilità, comportamento OI e accumulo liquidità.",
+    building: "IN COSTRUZIONE",
+    
+    // Market Regime
+    marketRegime: "Regime Mercato",
+    trending: "TREND",
+    ranging: "LATERALE",
+    volatile: "VOLATILE",
     
     // Liquidity Magnet
     liquidityMagnet: "Magnete Liquidità",
@@ -488,37 +660,21 @@ export const translations = {
     magnetStrength: "Forza Magnete",
     nearestMagnet: "Magnete Più Vicino",
     secondaryMagnet: "Magnete Secondario",
-    distance: "Distanza",
     estimatedValue: "Valore Stimato",
     attractionStrength: "Forza Attrazione",
-    sweepExpectation: "Aspettativa Sweep",
     veryStrong: "MOLTO FORTE",
     sweepUpFirst: "Sweep SU prima",
     sweepDownFirst: "Sweep GIÙ prima",
     noClearSweep: "Nessun sweep chiaro",
     up: "SU",
     down: "GIÙ",
-    balanced: "BILANCIATO",
-    learnLiquidityMagnet: "Magnete Liquidità misura quanto il prezzo BTC è attratto verso le zone di liquidità vicine, aiutando a identificare dove il prezzo probabilmente si muoverà.",
-    
-    decreasing: "In Diminuzione",
-    stable: "Stabile",
-    annualized: "Annualizzato",
-    sentiment: "Sentiment",
-    overcrowded: "Sovraffollato",
-    payer: "Pagante",
-    longsPay: "Long Pagano",
-    shortsPay: "Short Pagano",
     
     // News
     newsTitle: "Notizie di Mercato",
     importance: "Importanza",
-    high: "Alta",
-    medium: "Media",
-    low: "Bassa",
     source: "Fonte",
     
-    // Alert History
+    // Signal History
     signalHistory: "Storico Segnali",
     totalSignals: "Segnali Totali",
     last24h: "Ultime 24H",
@@ -535,8 +691,6 @@ export const translations = {
     entry: "Entrata",
     price: "Prezzo",
     volume: "Volume",
-    up: "SU",
-    down: "GIÙ",
     above: "Sopra",
     below: "Sotto",
     refresh: "Aggiorna",
@@ -545,30 +699,30 @@ export const translations = {
     createAlert: "Crea Avviso",
     condition: "Condizione",
     telegram: "Telegram",
-    enabled: "Attivato",
-    disabled: "Disattivato",
     save: "Salva",
     cancel: "Annulla",
     delete: "Elimina",
+    close: "Chiudi",
+    confirm: "Conferma",
     addNote: "Aggiungi Nota",
     english: "English",
     italian: "Italiano",
     german: "Deutsch",
     polish: "Polski",
     documentation: "Documentazione",
-    loading: "Caricamento...",
-    noData: "Nessun dato disponibile",
-    updated: "Aggiornato",
     dataSource: "Fonte Dati",
     multiExchange: "Multi-Exchange",
-    none: "Nessuno",
+    aggregated: "Aggregato",
+    singleSource: "Fonte Singola",
     
-    // Telegram Settings
+    // Settings Page
     telegramSettings: "Notifiche Telegram",
     telegramBotToken: "Bot Token",
     telegramChatId: "Chat ID",
     telegramEnabled: "Attiva Telegram",
     telegramTest: "Testa Connessione",
+    testConnection: "Testa Connessione",
+    testing: "Test in corso...",
     telegramTestSuccess: "Messaggio di test inviato con successo!",
     telegramTestFail: "Invio messaggio di test fallito",
     telegramNotConfigured: "Configura prima le credenziali Telegram",
@@ -577,13 +731,43 @@ export const translations = {
     notifySignalOutcomes: "Esiti Trade (WIN/LOSS)",
     telegramHowTo: "Come ottenere Bot Token e Chat ID",
     telegramInstructions: "1. Apri Telegram e cerca @BotFather\n2. Invia /newbot e segui le istruzioni\n3. Copia il Bot Token\n4. Per il Chat ID, invia un messaggio al tuo bot, poi visita:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    sound: "Suono",
+    alertSound: "Suono Avviso",
+    signalNotifications: "Notifiche Segnali",
+    operationalSignals: "Segnali Operativi",
+    signalNotificationsDesc: "Quando un segnale LONG/SHORT diventa operativo",
+    notifySignalInvalidations: "Invalidazioni Segnali",
+    signalInvalidationsDesc: "Quando un segnale viene invalidato",
+    notifySignalOutcomes: "Esiti Trade",
+    signalOutcomesDesc: "WIN, LOSS, Vittoria Parziale, Scaduto",
+    
+    // API & Data Sources Settings
+    apiDataSources: "API e Fonti Dati",
+    apiDataSourcesSubtitle: "Configurazione e stato delle connessioni",
+    adminOnly: "Solo Amministratore",
+    role: "Ruolo",
+    apiKey: "Chiave API",
+    status: "Stato",
+    lastCheck: "Ultimo Controllo",
+    futureSources: "Fonti Future (Non Ancora Integrate)",
+    noChanges: "Le modifiche alle chiavi API richiedono riavvio server. Modifica UI in arrivo.",
+    planLimitation: "Limite Piano",
+    networkError: "Errore di Rete",
+    
+    // Telegram Instructions
+    telegramStep1: "Apri Telegram e cerca",
+    telegramStep2: "Invia /newbot e segui le istruzioni",
+    telegramStep3: "Copia il Bot Token fornito",
+    telegramStep4: "Per il Chat ID, invia un messaggio al bot, poi visita:",
+    enterBotToken: "Inserisci il token del bot Telegram",
+    enterChatId: "Inserisci il tuo Chat ID",
     
     // OHLC Verification
     ohlcVerified: "Verificato OHLC",
     ohlcVerifiedDesc: "Outcome calcolato analizzando i dati HIGH/LOW delle candele storiche, non solo il prezzo corrente.",
     candlesAnalyzed: "candele analizzate",
     
-    // Learn mode explanations
+    // Learn Mode Explanations
     learnMarketBias: "Il Bias di Mercato analizza diversi indicatori per determinare la direzione generale del mercato. La fiducia mostra quanto è forte il segnale.",
     learnSupportResistance: "I livelli di supporto sono prezzi dove la pressione di acquisto storicamente impedisce ulteriori cali. Le resistenze sono dove la pressione di vendita impedisce ulteriori rialzi.",
     learnLiquidity: "I cluster di liquidità mostrano dove grandi quantità di stop-loss o liquidazioni possono accumularsi, causando potenzialmente movimenti rapidi dei prezzi.",
@@ -593,9 +777,54 @@ export const translations = {
     learnTrapRisk: "Il rischio trappola indica la probabilità di un falso breakout che potrebbe intrappolare i trader dalla parte sbagliata.",
     learnSqueeze: "La probabilità di squeeze mostra la probabilità di una compressione della volatilità seguita da un movimento brusco.",
     learnTradeSignal: "Il Segnale Operativo sintetizza tutti i moduli di intelligence in una raccomandazione azionabile con entrata, stop e obiettivi.",
-    learnLiquidityLadder: "La Scala Liquidità mostra la sequenza dei livelli di liquidità sopra e sotto il prezzo, prevedendo potenziali zone di sweep."
+    learnLiquidityLadder: "La Scala Liquidità mostra la sequenza dei livelli di liquidità sopra e sotto il prezzo, prevedendo potenziali zone di sweep.",
+    learnMarketEnergy: "Energia Mercato rileva quando BTC sta accumulando energia prima di un movimento significativo analizzando compressione prezzo, volatilità, comportamento OI e accumulo liquidità.",
+    learnLiquidityMagnet: "Magnete Liquidità misura quanto il prezzo BTC è attratto verso le zone di liquidità vicine, aiutando a identificare dove il prezzo probabilmente si muoverà.",
+    learnOrderBook: "Order Book mostra i muri bid e ask correnti tra gli exchange, rivelando dove grandi ordini limite possono supportare o resistere al movimento del prezzo.",
+    learnOpenInterest: "Open Interest misura i contratti futures totali in essere, indicando partecipazione del mercato e potenziali livelli di cascata liquidazioni.",
+    learnFundingRate: "Funding Rate mostra se long o short stanno pagando un premio, indicando estremi di posizionamento del mercato.",
+    learnDecisionEngine: "Il Motore Decisionale aggrega tutti i segnali in una raccomandazione chiara: LONG, SHORT o ATTENDI.",
+    
+    // Learn Mode Structure
+    whatHappening: "Cosa succede",
+    why: "Perché",
+    action: "Azione",
+    insufficientData: "Dati insufficienti per spiegazione",
+    
+    // Errors & Messages
+    errorFetching: "Errore nel recupero dati",
+    errorSaving: "Errore nel salvataggio",
+    savedSuccessfully: "Salvato con successo",
+    connectionFailed: "Connessione fallita",
+    retrying: "Riprovo...",
+    translationMissing: "Traduzione mancante",
+    
+    // Shadow Targets
+    shadowTargets: "Target Shadow",
+    liquidityTargets: "Target Liquidità",
+    standardTargets: "Target Standard",
+    mfeMaxFavorable: "MFE (Max Favorevole)",
+    maeMaxAdverse: "MAE (Max Avverso)",
+    dataQuality: "Qualità Dati",
+    
+    // Time labels
+    minutes: "minuti",
+    hours: "ore",
+    days: "giorni",
+    ago: "fa",
+    
+    // Documentation
+    operationalManual: "Manuale Operativo",
+    technicalManual: "Manuale Tecnico",
+    deploymentGuide: "Guida Deployment",
+    systemHealthCheck: "Controllo Salute Sistema"
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GERMAN (de) - Complete translation
+  // ═══════════════════════════════════════════════════════════════════════════
   de: {
+    // Navigation
     dashboard: "Dashboard",
     supportResistance: "Unterstützung & Widerstand",
     whaleAlerts: "Wal-Aktivität",
@@ -609,6 +838,36 @@ export const translations = {
     notes: "Notizen",
     manual: "Handbuch",
     settings: "Einstellungen",
+    
+    // Connection Status
+    live: "LIVE",
+    delayed: "VERZÖGERT",
+    offline: "OFFLINE",
+    connected: "VERBUNDEN",
+    disconnected: "GETRENNT",
+    connecting: "VERBINDE",
+    
+    // General Status Labels
+    active: "AKTIV",
+    inactive: "INAKTIV",
+    enabled: "Aktiviert",
+    disabled: "Deaktiviert",
+    available: "Verfügbar",
+    unavailable: "Nicht verfügbar",
+    notAvailable: "N/V",
+    notConfigured: "NICHT KONFIGURIERT",
+    configured: "KONFIGURIERT",
+    valid: "GÜLTIG",
+    invalid: "UNGÜLTIG",
+    error: "FEHLER",
+    success: "ERFOLG",
+    failed: "FEHLGESCHLAGEN",
+    pending: "AUSSTEHEND",
+    loading: "Laden...",
+    noData: "Keine Daten verfügbar",
+    updated: "Aktualisiert",
+    
+    // Market Bias
     marketBias: "Marktneigung",
     bullish: "BULLISCH",
     bearish: "BÄRISCH",
@@ -617,87 +876,108 @@ export const translations = {
     estimatedMove: "Gesch. Bewegung",
     trapRisk: "Fallenrisiko",
     squeezeProbability: "Squeeze-Wahrsch.",
-    live: "LIVE",
-    delayed: "VERZÖGERT",
-    offline: "OFFLINE",
-    learnMode: "Lernmodus",
-    refresh: "Aktualisieren",
-    timeframe: "Zeitrahmen",
-    language: "Sprache",
-    price: "Preis",
-    change24h: "24h Änderung",
-    volume: "Volumen",
-    support: "Unterstützung",
-    resistance: "Widerstand",
-    strength: "Stärke",
-    distance: "Entfernung",
-    signal: "Signal",
-    entry: "Einstieg",
-    target: "Ziel",
+    exchangeConsensus: "Exchange-Konsens",
+    nextTarget: "Nächstes Ziel",
+    
+    // Trade Signal / Direction
+    tradeSignal: "Handelssignal",
     long: "LONG",
     short: "SHORT",
+    wait: "WARTEN",
     noTrade: "KEIN HANDEL",
-    up: "HOCH",
-    down: "RUNTER",
-    balanced: "AUSGEGLICHEN",
-    liquidityDirection: "Liquiditätsrichtung",
-    nextTarget: "Nächstes Ziel",
-    orderBook: "Orderbuch",
-    bidWall: "Hauptkaufwand",
-    askWall: "Hauptverkaufswand",
-    imbalance: "Ungleichgewicht",
-    createAlert: "Warnung erstellen",
-    condition: "Bedingung",
-    above: "Über",
-    below: "Unter",
-    telegram: "Telegram",
-    enabled: "Aktiviert",
-    disabled: "Deaktiviert",
-    save: "Speichern",
-    cancel: "Abbrechen",
-    delete: "Löschen",
-    addNote: "Notiz hinzufügen",
-    english: "English",
-    italian: "Italiano",
-    german: "Deutsch",
-    polish: "Polski",
-    documentation: "Dokumentation",
-    
-    // Telegram Settings
-    telegramSettings: "Telegram Benachrichtigungen",
-    telegramBotToken: "Bot Token",
-    telegramChatId: "Chat ID",
-    telegramEnabled: "Telegram aktivieren",
-    telegramTest: "Verbindung testen",
-    telegramTestSuccess: "Testnachricht erfolgreich gesendet!",
-    telegramTestFail: "Testnachricht konnte nicht gesendet werden",
-    telegramNotConfigured: "Bitte zuerst Telegram-Zugangsdaten konfigurieren",
-    notifyOperationalSignals: "Operative Signale",
-    notifySignalInvalidations: "Signal-Ungültigkeiten",
-    notifySignalOutcomes: "Trade-Ergebnisse (WIN/LOSS)",
-    telegramHowTo: "Wie man Bot Token und Chat ID erhält",
-    telegramInstructions: "1. Öffne Telegram und suche nach @BotFather\n2. Sende /newbot und folge den Anweisungen\n3. Kopiere den Bot Token\n4. Für die Chat ID, sende eine Nachricht an deinen Bot, dann besuche:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
-    tradeSignal: "Handelssignal",
+    setupInConfirmation: "SETUP IN BESTÄTIGUNG",
+    operational: "OPERATIV",
+    nonOperational: "NICHT OPERATIV",
+    confirming: "Bestätigend",
+    consecutiveSignals: "Aufeinanderfolgende Signale",
+    timeInSetup: "Zeit im Setup",
+    volatilityWarning: "Hohe Volatilität - auf Stabilisierung warten",
     entryZone: "Einstiegszone",
     stopLoss: "Stop Loss",
+    target: "Ziel",
+    target1: "Ziel 1",
+    target2: "Ziel 2",
+    target3: "Ziel 3",
     riskReward: "Risiko/Ertrag",
+    estimatedMovePercent: "Erwartete Bewegung",
+    setupType: "Setup-Typ",
+    sweepReversal: "Sweep-Umkehr",
+    trendContinuation: "Trend-Fortsetzung",
+    standardSetup: "Standard",
+    setupTypeExplainer: "Sweep Reversal = manipulationsbasierte Umkehr. Trend Continuation = Ausbruch-Fortsetzung.",
+    standard: "Standard",
+    continuation: "Fortsetzung",
+    validFor: "Gültig für",
+    reasoning: "Begründung",
+    warnings: "Warnungen",
+    factors: "Faktoren",
+    sweepZone: "Sweep-Zone",
+    safeInvalidation: "Sichere Ungültigkeit",
+    sweepDetected: "Sweep erkannt",
+    sweepExpected: "Sweep erwartet",
+    whaleConfirms: "Wal bestätigt Richtung",
+    invalidation: "Ungültigkeit",
+    
+    // Decision Engine / Final Action
+    finalAction: "ENDGÜLTIGE AKTION",
+    conflictLabel: "Widersprüchliche Signale",
+    blockReason: "Sperre aktiv",
+    alignedSignals: "Ausgerichtete Signale",
+    compression: "Markt in Kompression",
+    neutralLiquidity: "Neutrale Liquidität",
+    lowRR: "R:R zu niedrig - nicht-operatives Signal",
+    weakRR: "Schwaches R:R (0.3-0.5) - nur Bildungszweck",
+    whaleAligned: "Wale ausgerichtet",
+    whaleUnavailable: "Wal: Daten nicht verfügbar - nicht berücksichtigt",
+    biasAligned: "Bias bestätigt",
+    oiRising: "OI steigend",
+    oiFalling: "OI fallend",
+    liquidityAligned: "Gerichtete Liquidität",
+    educationalOnly: "Nur Bildungskontext",
+    insufficientSignals: "Unzureichende Signale",
+    
+    // Quality Gate
+    qualityGate: "Qualitätstor",
+    qualityScore: "Qualitätspunktzahl",
+    qualityLevel: "Qualitätsniveau",
+    qualityExcellent: "AUSGEZEICHNET",
+    qualityGood: "GUT",
+    qualityWeak: "SCHWACH",
+    qualityPoor: "SCHLECHT",
+    qualityGatePassed: "Qualitätstor bestanden",
+    qualityTooLow: "Qualität zu niedrig zum Handeln",
+    qualityNeedsConfirmation: "Erfordert zusätzliche Bestätigung",
+    qualityProceedCaution: "Mit Vorsicht fortfahren",
+    
+    // Liquidity
+    liquidityDirection: "Liquiditätsrichtung",
+    liquidityLadder: "Liquiditätsleiter",
+    levelsAbove: "Levels darüber",
+    levelsBelow: "Levels darunter",
+    moreAttractiveSide: "Attraktivere Seite",
+    sweepExpectation: "Sweep-Erwartung",
+    pathAnalysis: "Pfadanalyse",
+    nearestAbove: "Nächster darüber",
+    nearestBelow: "Nächster darunter",
+    liquidityClusters: "Liquiditätscluster",
+    
+    // Whale Activity
     whaleActivity: "Wal-Aktivität",
     whaleActivityEngine: "Wal-Aktivitäts-Engine",
     buyPressure: "Kaufdruck",
     sellPressure: "Verkaufsdruck",
-    buyingPressure: "KAUFDRUCK",
-    sellingPressure: "VERKAUFSDRUCK",
-    direction: "Richtung",
     volumeSpike: "Volumenspitze",
-    shortSqueeze: "Short Squeeze",
-    longCascade: "Long-Kaskade",
     liquidationBias: "Liquidations-Bias",
     detectedSignals: "Erkannte Signale",
+    buyingPressure: "KAUFDRUCK",
+    sellingPressure: "VERKAUFSDRUCK",
+    shortSqueeze: "Short Squeeze",
+    longCascade: "Long-Kaskade",
+    balanced: "Ausgeglichen",
+    direction: "Richtung",
     aggressiveBuying: "Aggressiver Kauf erkannt",
     aggressiveSelling: "Aggressiver Verkauf erkannt",
-    loadingWhaleActivity: "Wal-Aktivität laden...",
     none: "Keine",
-    // Whale Activity v2.0
     oiDivergence: "OI-Divergenz",
     short_closing: "Shorts schließen",
     short_opening: "Shorts öffnen",
@@ -715,19 +995,51 @@ export const translations = {
     accumulation: "Akkumulation",
     distribution: "Distribution",
     liquidationZones: "Liquidationszonen",
-    liquidityLadder: "Liquiditätsleiter",
-    signalHistory: "Signalverlauf",
-    totalSignals: "Gesamt Signale",
-    last24h: "Letzte 24H",
-    loading: "Laden...",
-    noData: "Keine Daten verfügbar",
-    updated: "Aktualisiert",
-    learnWhaleAlerts: "Wal-Aktivität analysiert Volumenspitzen, Orderbuch-Druck, Liquidationsdaten und OI-Momentum, um institutionelle Aktivitäten zu erkennen.",
+    
+    // Support & Resistance
+    support: "Unterstützung",
+    resistance: "Widerstand",
+    strength: "Stärke",
+    strong: "Stark",
+    moderate: "Moderat",
+    weak: "Schwach",
+    major: "Haupt",
+    distance: "Entfernung",
+    timeframe: "Zeitrahmen",
+    volumeAtLevel: "Volumen am Level",
+    
+    // Order Book
+    orderBook: "Orderbuch",
+    bidWall: "Hauptkaufwand",
+    askWall: "Hauptverkaufswand",
+    imbalance: "Ungleichgewicht",
+    bidDepth: "Kauftiefe",
+    askDepth: "Verkaufstiefe",
+    totalDepth: "Gesamttiefe",
+    
+    // Open Interest & Funding
+    openInterest: "Open Interest",
+    fundingRate: "Funding Rate",
+    current: "Aktuell",
+    change1h: "1H Änderung",
+    change4h: "4H Änderung",
+    change24h: "24H Änderung",
+    trend: "Trend",
+    increasing: "Steigend",
+    decreasing: "Fallend",
+    stable: "Stabil",
+    rising: "Steigend",
+    falling: "Fallend",
+    annualized: "Annualisiert",
+    sentiment: "Sentiment",
+    overcrowded: "Überfüllt",
+    payer: "Zahler",
+    longsPay: "Longs zahlen",
+    shortsPay: "Shorts zahlen",
     
     // Market Energy
     marketEnergy: "Markt-Energie",
     energyScore: "Energie-Punktzahl",
-    compression: "Kompression",
     rangeWidth: "Aktuelle Range",
     compressionThreshold: "Kompressionsschwelle",
     expansionReadiness: "Expansionsbereitschaft",
@@ -739,14 +1051,13 @@ export const translations = {
     high: "HOCH",
     medium: "MITTEL",
     low: "NIEDRIG",
-    strong: "STARK",
-    moderate: "MODERAT",
-    weak: "SCHWACH",
     building: "AUFBAU",
-    rising: "STEIGEND",
-    falling: "FALLEND",
-    stable: "STABIL",
-    learnMarketEnergy: "Markt-Energie erkennt, wenn BTC vor einer signifikanten Bewegung Energie aufbaut, durch Analyse von Preiskompression, Volatilität, OI-Verhalten und Liquiditätsaufbau.",
+    
+    // Market Regime
+    marketRegime: "Marktregime",
+    trending: "TRENDING",
+    ranging: "SEITWÄRTS",
+    volatile: "VOLATIL",
     
     // Liquidity Magnet
     liquidityMagnet: "Liquiditätsmagnet",
@@ -754,24 +1065,174 @@ export const translations = {
     magnetStrength: "Magnetstärke",
     nearestMagnet: "Nächster Magnet",
     secondaryMagnet: "Sekundärer Magnet",
-    distance: "Abstand",
     estimatedValue: "Geschätzter Wert",
     attractionStrength: "Anziehungskraft",
-    sweepExpectation: "Sweep-Erwartung",
     veryStrong: "SEHR STARK",
     sweepUpFirst: "Sweep HOCH zuerst",
     sweepDownFirst: "Sweep RUNTER zuerst",
     noClearSweep: "Kein klarer Sweep",
     up: "HOCH",
     down: "RUNTER",
-    balanced: "AUSGEGLICHEN",
-    learnLiquidityMagnet: "Liquiditätsmagnet misst, wie stark der BTC-Preis zu nahen Liquiditätszonen hingezogen wird, um zu identifizieren, wohin sich der Preis wahrscheinlich bewegen wird."
+    
+    // News
+    newsTitle: "Marktnachrichten",
+    importance: "Wichtigkeit",
+    source: "Quelle",
+    
+    // Signal History
+    signalHistory: "Signalverlauf",
+    totalSignals: "Gesamt Signale",
+    last24h: "Letzte 24H",
+    recordSignal: "Signal aufzeichnen",
+    filterBy: "Filtern nach",
+    allSignals: "Alle Signale",
+    btcPrice: "BTC-Preis",
+    avgConfidence: "Durchschn. Konfidenz",
+    avgRiskReward: "Durchschn. R:R",
+    performanceStats: "Performance-Statistiken",
+    
+    // General UI
+    signal: "Signal",
+    entry: "Einstieg",
+    price: "Preis",
+    volume: "Volumen",
+    above: "Über",
+    below: "Unter",
+    refresh: "Aktualisieren",
+    language: "Sprache",
+    learnMode: "Lernmodus",
+    createAlert: "Warnung erstellen",
+    condition: "Bedingung",
+    telegram: "Telegram",
+    save: "Speichern",
+    cancel: "Abbrechen",
+    delete: "Löschen",
+    close: "Schließen",
+    confirm: "Bestätigen",
+    addNote: "Notiz hinzufügen",
+    english: "English",
+    italian: "Italiano",
+    german: "Deutsch",
+    polish: "Polski",
+    documentation: "Dokumentation",
+    dataSource: "Datenquelle",
+    multiExchange: "Multi-Exchange",
+    aggregated: "Aggregiert",
+    singleSource: "Einzelquelle",
+    
+    // Settings Page
+    telegramSettings: "Telegram Benachrichtigungen",
+    telegramBotToken: "Bot Token",
+    telegramChatId: "Chat ID",
+    telegramEnabled: "Telegram aktivieren",
+    telegramTest: "Verbindung testen",
+    testConnection: "Verbindung testen",
+    testing: "Teste...",
+    telegramTestSuccess: "Testnachricht erfolgreich gesendet!",
+    telegramTestFail: "Testnachricht konnte nicht gesendet werden",
+    telegramNotConfigured: "Bitte zuerst Telegram-Zugangsdaten konfigurieren",
+    notifyOperationalSignals: "Operative Signale",
+    notifySignalInvalidations: "Signal-Ungültigkeiten",
+    notifySignalOutcomes: "Trade-Ergebnisse (WIN/LOSS)",
+    telegramHowTo: "Wie man Bot Token und Chat ID erhält",
+    telegramInstructions: "1. Öffne Telegram und suche nach @BotFather\n2. Sende /newbot und folge den Anweisungen\n3. Kopiere den Bot Token\n4. Für die Chat ID, sende eine Nachricht an deinen Bot, dann besuche:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    sound: "Ton",
+    alertSound: "Warnton",
+    signalNotifications: "Signalbenachrichtigungen",
+    operationalSignals: "Operative Signale",
+    signalNotificationsDesc: "Wenn ein LONG/SHORT-Signal operativ wird",
+    notifySignalInvalidations: "Signal-Ungültigkeiten",
+    signalInvalidationsDesc: "Wenn ein Signal ungültig wird",
+    notifySignalOutcomes: "Trade-Ergebnisse",
+    signalOutcomesDesc: "WIN, LOSS, Teilgewinn, Abgelaufen",
+    
+    // API & Data Sources Settings
+    apiDataSources: "API & Datenquellen",
+    apiDataSourcesSubtitle: "Konfiguration und Verbindungsstatus",
+    adminOnly: "Nur Administrator",
+    role: "Rolle",
+    apiKey: "API-Schlüssel",
+    status: "Status",
+    lastCheck: "Letzte Prüfung",
+    futureSources: "Zukünftige Quellen (Noch nicht integriert)",
+    noChanges: "API-Schlüssel-Änderungen erfordern Server-Neustart. UI-Änderung kommt in zukünftiger Version.",
+    planLimitation: "Plan-Einschränkung",
+    networkError: "Netzwerkfehler",
+    
+    // Telegram Instructions
+    telegramStep1: "Öffne Telegram und suche nach",
+    telegramStep2: "Sende /newbot und folge den Anweisungen",
+    telegramStep3: "Kopiere den bereitgestellten Bot Token",
+    telegramStep4: "Für die Chat ID, sende eine Nachricht an deinen Bot, dann besuche:",
+    enterBotToken: "Gib deinen Telegram Bot Token ein",
+    enterChatId: "Gib deine Telegram Chat ID ein",
+    
+    // OHLC Verification
+    ohlcVerified: "OHLC Verifiziert",
+    ohlcVerifiedDesc: "Ergebnis berechnet durch Analyse historischer Kerzen HIGH/LOW-Daten, nicht nur aktuellem Preis.",
+    candlesAnalyzed: "Kerzen analysiert",
+    
+    // Learn Mode Explanations
+    learnMarketBias: "Marktneigung analysiert mehrere Indikatoren, um die allgemeine Marktrichtung zu bestimmen. Die Konfidenz zeigt, wie stark das Signal ist.",
+    learnSupportResistance: "Unterstützungsniveaus sind Preise, bei denen Kaufdruck historisch weitere Rückgänge verhindert. Widerstandsniveaus sind, wo Verkaufsdruck weitere Anstiege verhindert.",
+    learnLiquidity: "Liquiditätscluster zeigen, wo große Mengen an Stop-Losses oder Liquidationen sich ansammeln können, was potenziell schnelle Preisbewegungen verursacht.",
+    learnWhaleAlerts: "Wal-Aktivität erkennt ungewöhnlich große Handelsaktivitäten, die auf institutionelle Bewegungen hindeuten könnten.",
+    learnPatterns: "Chartmuster sind Formationen, die zukünftige Preisbewegungen basierend auf historischem Verhalten vorhersagen können.",
+    learnCandlesticks: "Kerzenmuster sind spezifische Kerzenformationen, die Trader nutzen, um kurzfristige Preisrichtungen vorherzusagen.",
+    learnTrapRisk: "Fallenrisiko zeigt die Wahrscheinlichkeit eines falschen Ausbruchs, der Trader auf der falschen Seite fangen könnte.",
+    learnSqueeze: "Squeeze-Wahrscheinlichkeit zeigt die Wahrscheinlichkeit einer Volatilitätskompression gefolgt von einer scharfen Bewegung.",
+    learnTradeSignal: "Das Handelssignal synthetisiert alle Intelligenzmodule zu einer handlungsfähigen Empfehlung mit Einstieg, Stop und Zielen.",
+    learnLiquidityLadder: "Die Liquiditätsleiter zeigt die Abfolge der Liquiditätsniveaus über und unter dem Preis und prognostiziert potenzielle Sweep-Zonen.",
+    learnMarketEnergy: "Markt-Energie erkennt, wenn BTC vor einer signifikanten Bewegung Energie aufbaut, durch Analyse von Preiskompression, Volatilität, OI-Verhalten und Liquiditätsaufbau.",
+    learnLiquidityMagnet: "Liquiditätsmagnet misst, wie stark der BTC-Preis zu nahen Liquiditätszonen hingezogen wird, um zu identifizieren, wohin sich der Preis wahrscheinlich bewegen wird.",
+    learnOrderBook: "Orderbuch zeigt aktuelle Kauf- und Verkaufswände über Börsen, die zeigen, wo große Limitorders Preisbewegungen unterstützen oder widerstehen können.",
+    learnOpenInterest: "Open Interest misst die gesamten ausstehenden Futures-Kontrakte und zeigt Marktbeteiligung und potenzielle Liquidationskaskaden-Niveaus.",
+    learnFundingRate: "Funding Rate zeigt, ob Longs oder Shorts eine Prämie zahlen, was auf extreme Marktpositionierung hinweist.",
+    learnDecisionEngine: "Die Entscheidungs-Engine aggregiert alle Signale zu einer klaren Aktionsempfehlung: LONG, SHORT oder WARTEN.",
+    
+    // Learn Mode Structure
+    whatHappening: "Was passiert",
+    why: "Warum",
+    action: "Aktion",
+    insufficientData: "Unzureichende Daten für Erklärung",
+    
+    // Errors & Messages
+    errorFetching: "Fehler beim Abrufen der Daten",
+    errorSaving: "Fehler beim Speichern",
+    savedSuccessfully: "Erfolgreich gespeichert",
+    connectionFailed: "Verbindung fehlgeschlagen",
+    retrying: "Versuche erneut...",
+    translationMissing: "Übersetzung fehlt",
+    
+    // Shadow Targets
+    shadowTargets: "Shadow-Ziele",
+    liquidityTargets: "Liquiditätsziele",
+    standardTargets: "Standardziele",
+    mfeMaxFavorable: "MFE (Max. günstig)",
+    maeMaxAdverse: "MAE (Max. ungünstig)",
+    dataQuality: "Datenqualität",
+    
+    // Time labels
+    minutes: "Minuten",
+    hours: "Stunden",
+    days: "Tage",
+    ago: "vor",
+    
+    // Documentation
+    operationalManual: "Betriebshandbuch",
+    technicalManual: "Technisches Handbuch",
+    deploymentGuide: "Bereitstellungsanleitung",
+    systemHealthCheck: "System-Gesundheitsprüfung"
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POLISH (pl) - Complete translation
+  // ═══════════════════════════════════════════════════════════════════════════
   pl: {
     // Navigation
     dashboard: "Pulpit",
-    supportResistance: "Wsparcie/Opór",
-    whaleAlerts: "Alerty Wielorybów",
+    supportResistance: "Wsparcie i Opór",
+    whaleAlerts: "Aktywność Wielorybów",
     liquidity: "Płynność",
     patterns: "Wzorce",
     candlesticks: "Świece",
@@ -783,47 +1244,145 @@ export const translations = {
     manual: "Podręcznik",
     settings: "Ustawienia",
     
-    // Trade Signal
-    tradeSignal: "Sygnał Handlowy",
-    long: "LONG",
-    short: "SHORT",
-    noTrade: "BRAK HANDLU",
-    setupInConfirmation: "SETUP W POTWIERDZENIU",
-    operational: "OPERACYJNY",
-    confirming: "Potwierdzanie",
-    consecutiveSignals: "Kolejne sygnały",
-    timeInSetup: "Czas w setup",
-    volatilityWarning: "Wysoka zmienność - poczekaj na stabilizację",
-    entryZone: "Strefa Wejścia",
-    stopLoss: "Stop Loss",
-    riskReward: "Ryzyko/Zysk",
+    // Connection Status
+    live: "NA ŻYWO",
+    delayed: "OPÓŹNIONY",
+    offline: "OFFLINE",
+    connected: "POŁĄCZONY",
+    disconnected: "ROZŁĄCZONY",
+    connecting: "ŁĄCZENIE",
     
-    // Market
-    marketBias: "Bias Rynku",
+    // General Status Labels
+    active: "AKTYWNY",
+    inactive: "NIEAKTYWNY",
+    enabled: "Włączony",
+    disabled: "Wyłączony",
+    available: "Dostępny",
+    unavailable: "Niedostępny",
+    notAvailable: "N/D",
+    notConfigured: "NIE SKONFIGUROWANY",
+    configured: "SKONFIGUROWANY",
+    valid: "PRAWIDŁOWY",
+    invalid: "NIEPRAWIDŁOWY",
+    error: "BŁĄD",
+    success: "SUKCES",
+    failed: "NIEUDANY",
+    pending: "OCZEKUJĄCY",
+    loading: "Ładowanie...",
+    noData: "Brak dostępnych danych",
+    updated: "Zaktualizowano",
+    
+    // Market Bias
+    marketBias: "Nastawienie Rynku",
     bullish: "BYCZY",
     bearish: "NIEDŹWIEDZI",
     neutral: "NEUTRALNY",
     confidence: "Pewność",
+    estimatedMove: "Szac. Ruch",
+    trapRisk: "Ryzyko Pułapki",
+    squeezeProbability: "Prawdop. Squeeze",
+    exchangeConsensus: "Konsensus Giełd",
+    nextTarget: "Następny Cel",
+    
+    // Trade Signal / Direction
+    tradeSignal: "Sygnał Handlowy",
+    long: "LONG",
+    short: "SHORT",
+    wait: "CZEKAJ",
+    noTrade: "BRAK HANDLU",
+    setupInConfirmation: "SETUP W POTWIERDZENIU",
+    operational: "OPERACYJNY",
+    nonOperational: "NIEOPERACYJNY",
+    confirming: "Potwierdzanie",
+    consecutiveSignals: "Kolejne sygnały",
+    timeInSetup: "Czas w setupie",
+    volatilityWarning: "Wysoka zmienność - poczekaj na stabilizację",
+    entryZone: "Strefa Wejścia",
+    stopLoss: "Stop Loss",
+    target: "Cel",
+    target1: "Cel 1",
+    target2: "Cel 2",
+    target3: "Cel 3",
+    riskReward: "Ryzyko/Zysk",
+    estimatedMovePercent: "Oczekiwany Ruch",
+    setupType: "Typ Setupu",
+    sweepReversal: "Sweep Odwrócenie",
+    trendContinuation: "Kontynuacja Trendu",
+    standardSetup: "Standardowy",
+    setupTypeExplainer: "Sweep Reversal = odwrócenie oparte na manipulacji. Trend Continuation = kontynuacja po wybiciu.",
+    standard: "Standardowy",
+    continuation: "Kontynuacja",
+    validFor: "Ważny przez",
+    reasoning: "Uzasadnienie",
+    warnings: "Ostrzeżenia",
+    factors: "Czynniki",
+    sweepZone: "Strefa Sweep",
+    safeInvalidation: "Bezpieczne Unieważnienie",
+    sweepDetected: "Sweep Wykryty",
+    sweepExpected: "Sweep Oczekiwany",
+    whaleConfirms: "Wieloryb Potwierdza Kierunek",
+    invalidation: "Unieważnienie",
+    
+    // Decision Engine / Final Action
+    finalAction: "OSTATECZNA AKCJA",
+    conflictLabel: "Sprzeczne sygnały",
+    blockReason: "Blokada aktywna",
+    alignedSignals: "Wyrównane sygnały",
+    compression: "Rynek w kompresji",
+    neutralLiquidity: "Neutralna płynność",
+    lowRR: "R:R za niskie - sygnał nieoperacyjny",
+    weakRR: "Słabe R:R (0.3-0.5) - tylko edukacyjny",
+    whaleAligned: "Wieloryby wyrównane",
+    whaleUnavailable: "Wieloryb: dane niedostępne - nie uwzględnione",
+    biasAligned: "Nastawienie potwierdzone",
+    oiRising: "OI rosnące",
+    oiFalling: "OI spadające",
+    liquidityAligned: "Kierunkowa płynność",
+    educationalOnly: "Tylko kontekst edukacyjny",
+    insufficientSignals: "Niewystarczające sygnały",
+    
+    // Quality Gate
+    qualityGate: "Brama Jakości",
+    qualityScore: "Wynik Jakości",
+    qualityLevel: "Poziom Jakości",
+    qualityExcellent: "DOSKONAŁY",
+    qualityGood: "DOBRY",
+    qualityWeak: "SŁABY",
+    qualityPoor: "KIEPSKI",
+    qualityGatePassed: "Brama Jakości Zaliczona",
+    qualityTooLow: "Jakość za niska do handlu",
+    qualityNeedsConfirmation: "Wymaga dodatkowego potwierdzenia",
+    qualityProceedCaution: "Postępuj ostrożnie",
+    
+    // Liquidity
+    liquidityDirection: "Kierunek Płynności",
+    liquidityLadder: "Drabina Płynności",
+    levelsAbove: "Poziomy Powyżej",
+    levelsBelow: "Poziomy Poniżej",
+    moreAttractiveSide: "Bardziej Atrakcyjna Strona",
+    sweepExpectation: "Oczekiwany Sweep",
+    pathAnalysis: "Analiza Ścieżki",
+    nearestAbove: "Najbliższy Powyżej",
+    nearestBelow: "Najbliższy Poniżej",
+    liquidityClusters: "Klastry Płynności",
     
     // Whale Activity
     whaleActivity: "Aktywność Wielorybów",
     whaleActivityEngine: "Silnik Aktywności Wielorybów",
     buyPressure: "Presja Kupna",
     sellPressure: "Presja Sprzedaży",
+    volumeSpike: "Skok Wolumenu",
+    liquidationBias: "Nastawienie Likwidacji",
+    detectedSignals: "Wykryte Sygnały",
     buyingPressure: "PRESJA KUPNA",
     sellingPressure: "PRESJA SPRZEDAŻY",
-    direction: "Kierunek",
-    strength: "Siła",
-    volumeSpike: "Skok Wolumenu",
     shortSqueeze: "Short Squeeze",
     longCascade: "Kaskada Long",
-    liquidationBias: "Bias Likwidacji",
-    detectedSignals: "Wykryte Sygnały",
+    balanced: "Zrównoważony",
+    direction: "Kierunek",
     aggressiveBuying: "Wykryto agresywne kupowanie",
     aggressiveSelling: "Wykryto agresywną sprzedaż",
-    loadingWhaleActivity: "Ładowanie aktywności wielorybów...",
     none: "Brak",
-    // Whale Activity v2.0
     oiDivergence: "Dywergencja OI",
     short_closing: "Shorty zamykają",
     short_opening: "Shorty otwierają",
@@ -832,9 +1391,9 @@ export const translations = {
     whaleBehavior: "Zachowanie Wielorybów",
     accumulating: "Akumulacja",
     distributing: "Dystrybucja",
-    hunting_stops: "Polowanie na stopy",
-    position_building: "Budowa pozycji",
-    position_closing: "Zamykanie pozycji",
+    hunting_stops: "Polowanie na Stopy",
+    position_building: "Budowa Pozycji",
+    position_closing: "Zamykanie Pozycji",
     absorbing: "Absorpcja",
     absorption: "Absorpcja",
     detected: "Wykryto",
@@ -842,52 +1401,51 @@ export const translations = {
     distribution: "Dystrybucja",
     liquidationZones: "Strefy Likwidacji",
     
-    // Liquidity
-    liquidityLadder: "Drabina Płynności",
-    liquidityDirection: "Kierunek Płynności",
-    above: "Powyżej",
-    below: "Poniżej",
-    balanced: "Zrównoważone",
+    // Support & Resistance
+    support: "Wsparcie",
+    resistance: "Opór",
+    strength: "Siła",
+    strong: "Silny",
+    moderate: "Umiarkowany",
+    weak: "Słaby",
+    major: "Główny",
+    distance: "Odległość",
+    timeframe: "Ramy Czasowe",
+    volumeAtLevel: "Wolumen na Poziomie",
     
-    // Signal History
-    signalHistory: "Historia Sygnałów",
-    totalSignals: "Wszystkie Sygnały",
-    last24h: "Ostatnie 24H",
+    // Order Book
+    orderBook: "Księga Zleceń",
+    bidWall: "Główna Ściana Kupna",
+    askWall: "Główna Ściana Sprzedaży",
+    imbalance: "Nierównowaga",
+    bidDepth: "Głębokość Kupna",
+    askDepth: "Głębokość Sprzedaży",
+    totalDepth: "Całkowita Głębokość",
     
-    // Common
-    english: "English",
-    italian: "Italiano",
-    german: "Deutsch",
-    polish: "Polski",
-    documentation: "Dokumentacja",
-    loading: "Ładowanie...",
-    noData: "Brak dostępnych danych",
-    refresh: "Odśwież",
-    close: "Zamknij",
-    updated: "Zaktualizowano",
-    learnWhaleAlerts: "Aktywność wielorybów analizuje skoki wolumenu, presję orderbooka, dane o likwidacjach i momentum OI, aby wykryć aktywność instytucjonalną.",
-    
-    // Telegram Settings
-    telegram: "Telegram",
-    telegramSettings: "Powiadomienia Telegram",
-    telegramBotToken: "Token Bota",
-    telegramChatId: "ID Czatu",
-    telegramEnabled: "Włącz Telegram",
-    telegramTest: "Testuj Połączenie",
-    telegramTestSuccess: "Wiadomość testowa wysłana pomyślnie!",
-    telegramTestFail: "Nie udało się wysłać wiadomości testowej",
-    telegramNotConfigured: "Najpierw skonfiguruj dane Telegram",
-    notifyOperationalSignals: "Sygnały Operacyjne",
-    notifySignalInvalidations: "Unieważnienia Sygnałów",
-    notifySignalOutcomes: "Wyniki Transakcji (WIN/LOSS)",
-    telegramHowTo: "Jak uzyskać Token Bota i ID Czatu",
-    telegramInstructions: "1. Otwórz Telegram i wyszukaj @BotFather\n2. Wyślij /newbot i postępuj zgodnie z instrukcjami\n3. Skopiuj Token Bota\n4. Dla ID Czatu wyślij wiadomość do swojego bota, a potem odwiedź:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    // Open Interest & Funding
+    openInterest: "Open Interest",
+    fundingRate: "Funding Rate",
+    current: "Bieżący",
+    change1h: "Zmiana 1H",
+    change4h: "Zmiana 4H",
+    change24h: "Zmiana 24H",
+    trend: "Trend",
+    increasing: "Rosnący",
+    decreasing: "Malejący",
+    stable: "Stabilny",
+    rising: "Rosnący",
+    falling: "Spadający",
+    annualized: "Roczny",
+    sentiment: "Sentyment",
+    overcrowded: "Przepełniony",
+    payer: "Płatnik",
+    longsPay: "Longi płacą",
+    shortsPay: "Shorty płacą",
     
     // Market Energy
     marketEnergy: "Energia Rynku",
     energyScore: "Wynik Energii",
-    compression: "Kompresja",
-    rangeWidth: "Aktualny Zakres",
+    rangeWidth: "Bieżący Zakres",
     compressionThreshold: "Próg Kompresji",
     expansionReadiness: "Gotowość do Ekspansji",
     liquidityBuildup: "Wzrost Płynności",
@@ -898,14 +1456,13 @@ export const translations = {
     high: "WYSOKA",
     medium: "ŚREDNIA",
     low: "NISKA",
-    strong: "SILNY",
-    moderate: "UMIARKOWANY",
-    weak: "SŁABY",
     building: "BUDOWA",
-    rising: "ROSNĄCY",
-    falling: "SPADAJĄCY",
-    stable: "STABILNY",
-    learnMarketEnergy: "Energia Rynku wykrywa, gdy BTC akumuluje energię przed znaczącym ruchem, analizując kompresję ceny, zmienność, zachowanie OI i wzrost płynności.",
+    
+    // Market Regime
+    marketRegime: "Reżim Rynku",
+    trending: "TRENDOWY",
+    ranging: "BOCZNY",
+    volatile: "ZMIENNY",
     
     // Liquidity Magnet
     liquidityMagnet: "Magnes Płynności",
@@ -913,19 +1470,189 @@ export const translations = {
     magnetStrength: "Siła Magnesu",
     nearestMagnet: "Najbliższy Magnes",
     secondaryMagnet: "Magnes Wtórny",
-    distance: "Odległość",
     estimatedValue: "Szacowana Wartość",
     attractionStrength: "Siła Przyciągania",
-    sweepExpectation: "Oczekiwany Sweep",
     veryStrong: "BARDZO SILNY",
     sweepUpFirst: "Sweep W GÓRĘ najpierw",
     sweepDownFirst: "Sweep W DÓŁ najpierw",
     noClearSweep: "Brak wyraźnego sweep",
     up: "W GÓRĘ",
     down: "W DÓŁ",
-    balanced: "ZRÓWNOWAŻONY",
-    learnLiquidityMagnet: "Magnes Płynności mierzy jak silnie cena BTC jest przyciągana do pobliskich stref płynności, pomagając zidentyfikować gdzie cena prawdopodobnie się ruszy."
+    
+    // News
+    newsTitle: "Wiadomości Rynkowe",
+    importance: "Ważność",
+    source: "Źródło",
+    
+    // Signal History
+    signalHistory: "Historia Sygnałów",
+    totalSignals: "Wszystkie Sygnały",
+    last24h: "Ostatnie 24H",
+    recordSignal: "Zapisz Sygnał",
+    filterBy: "Filtruj wg",
+    allSignals: "Wszystkie Sygnały",
+    btcPrice: "Cena BTC",
+    avgConfidence: "Śr. Pewność",
+    avgRiskReward: "Śr. R:R",
+    performanceStats: "Statystyki Wydajności",
+    
+    // General UI
+    signal: "Sygnał",
+    entry: "Wejście",
+    price: "Cena",
+    volume: "Wolumen",
+    above: "Powyżej",
+    below: "Poniżej",
+    refresh: "Odśwież",
+    language: "Język",
+    learnMode: "Tryb Nauki",
+    createAlert: "Utwórz Alert",
+    condition: "Warunek",
+    telegram: "Telegram",
+    save: "Zapisz",
+    cancel: "Anuluj",
+    delete: "Usuń",
+    close: "Zamknij",
+    confirm: "Potwierdź",
+    addNote: "Dodaj Notatkę",
+    english: "English",
+    italian: "Italiano",
+    german: "Deutsch",
+    polish: "Polski",
+    documentation: "Dokumentacja",
+    dataSource: "Źródło Danych",
+    multiExchange: "Multi-Exchange",
+    aggregated: "Zagregowany",
+    singleSource: "Pojedyncze Źródło",
+    
+    // Settings Page
+    telegramSettings: "Powiadomienia Telegram",
+    telegramBotToken: "Token Bota",
+    telegramChatId: "ID Czatu",
+    telegramEnabled: "Włącz Telegram",
+    telegramTest: "Testuj Połączenie",
+    testConnection: "Testuj Połączenie",
+    testing: "Testowanie...",
+    telegramTestSuccess: "Wiadomość testowa wysłana pomyślnie!",
+    telegramTestFail: "Nie udało się wysłać wiadomości testowej",
+    telegramNotConfigured: "Najpierw skonfiguruj dane Telegram",
+    notifyOperationalSignals: "Sygnały Operacyjne",
+    notifySignalInvalidations: "Unieważnienia Sygnałów",
+    notifySignalOutcomes: "Wyniki Transakcji (WIN/LOSS)",
+    telegramHowTo: "Jak uzyskać Token Bota i ID Czatu",
+    telegramInstructions: "1. Otwórz Telegram i wyszukaj @BotFather\n2. Wyślij /newbot i postępuj zgodnie z instrukcjami\n3. Skopiuj Token Bota\n4. Dla ID Czatu wyślij wiadomość do swojego bota, a potem odwiedź:\n   https://api.telegram.org/bot<TOKEN>/getUpdates",
+    sound: "Dźwięk",
+    alertSound: "Dźwięk Alertu",
+    signalNotifications: "Powiadomienia Sygnałów",
+    operationalSignals: "Sygnały Operacyjne",
+    signalNotificationsDesc: "Gdy sygnał LONG/SHORT staje się operacyjny",
+    notifySignalInvalidations: "Unieważnienia Sygnałów",
+    signalInvalidationsDesc: "Gdy sygnał zostaje unieważniony",
+    notifySignalOutcomes: "Wyniki Transakcji",
+    signalOutcomesDesc: "WIN, LOSS, Częściowa Wygrana, Wygasły",
+    
+    // API & Data Sources Settings
+    apiDataSources: "API i Źródła Danych",
+    apiDataSourcesSubtitle: "Konfiguracja i status połączeń",
+    adminOnly: "Tylko Administrator",
+    role: "Rola",
+    apiKey: "Klucz API",
+    status: "Status",
+    lastCheck: "Ostatnie Sprawdzenie",
+    futureSources: "Przyszłe Źródła (Jeszcze Nie Zintegrowane)",
+    noChanges: "Zmiany klucza API wymagają restartu serwera. Modyfikacja UI w przyszłej wersji.",
+    planLimitation: "Ograniczenie Planu",
+    networkError: "Błąd Sieci",
+    
+    // Telegram Instructions
+    telegramStep1: "Otwórz Telegram i wyszukaj",
+    telegramStep2: "Wyślij /newbot i postępuj zgodnie z instrukcjami",
+    telegramStep3: "Skopiuj podany Token Bota",
+    telegramStep4: "Dla ID Czatu wyślij wiadomość do swojego bota, a potem odwiedź:",
+    enterBotToken: "Wprowadź token bota Telegram",
+    enterChatId: "Wprowadź swoje ID czatu Telegram",
+    
+    // OHLC Verification
+    ohlcVerified: "OHLC Zweryfikowany",
+    ohlcVerifiedDesc: "Wynik obliczony przez analizę historycznych danych HIGH/LOW świec, nie tylko bieżącej ceny.",
+    candlesAnalyzed: "przeanalizowanych świec",
+    
+    // Learn Mode Explanations
+    learnMarketBias: "Nastawienie Rynku analizuje wiele wskaźników, aby określić ogólny kierunek rynku. Pewność pokazuje, jak silny jest sygnał.",
+    learnSupportResistance: "Poziomy wsparcia to ceny, gdzie presja kupna historycznie zapobiega dalszym spadkom. Poziomy oporu to miejsca, gdzie presja sprzedaży zapobiega dalszym wzrostom.",
+    learnLiquidity: "Klastry płynności pokazują, gdzie duże ilości stop-lossów lub likwidacji mogą się gromadzić, potencjalnie powodując szybkie ruchy cen.",
+    learnWhaleAlerts: "Aktywność Wielorybów wykrywa nienormalnie dużą aktywność handlową, która może wskazywać na ruchy instytucjonalne.",
+    learnPatterns: "Wzorce wykresów to formacje, które mogą przewidywać przyszłe ruchy cen na podstawie historycznego zachowania.",
+    learnCandlesticks: "Wzorce świecowe to konkretne formacje świec, których traderzy używają do przewidywania krótkoterminowego kierunku ceny.",
+    learnTrapRisk: "Ryzyko pułapki wskazuje prawdopodobieństwo fałszywego wybicia, które mogłoby uwięzić traderów po złej stronie.",
+    learnSqueeze: "Prawdopodobieństwo squeeze pokazuje szansę kompresji zmienności, po której następuje gwałtowny ruch.",
+    learnTradeSignal: "Sygnał Handlowy syntetyzuje wszystkie moduły inteligencji w jedną rekomendację z wejściem, stopem i celami.",
+    learnLiquidityLadder: "Drabina Płynności pokazuje sekwencję poziomów płynności powyżej i poniżej ceny, przewidując potencjalne strefy sweep.",
+    learnMarketEnergy: "Energia Rynku wykrywa, gdy BTC akumuluje energię przed znaczącym ruchem, analizując kompresję ceny, zmienność, zachowanie OI i wzrost płynności.",
+    learnLiquidityMagnet: "Magnes Płynności mierzy, jak silnie cena BTC jest przyciągana do pobliskich stref płynności, pomagając zidentyfikować, gdzie cena prawdopodobnie się ruszy.",
+    learnOrderBook: "Księga Zleceń pokazuje aktualne ściany kupna i sprzedaży na giełdach, ujawniając, gdzie duże zlecenia limit mogą wspierać lub opierać się ruchowi ceny.",
+    learnOpenInterest: "Open Interest mierzy całkowitą liczbę otwartych kontraktów futures, wskazując uczestnictwo rynku i potencjalne poziomy kaskady likwidacji.",
+    learnFundingRate: "Funding Rate pokazuje, czy longi czy shorty płacą premię, wskazując na skrajności pozycjonowania rynku.",
+    learnDecisionEngine: "Silnik Decyzyjny agreguje wszystkie sygnały w jedną jasną rekomendację: LONG, SHORT lub CZEKAJ.",
+    
+    // Learn Mode Structure
+    whatHappening: "Co się dzieje",
+    why: "Dlaczego",
+    action: "Akcja",
+    insufficientData: "Niewystarczające dane do wyjaśnienia",
+    
+    // Errors & Messages
+    errorFetching: "Błąd pobierania danych",
+    errorSaving: "Błąd zapisywania",
+    savedSuccessfully: "Zapisano pomyślnie",
+    connectionFailed: "Połączenie nieudane",
+    retrying: "Ponawiam...",
+    translationMissing: "Brak tłumaczenia",
+    
+    // Shadow Targets
+    shadowTargets: "Cele Shadow",
+    liquidityTargets: "Cele Płynności",
+    standardTargets: "Cele Standardowe",
+    mfeMaxFavorable: "MFE (Max. Korzystny)",
+    maeMaxAdverse: "MAE (Max. Niekorzystny)",
+    dataQuality: "Jakość Danych",
+    
+    // Time labels
+    minutes: "minut",
+    hours: "godzin",
+    days: "dni",
+    ago: "temu",
+    
+    // Documentation
+    operationalManual: "Podręcznik Operacyjny",
+    technicalManual: "Podręcznik Techniczny",
+    deploymentGuide: "Przewodnik Wdrożenia",
+    systemHealthCheck: "Sprawdzenie Stanu Systemu"
   }
 };
+
+/**
+ * Get translation with fallback handling
+ * Returns "[Missing: key]" if translation not found
+ * @param {string} lang - Language code (en, it, de, pl)
+ * @param {string} key - Translation key
+ * @returns {string} Translated string or missing indicator
+ */
+export function getTranslation(lang, key) {
+  const translation = translations[lang]?.[key];
+  if (translation) return translation;
+  
+  // Fallback to English
+  const englishFallback = translations.en?.[key];
+  if (englishFallback) {
+    // Log missing translation for debugging
+    console.warn(`[i18n] Missing ${lang} translation for: ${key}`);
+    return englishFallback;
+  }
+  
+  // No translation found at all
+  console.error(`[i18n] Translation missing for key: ${key}`);
+  return `[Missing: ${key}]`;
+}
 
 export default translations;

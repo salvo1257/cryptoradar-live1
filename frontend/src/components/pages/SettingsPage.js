@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Separator } from '../ui/separator';
 import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
+import { translations } from '../../translations';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -23,31 +24,34 @@ export function SettingsPage() {
     }
   }, [settings]);
 
+  // Get translation helper
+  const lang = translations[language] || translations.en;
+
   const handleSave = async () => {
     if (!localSettings) return;
     setIsSaving(true);
     const success = await updateSettings(localSettings);
     setIsSaving(false);
     if (success) {
-      toast.success('Settings saved successfully');
+      toast.success(lang.savedSuccessfully || 'Settings saved successfully');
     } else {
-      toast.error('Failed to save settings');
+      toast.error(lang.errorSaving || 'Failed to save settings');
     }
   };
 
   const handleTestTelegram = async () => {
     if (!localSettings?.telegram_bot_token || !localSettings?.telegram_chat_id) {
-      toast.error('Please configure Telegram credentials first');
+      toast.error(lang.telegramNotConfigured || 'Please configure Telegram credentials first');
       return;
     }
     setIsTesting(true);
-    const message = `🔔 CryptoRadar Test Message\n\nYour Telegram integration is working correctly!\n\nTimestamp: ${new Date().toISOString()}`;
+    const message = `🔔 CryptoRadar Test Message\n\n${lang.telegramTestSuccess || 'Your Telegram integration is working correctly!'}\n\nTimestamp: ${new Date().toISOString()}`;
     const success = await testTelegram(message);
     setIsTesting(false);
     if (success) {
-      toast.success('Test message sent successfully!');
+      toast.success(lang.telegramTestSuccess || 'Test message sent successfully!');
     } else {
-      toast.error('Failed to send test message. Check your credentials.');
+      toast.error(lang.telegramTestFail || 'Failed to send test message. Check your credentials.');
     }
   };
 
@@ -125,12 +129,12 @@ export function SettingsPage() {
           <div className="flex items-start gap-2">
             <Info className="w-4 h-4 text-whale mt-0.5 flex-shrink-0" />
             <div className="text-xs text-zinc-400 space-y-1">
-              <p className="font-medium text-zinc-300">{t('telegramHowTo') || 'How to get Bot Token and Chat ID'}:</p>
+              <p className="font-medium text-zinc-300">{t('telegramHowTo') || lang.telegramHowTo || 'How to get Bot Token and Chat ID'}:</p>
               <ol className="list-decimal ml-4 space-y-0.5">
-                <li>{language === 'it' ? 'Apri Telegram e cerca' : 'Open Telegram and search for'} <span className="text-whale">@BotFather</span></li>
-                <li>{language === 'it' ? 'Invia /newbot e segui le istruzioni' : 'Send /newbot and follow instructions'}</li>
-                <li>{language === 'it' ? 'Copia il Bot Token fornito' : 'Copy the Bot Token provided'}</li>
-                <li>{language === 'it' ? 'Per il Chat ID, invia un messaggio al bot, poi visita:' : 'For Chat ID, message your bot, then visit:'}</li>
+                <li>{lang.telegramStep1 || 'Open Telegram and search for'} <span className="text-whale">@BotFather</span></li>
+                <li>{lang.telegramStep2 || 'Send /newbot and follow instructions'}</li>
+                <li>{lang.telegramStep3 || 'Copy the Bot Token provided'}</li>
+                <li>{lang.telegramStep4 || 'For Chat ID, message your bot, then visit:'}</li>
               </ol>
               <code className="block text-[10px] bg-crypto-surface p-1 rounded mt-1 break-all">
                 https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
@@ -141,22 +145,22 @@ export function SettingsPage() {
 
         <div className="space-y-3">
           <div className="space-y-2">
-            <label className="text-sm text-zinc-400">{t('telegramBotToken') || 'Bot Token'}</label>
+            <label className="text-sm text-zinc-400">{t('telegramBotToken') || lang.telegramBotToken || 'Bot Token'}</label>
             <Input
               type="password"
               value={localSettings.telegram_bot_token || ''}
               onChange={(e) => setLocalSettings({...localSettings, telegram_bot_token: e.target.value})}
-              placeholder={language === 'it' ? 'Inserisci il token del bot Telegram' : 'Enter your Telegram bot token'}
+              placeholder={lang.enterBotToken || 'Enter your Telegram bot token'}
               className="bg-crypto-surface border-crypto-border font-mono text-sm"
               data-testid="telegram-token-input"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm text-zinc-400">{t('telegramChatId') || 'Chat ID'}</label>
+            <label className="text-sm text-zinc-400">{t('telegramChatId') || lang.telegramChatId || 'Chat ID'}</label>
             <Input
               value={localSettings.telegram_chat_id || ''}
               onChange={(e) => setLocalSettings({...localSettings, telegram_chat_id: e.target.value})}
-              placeholder={language === 'it' ? 'Inserisci il tuo Chat ID' : 'Enter your Telegram chat ID'}
+              placeholder={lang.enterChatId || 'Enter your Telegram chat ID'}
               className="bg-crypto-surface border-crypto-border font-mono text-sm"
               data-testid="telegram-chatid-input"
             />
@@ -173,7 +177,7 @@ export function SettingsPage() {
             ) : (
               <Send className="w-4 h-4 mr-2" />
             )}
-            {t('telegramTest') || 'Test Connection'}
+            {t('telegramTest') || lang.testConnection || 'Test Connection'}
           </Button>
         </div>
 
@@ -183,13 +187,13 @@ export function SettingsPage() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Bell className="w-4 h-4 text-bullish" />
-            <h3 className="text-sm font-medium text-zinc-300">{language === 'it' ? 'Notifiche Segnali' : 'Signal Notifications'}</h3>
+            <h3 className="text-sm font-medium text-zinc-300">{lang.signalNotifications || 'Signal Notifications'}</h3>
           </div>
           
           <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
             <div className="flex flex-col">
-              <span className="text-sm">{t('notifyOperationalSignals') || 'Operational Signals'}</span>
-              <span className="text-xs text-zinc-500">{language === 'it' ? 'Quando un segnale LONG/SHORT diventa operativo' : 'When a LONG/SHORT signal becomes operational'}</span>
+              <span className="text-sm">{lang.operationalSignals || 'Operational Signals'}</span>
+              <span className="text-xs text-zinc-500">{lang.signalNotificationsDesc || 'When a LONG/SHORT signal becomes operational'}</span>
             </div>
             <Switch
               checked={localSettings.notify_operational_signals ?? true}
@@ -200,8 +204,8 @@ export function SettingsPage() {
           
           <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
             <div className="flex flex-col">
-              <span className="text-sm">{t('notifySignalInvalidations') || 'Signal Invalidations'}</span>
-              <span className="text-xs text-zinc-500">{language === 'it' ? 'Quando un segnale viene invalidato' : 'When a signal is invalidated'}</span>
+              <span className="text-sm">{lang.notifySignalInvalidations || 'Signal Invalidations'}</span>
+              <span className="text-xs text-zinc-500">{lang.signalInvalidationsDesc || 'When a signal is invalidated'}</span>
             </div>
             <Switch
               checked={localSettings.notify_signal_invalidations ?? true}
@@ -212,8 +216,8 @@ export function SettingsPage() {
           
           <div className="flex items-center justify-between p-2 bg-crypto-bg/30 rounded">
             <div className="flex flex-col">
-              <span className="text-sm">{t('notifySignalOutcomes') || 'Trade Outcomes'}</span>
-              <span className="text-xs text-zinc-500">{language === 'it' ? 'WIN, LOSS, Vittoria Parziale, Scaduto' : 'WIN, LOSS, Partial Win, Expired'}</span>
+              <span className="text-sm">{lang.notifySignalOutcomes || 'Trade Outcomes'}</span>
+              <span className="text-xs text-zinc-500">{lang.signalOutcomesDesc || 'WIN, LOSS, Partial Win, Expired'}</span>
             </div>
             <Switch
               checked={localSettings.notify_signal_outcomes ?? true}
@@ -304,7 +308,7 @@ export function SettingsPage() {
             data-testid="download-operational-manual"
           >
             <span className="text-bullish">📖</span>
-            <span className="text-sm">{language === 'it' ? 'Manuale Operativo' : 'Operational Manual'}</span>
+            <span className="text-sm">{lang.operationalManual || 'Operational Manual'}</span>
           </a>
           <a 
             href={language === 'it' ? "/MANUALE_TECNICO_IT.pdf" : "/TECHNICAL_MANUAL.pdf"}
@@ -314,7 +318,7 @@ export function SettingsPage() {
             data-testid="download-technical-manual"
           >
             <span className="text-bullish">⚙️</span>
-            <span className="text-sm">{language === 'it' ? 'Manuale Tecnico' : 'Technical Manual'}</span>
+            <span className="text-sm">{lang.technicalManual || 'Technical Manual'}</span>
           </a>
           <a 
             href="/PRODUCTION_DEPLOYMENT.pdf"
@@ -324,7 +328,7 @@ export function SettingsPage() {
             data-testid="download-deployment-guide"
           >
             <span className="text-bullish">🚀</span>
-            <span className="text-sm">{language === 'it' ? 'Guida Deployment' : 'Deployment Guide'}</span>
+            <span className="text-sm">{lang.deploymentGuide || 'Deployment Guide'}</span>
           </a>
           <a 
             href={`${process.env.REACT_APP_BACKEND_URL}/api/system/health`}
@@ -334,7 +338,7 @@ export function SettingsPage() {
             data-testid="system-health-link"
           >
             <span className="text-bullish">💚</span>
-            <span className="text-sm">System Health Check</span>
+            <span className="text-sm">{lang.systemHealthCheck || 'System Health Check'}</span>
           </a>
         </div>
       </div>
@@ -357,68 +361,31 @@ function ApiDataSourcesSection({ language }) {
   const [loading, setLoading] = useState(true);
   const [testingSource, setTestingSource] = useState(null);
 
+  // Import centralized translations
+  const lang = translations[language] || translations.en;
   const t = {
-    it: {
-      title: 'API & Fonti Dati',
-      subtitle: 'Configurazione e stato delle connessioni',
-      source: 'Fonte',
-      status: 'Stato',
-      role: 'Ruolo',
-      lastCheck: 'Ultimo controllo',
-      testConnection: 'Test Connessione',
-      apiKey: 'API Key',
-      enabled: 'Attivo',
-      disabled: 'Disattivo',
-      valid: 'VALIDO',
-      invalid: 'NON VALIDO',
-      planLimit: 'LIMITE PIANO',
-      unavailable: 'NON DISPONIBILE',
-      networkError: 'ERRORE RETE',
-      testing: 'Testing...',
-      adminOnly: 'Solo amministratore',
-      noChanges: 'Le modifiche API saranno disponibili in una versione futura'
-    },
-    en: {
-      title: 'API & Data Sources',
-      subtitle: 'Configuration and connection status',
-      source: 'Source',
-      status: 'Status',
-      role: 'Role',
-      lastCheck: 'Last check',
-      testConnection: 'Test Connection',
-      apiKey: 'API Key',
-      enabled: 'Enabled',
-      disabled: 'Disabled',
-      valid: 'VALID',
-      invalid: 'INVALID',
-      planLimit: 'PLAN LIMITATION',
-      unavailable: 'UNAVAILABLE',
-      networkError: 'NETWORK ERROR',
-      testing: 'Testing...',
-      adminOnly: 'Admin only',
-      noChanges: 'API changes will be available in a future version'
-    }
-  }[language] || {
-    it: {
-      title: 'API & Fonti Dati',
-      subtitle: 'Configurazione e stato delle connessioni',
-      source: 'Fonte',
-      status: 'Stato',
-      role: 'Ruolo',
-      lastCheck: 'Ultimo controllo',
-      testConnection: 'Test Connessione',
-      apiKey: 'API Key',
-      enabled: 'Attivo',
-      disabled: 'Disattivo',
-      valid: 'VALIDO',
-      invalid: 'NON VALIDO',
-      planLimit: 'LIMITE PIANO',
-      unavailable: 'NON DISPONIBILE',
-      networkError: 'ERRORE RETE',
-      testing: 'Testing...',
-      adminOnly: 'Solo amministratore',
-      noChanges: 'Le modifiche API saranno disponibili in una versione futura'
-    }
+    title: lang.apiDataSources || 'API & Data Sources',
+    subtitle: lang.apiDataSourcesSubtitle || 'Configuration and connection status',
+    source: lang.source || 'Source',
+    status: lang.status || 'Status',
+    role: lang.role || 'Role',
+    lastCheck: lang.lastCheck || 'Last check',
+    testConnection: lang.testConnection || 'Test Connection',
+    apiKey: lang.apiKey || 'API Key',
+    enabled: lang.enabled || 'Enabled',
+    disabled: lang.disabled || 'Disabled',
+    valid: lang.valid || 'VALID',
+    invalid: lang.invalid || 'INVALID',
+    planLimit: lang.planLimitation || 'PLAN LIMITATION',
+    unavailable: lang.unavailable || 'UNAVAILABLE',
+    networkError: lang.networkError || 'NETWORK ERROR',
+    testing: lang.testing || 'Testing...',
+    adminOnly: lang.adminOnly || 'Admin only',
+    noChanges: lang.noChanges || 'API changes will be available in a future version',
+    connected: lang.connected || 'CONNECTED',
+    notConfigured: lang.notConfigured || 'NOT CONFIGURED',
+    futureSources: lang.futureSources || 'Future Sources (Not Yet Integrated)',
+    comingSoon: language === 'it' ? 'PROSSIMAMENTE' : language === 'de' ? 'DEMNÄCHST' : language === 'pl' ? 'WKRÓTCE' : 'COMING SOON'
   };
 
   // Fetch data sources status
@@ -481,10 +448,14 @@ function ApiDataSourcesSection({ language }) {
     }[status] || { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: Info };
 
     const StatusIcon = config.icon;
+    const displayStatus = status === 'FUTURE_SOURCE' ? t.comingSoon : 
+                          status === 'CONNECTED' ? t.connected :
+                          status === 'NOT_CONFIGURED' ? t.notConfigured :
+                          status;
     return (
       <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono border", config.color)}>
         <StatusIcon className="w-3 h-3" />
-        {status === 'FUTURE_SOURCE' ? (language === 'it' ? 'PROSSIMAMENTE' : 'COMING SOON') : status}
+        {displayStatus}
       </span>
     );
   };

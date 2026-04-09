@@ -12,6 +12,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useApp } from '../../contexts/AppContext';
+import { translations } from '../../translations';
 
 /**
  * DataFreshnessIndicator - Shows real-time data integrity status
@@ -29,6 +31,35 @@ export function DataFreshnessIndicator({
   const [expanded, setExpanded] = useState(false);
   const [localFreshness, setLocalFreshness] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { language } = useApp();
+  
+  // Get translations
+  const lang = translations[language] || translations.en;
+  const t = {
+    dataIntegrity: language === 'it' ? 'Integrità Dati' : language === 'de' ? 'Datenintegrität' : language === 'pl' ? 'Integralność Danych' : 'Data Integrity',
+    allDataFresh: language === 'it' ? 'Tutti i Dati Freschi' : language === 'de' ? 'Alle Daten Aktuell' : language === 'pl' ? 'Wszystkie Dane Świeże' : 'All Data Fresh',
+    someDataStale: language === 'it' ? 'Alcuni Dati Obsoleti' : language === 'de' ? 'Einige Daten Veraltet' : language === 'pl' ? 'Niektóre Dane Nieaktualne' : 'Some Data Stale',
+    dataIssues: language === 'it' ? 'Problemi Dati' : language === 'de' ? 'Datenprobleme' : language === 'pl' ? 'Problemy z Danymi' : 'Data Issues',
+    checking: language === 'it' ? 'Verifica...' : language === 'de' ? 'Prüfe...' : language === 'pl' ? 'Sprawdzanie...' : 'Checking...',
+    fresh: language === 'it' ? 'Fresco' : language === 'de' ? 'Aktuell' : language === 'pl' ? 'Świeży' : 'Fresh',
+    warning: language === 'it' ? 'Avviso' : language === 'de' ? 'Warnung' : language === 'pl' ? 'Ostrzeżenie' : 'Warning',
+    stale: language === 'it' ? 'Obsoleto' : language === 'de' ? 'Veraltet' : language === 'pl' ? 'Nieaktualny' : 'Stale',
+    critical: language === 'it' ? 'Critico' : language === 'de' ? 'Kritisch' : language === 'pl' ? 'Krytyczny' : 'Critical',
+    unavailable: language === 'it' ? 'Non Disponibile' : language === 'de' ? 'Nicht Verfügbar' : language === 'pl' ? 'Niedostępny' : 'Unavailable',
+    unknown: language === 'it' ? 'Sconosciuto' : language === 'de' ? 'Unbekannt' : language === 'pl' ? 'Nieznany' : 'Unknown',
+    dataOK: language === 'it' ? 'Dati OK' : language === 'de' ? 'Daten OK' : language === 'pl' ? 'Dane OK' : 'Data OK',
+    refreshStatus: language === 'it' ? 'Aggiorna Stato' : language === 'de' ? 'Status Aktualisieren' : language === 'pl' ? 'Odśwież Status' : 'Refresh Status',
+    checkingDataSources: language === 'it' ? 'Verifica fonti dati...' : language === 'de' ? 'Überprüfe Datenquellen...' : language === 'pl' ? 'Sprawdzanie źródeł danych...' : 'Checking data sources...',
+    criticalWarning: language === 'it' ? 'Dati critici non disponibili - La generazione dei segnali potrebbe essere compromessa' : language === 'de' ? 'Kritische Daten nicht verfügbar - Signalgenerierung könnte beeinträchtigt sein' : language === 'pl' ? 'Dane krytyczne niedostępne - Generowanie sygnałów może być zagrożone' : 'Critical data unavailable - Signal generation may be affected',
+    price: language === 'it' ? 'Prezzo' : language === 'de' ? 'Preis' : language === 'pl' ? 'Cena' : 'Price',
+    openInterest: lang.openInterest || 'Open Interest',
+    fundingRate: lang.fundingRate || 'Funding Rate',
+    liquidations: language === 'it' ? 'Liquidazioni' : language === 'de' ? 'Liquidationen' : language === 'pl' ? 'Likwidacje' : 'Liquidations',
+    orderBook: lang.orderBook || 'Order Book',
+    whaleActivity: lang.whaleActivity || 'Whale Activity',
+    candles: language === 'it' ? 'Candele' : language === 'de' ? 'Kerzen' : language === 'pl' ? 'Świece' : 'Candles',
+    dataUnavailable: language === 'it' ? 'Dati Non Disponibili' : language === 'de' ? 'Daten Nicht Verfügbar' : language === 'pl' ? 'Dane Niedostępne' : 'Data Unavailable'
+  };
 
   // Fetch freshness data from API if not provided
   useEffect(() => {
@@ -63,7 +94,7 @@ export function DataFreshnessIndicator({
     return (
       <div className={cn("flex items-center gap-2 text-zinc-500 text-xs", className)}>
         <RefreshCw className="w-3 h-3 animate-spin" />
-        <span>Checking data sources...</span>
+        <span>{t.checkingDataSources}</span>
       </div>
     );
   }
@@ -79,7 +110,7 @@ export function DataFreshnessIndicator({
           color: 'text-emerald-400', 
           bg: 'bg-emerald-500/10',
           border: 'border-emerald-500/20',
-          label: 'Fresh' 
+          label: t.fresh
         };
       case 'warning':
         return { 
@@ -87,7 +118,7 @@ export function DataFreshnessIndicator({
           color: 'text-amber-400', 
           bg: 'bg-amber-500/10',
           border: 'border-amber-500/20',
-          label: 'Warning' 
+          label: t.warning
         };
       case 'stale':
         return { 
@@ -95,7 +126,7 @@ export function DataFreshnessIndicator({
           color: 'text-orange-400', 
           bg: 'bg-orange-500/10',
           border: 'border-orange-500/20',
-          label: 'Stale' 
+          label: t.stale
         };
       case 'critical':
         return { 
@@ -103,7 +134,7 @@ export function DataFreshnessIndicator({
           color: 'text-red-400', 
           bg: 'bg-red-500/10',
           border: 'border-red-500/20',
-          label: 'Critical' 
+          label: t.critical
         };
       case 'unavailable':
         return { 
@@ -111,7 +142,7 @@ export function DataFreshnessIndicator({
           color: 'text-red-500', 
           bg: 'bg-red-500/10',
           border: 'border-red-500/20',
-          label: 'Unavailable' 
+          label: t.unavailable
         };
       default:
         return { 
@@ -119,7 +150,7 @@ export function DataFreshnessIndicator({
           color: 'text-zinc-400', 
           bg: 'bg-zinc-500/10',
           border: 'border-zinc-500/20',
-          label: 'Unknown' 
+          label: t.unknown
         };
     }
   };
@@ -131,28 +162,28 @@ export function DataFreshnessIndicator({
           icon: CheckCircle, 
           color: 'text-emerald-400', 
           bg: 'bg-emerald-500/10',
-          label: 'All Data Fresh' 
+          label: t.allDataFresh
         };
       case 'degraded':
         return { 
           icon: AlertTriangle, 
           color: 'text-amber-400', 
           bg: 'bg-amber-500/10',
-          label: 'Some Data Stale' 
+          label: t.someDataStale
         };
       case 'critical':
         return { 
           icon: AlertCircle, 
           color: 'text-red-400', 
           bg: 'bg-red-500/10',
-          label: 'Data Issues' 
+          label: t.dataIssues
         };
       default:
         return { 
           icon: Activity, 
           color: 'text-zinc-400', 
           bg: 'bg-zinc-500/10',
-          label: 'Checking...' 
+          label: t.checking
         };
     }
   };
@@ -168,13 +199,13 @@ export function DataFreshnessIndicator({
   };
 
   const sourceLabels = {
-    price: 'Price',
-    open_interest: 'Open Interest',
-    funding_rate: 'Funding Rate',
-    liquidation: 'Liquidations',
-    orderbook: 'Order Book',
-    whale_activity: 'Whale Activity',
-    candles: 'Candles'
+    price: t.price,
+    open_interest: t.openInterest,
+    funding_rate: t.fundingRate,
+    liquidation: t.liquidations,
+    orderbook: t.orderBook,
+    whale_activity: t.whaleActivity,
+    candles: t.candles
   };
 
   // Compact mode - just show overall status
@@ -189,11 +220,11 @@ export function DataFreshnessIndicator({
           className
         )}
         onClick={() => setExpanded(!expanded)}
-        title={hasIssues ? `Issues: ${missing_or_stale_sources?.join(', ')}` : 'All data sources fresh'}
+        title={hasIssues ? `Issues: ${missing_or_stale_sources?.join(', ')}` : t.allDataFresh}
       >
         <Database className={cn("w-3 h-3", hasIssues ? "text-amber-400" : "text-zinc-500")} />
         <span className={hasIssues ? "text-amber-400" : "text-zinc-400"}>
-          {hasIssues ? 'Data Issues' : 'Data OK'}
+          {hasIssues ? t.dataIssues : t.dataOK}
         </span>
         {hasIssues && (
           <AlertTriangle className="w-3 h-3 text-amber-400" />
@@ -217,7 +248,7 @@ export function DataFreshnessIndicator({
       >
         <div className="flex items-center gap-2">
           <OverallIcon className={cn("w-4 h-4", overallConfig.color)} />
-          <span className="text-sm font-medium text-zinc-200">Data Integrity</span>
+          <span className="text-sm font-medium text-zinc-200">{t.dataIntegrity}</span>
           <span className={cn("text-xs px-2 py-0.5 rounded", overallConfig.bg, overallConfig.color)}>
             {overallConfig.label}
           </span>
@@ -244,7 +275,7 @@ export function DataFreshnessIndicator({
         <div className="px-3 py-2 bg-red-500/10 border-t border-red-500/20">
           <div className="flex items-center gap-2 text-red-400 text-xs">
             <AlertCircle className="w-4 h-4" />
-            <span className="font-medium">Critical data unavailable - Signal generation may be affected</span>
+            <span className="font-medium">{t.criticalWarning}</span>
           </div>
         </div>
       )}
@@ -297,7 +328,7 @@ export function DataFreshnessIndicator({
             className="w-full mt-2 flex items-center justify-center gap-2 py-2 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-800 rounded transition-colors"
           >
             <RefreshCw className={cn("w-3 h-3", loading && "animate-spin")} />
-            Refresh Status
+            {t.refreshStatus}
           </button>
         </div>
       )}
@@ -308,7 +339,7 @@ export function DataFreshnessIndicator({
 /**
  * Inline Data Freshness Badge - For use in card headers
  */
-export function DataFreshnessBadge({ status, ageSeconds, source }) {
+export function DataFreshnessBadge({ status, ageSeconds, source, language = 'en' }) {
   const getConfig = (status) => {
     switch (status) {
       case 'fresh':
@@ -327,19 +358,25 @@ export function DataFreshnessBadge({ status, ageSeconds, source }) {
 
   const config = getConfig(status);
   const Icon = config.icon;
+  
+  const dataUnavailableText = language === 'it' ? 'Dati Non Disponibili' : 
+                               language === 'de' ? 'Daten Nicht Verfügbar' : 
+                               language === 'pl' ? 'Dane Niedostępne' : 'Data Unavailable';
+  
+  const agoText = language === 'it' ? 'fa' : language === 'de' ? 'vor' : language === 'pl' ? 'temu' : 'ago';
 
   const formatAge = (seconds) => {
     if (seconds === null || seconds === undefined) return 'N/A';
-    if (seconds < 60) return `${Math.round(seconds)}s ago`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
-    return `${Math.round(seconds / 3600)}h ago`;
+    if (seconds < 60) return `${Math.round(seconds)}s ${agoText}`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m ${agoText}`;
+    return `${Math.round(seconds / 3600)}h ${agoText}`;
   };
 
   if (status === 'unavailable') {
     return (
       <div className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]", config.bg, config.color)}>
         <Icon className="w-3 h-3" />
-        <span>Data Unavailable</span>
+        <span>{dataUnavailableText}</span>
       </div>
     );
   }

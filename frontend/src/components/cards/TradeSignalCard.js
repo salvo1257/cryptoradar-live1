@@ -8,6 +8,7 @@ import { cn } from '../../lib/utils';
 import { Progress } from '../ui/progress';
 import { useApp } from '../../contexts/AppContext';
 import { Badge } from '../ui/badge';
+import { translations } from '../../translations';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -17,6 +18,9 @@ export function TradeSignalCard({ compact = false }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  
+  // Get centralized translations
+  const lang = translations[language] || translations.en;
 
   const fetchSignal = async () => {
     try {
@@ -432,7 +436,7 @@ export function TradeSignalCard({ compact = false }) {
               <div className="flex items-center gap-2">
                 <Shield className={cn("w-4 h-4", getQualityConfig(signal.quality_level).color)} />
                 <span className="text-xs text-zinc-400">
-                  {language === 'it' ? 'Quality Gate' : 'Quality Gate'}
+                  {lang.qualityGate || 'Quality Gate'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -454,13 +458,13 @@ export function TradeSignalCard({ compact = false }) {
             {!signal.quality_gate_passed && signal.quality_level !== 'EXCELLENT' && (
               <div className="mt-2 text-[10px] text-zinc-500">
                 {signal.quality_level === 'POOR' && (
-                  <span>{language === 'it' ? 'Qualità insufficiente per operare' : 'Quality too low for trading'}</span>
+                  <span>{lang.qualityTooLow || 'Quality too low for trading'}</span>
                 )}
                 {signal.quality_level === 'WEAK' && (
-                  <span>{language === 'it' ? 'Richiede conferma aggiuntiva' : 'Requires additional confirmation'}</span>
+                  <span>{lang.qualityNeedsConfirmation || 'Requires additional confirmation'}</span>
                 )}
                 {signal.quality_level === 'GOOD' && (
-                  <span>{language === 'it' ? 'Procedere con cautela' : 'Proceed with caution'}</span>
+                  <span>{lang.qualityProceedCaution || 'Proceed with caution'}</span>
                 )}
               </div>
             )}
@@ -660,7 +664,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Activity className="w-3 h-3" />
-                {language === 'it' ? 'Zona di Ingresso' : 'Entry Zone'}
+                {lang.entryZone || 'Entry Zone'}
               </div>
               <div className="font-mono text-sm">
                 ${formatPrice(signal.entry_zone_low)} - ${formatPrice(signal.entry_zone_high)}
@@ -671,7 +675,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Shield className="w-3 h-3 text-bearish" />
-                {language === 'it' ? 'Stop Intelligente (Oltre Sweep)' : 'Smart Stop (Beyond Sweep)'}
+                {lang.stopLoss || 'Stop Loss'}
               </div>
               <div className="font-mono text-sm text-bearish">
                 ${formatPrice(signal.stop_loss)}
@@ -682,7 +686,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-bullish" />
-                {language === 'it' ? 'Obiettivo 1' : 'Target 1'}
+                {lang.target1 || 'Target 1'}
               </div>
               <div className="font-mono text-sm text-bullish">
                 ${formatPrice(getDisplayTargets(signal).target1)}
@@ -693,7 +697,7 @@ export function TradeSignalCard({ compact = false }) {
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-whale" />
-                {language === 'it' ? 'Obiettivo 2' : 'Target 2'}
+                {lang.target2 || 'Target 2'}
               </div>
               <div className="font-mono text-sm text-whale">
                 ${formatPrice(getDisplayTargets(signal).target2)}
@@ -705,7 +709,7 @@ export function TradeSignalCard({ compact = false }) {
         {/* Risk/Reward */}
         {signal.direction !== 'NO TRADE' && signal.risk_reward_ratio > 0 && (
           <div className="flex items-center justify-between py-2 px-3 bg-crypto-surface/30 rounded-sm mb-4">
-            <span className="text-xs text-zinc-500">{language === 'it' ? 'Rapporto Rischio/Rendimento' : 'Risk/Reward Ratio'}</span>
+            <span className="text-xs text-zinc-500">{lang.riskReward || 'Risk/Reward Ratio'}</span>
             <div className="flex items-center gap-2">
               <span className={cn(
                 "font-mono font-bold",

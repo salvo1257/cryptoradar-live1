@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useApp } from '../../contexts/AppContext';
+import { translations } from '../../translations';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -29,6 +30,31 @@ export function DecisionEngineCard({ language = 'it' }) {
   const [magnetData, setMagnetData] = useState(null);
   const [whaleData, setWhaleData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Get translations from centralized system
+  const lang = translations[language] || translations.en;
+  const t = {
+    title: lang.finalAction || 'FINAL ACTION',
+    long: lang.long || 'LONG',
+    short: lang.short || 'SHORT',
+    wait: lang.wait || 'WAIT',
+    conflictLabel: lang.conflictLabel || 'Conflicting signals',
+    blockReason: lang.blockReason || 'Block active',
+    alignedSignals: lang.alignedSignals || 'Aligned signals',
+    warnings: lang.warnings || 'Warnings',
+    compression: lang.compression || 'Market in compression',
+    neutralLiquidity: lang.neutralLiquidity || 'Neutral liquidity',
+    lowRR: lang.lowRR || 'R:R too low - non-operational signal',
+    weakRR: lang.weakRR || 'Weak R:R (0.3-0.5) - educational only',
+    whaleAligned: lang.whaleAligned || 'Whales aligned',
+    whaleUnavailable: lang.whaleUnavailable || 'Whale: data unavailable - not considered',
+    biasAligned: lang.biasAligned || 'Bias confirmed',
+    oiRising: lang.oiRising || 'OI rising',
+    oiFalling: lang.oiFalling || 'OI falling',
+    liquidityAligned: lang.liquidityAligned || 'Directional liquidity',
+    educationalOnly: lang.educationalOnly || 'Educational context only',
+    insufficientSignals: lang.insufficientSignals || 'Insufficient signals'
+  };
 
   // Fetch all required data
   useEffect(() => {
@@ -56,71 +82,6 @@ export function DecisionEngineCard({ language = 'it' }) {
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [language]);
-
-  // Translations
-  const t = {
-    it: {
-      title: 'AZIONE FINALE',
-      long: 'LONG',
-      short: 'SHORT',
-      wait: 'ATTENDI',
-      conflictLabel: 'Segnali contrastanti',
-      blockReason: 'Blocco attivo',
-      alignedSignals: 'Segnali allineati',
-      warnings: 'Avvisi',
-      compression: 'Mercato in compressione',
-      neutralLiquidity: 'Liquidità neutrale',
-      lowRR: 'R:R troppo basso - segnale non operativo',
-      weakRR: 'R:R debole (0.3-0.5) - solo educativo',
-      whaleAligned: 'Whale allineate',
-      whaleUnavailable: 'Whale: dato non disponibile - non considerato',
-      biasAligned: 'Bias confermato',
-      oiRising: 'OI in aumento',
-      liquidityAligned: 'Liquidità direzionale',
-      educationalOnly: 'Solo contesto educativo'
-    },
-    en: {
-      title: 'FINAL ACTION',
-      long: 'LONG',
-      short: 'SHORT',
-      wait: 'WAIT',
-      conflictLabel: 'Conflicting signals',
-      blockReason: 'Block active',
-      alignedSignals: 'Aligned signals',
-      warnings: 'Warnings',
-      compression: 'Market in compression',
-      neutralLiquidity: 'Neutral liquidity',
-      lowRR: 'R:R too low - non-operational signal',
-      weakRR: 'Weak R:R (0.3-0.5) - educational only',
-      whaleAligned: 'Whales aligned',
-      whaleUnavailable: 'Whale: data unavailable - not considered',
-      biasAligned: 'Bias confirmed',
-      oiRising: 'OI rising',
-      liquidityAligned: 'Directional liquidity',
-      educationalOnly: 'Educational context only'
-    }
-  }[language] || {
-    it: {
-      title: 'AZIONE FINALE',
-      long: 'LONG',
-      short: 'SHORT',
-      wait: 'ATTENDI',
-      conflictLabel: 'Segnali contrastanti',
-      blockReason: 'Blocco attivo',
-      alignedSignals: 'Segnali allineati',
-      warnings: 'Avvisi',
-      compression: 'Mercato in compressione',
-      neutralLiquidity: 'Liquidità neutrale',
-      lowRR: 'R:R troppo basso - segnale non operativo',
-      weakRR: 'R:R debole (0.3-0.5) - solo educativo',
-      whaleAligned: 'Whale allineate',
-      whaleUnavailable: 'Whale: dato non disponibile - non considerato',
-      biasAligned: 'Bias confermato',
-      oiRising: 'OI in aumento',
-      liquidityAligned: 'Liquidità direzionale',
-      educationalOnly: 'Solo contesto educativo'
-    }
-  };
 
   // ═══════════════════════════════════════════════════════════════════
   // DECISION ENGINE LOGIC
@@ -318,7 +279,7 @@ export function DecisionEngineCard({ language = 'it' }) {
 
     // Default: Not enough signals
     finalAction = 'WAIT';
-    reason = language === 'it' ? 'Segnali insufficienti' : 'Insufficient signals';
+    reason = t.insufficientSignals;
     return { finalAction, reason, warnings: warnings.slice(0, 2), alignedSignals: [], isConflict: false };
   };
 
