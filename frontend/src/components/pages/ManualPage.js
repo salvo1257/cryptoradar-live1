@@ -60,8 +60,8 @@ Il sistema usa candele a 4 ore (4H) come contesto operativo principale. Questo s
 - Calcola quante volte il prezzo ha toccato ogni livello
 - Classifica la forza: forte (3+ tocchi), moderato (2), debole (1)
 
-**2. Order Book Multi-Exchange**
-- Aggrega dati da Kraken, Coinbase e Bitstamp
+**2. Order Book Aggregato**
+- Aggrega dati da Kraken, Coinbase e Bitstamp (API pubbliche)
 - Identifica "muri" di ordini significativi (>2.5x volume medio)
 - Mostra dove c'è reale interesse di acquisto/vendita
 
@@ -763,8 +763,8 @@ Fewer signals, but cleaner and more coherent. Quality > Quantity.`
         content: `Here's the complete process CryptoRadar follows to generate a signal:
 
 **PHASE 1: Data Collection**
-1. BTC price from Kraken (real-time)
-2. Multi-exchange order book (Kraken, Coinbase, Bitstamp)
+1. BTC price from Kraken (primary, real-time)
+2. Order book aggregated from Kraken, Coinbase, Bitstamp
 3. Open Interest and Funding Rate from CoinGlass
 4. Historical candles for pattern analysis
 

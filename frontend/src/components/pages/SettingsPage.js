@@ -475,14 +475,16 @@ function ApiDataSourcesSection({ language }) {
       'PLAN_LIMITATION': { color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30', icon: AlertTriangle },
       'INVALID': { color: 'bg-bearish/20 text-bearish border-bearish/30', icon: X },
       'UNAVAILABLE': { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: WifiOff },
-      'NETWORK_ERROR': { color: 'bg-bearish/20 text-bearish border-bearish/30', icon: WifiOff }
+      'NETWORK_ERROR': { color: 'bg-bearish/20 text-bearish border-bearish/30', icon: WifiOff },
+      'NOT_CONFIGURED': { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: Info },
+      'FUTURE_SOURCE': { color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: Info }
     }[status] || { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: Info };
 
     const StatusIcon = config.icon;
     return (
       <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono border", config.color)}>
         <StatusIcon className="w-3 h-3" />
-        {status}
+        {status === 'FUTURE_SOURCE' ? (language === 'it' ? 'PROSSIMAMENTE' : 'COMING SOON') : status}
       </span>
     );
   };
@@ -522,9 +524,9 @@ function ApiDataSourcesSection({ language }) {
         </div>
       </div>
 
-      {/* Data Sources List */}
+      {/* Data Sources List - Active Sources */}
       <div className="divide-y divide-crypto-border">
-        {dataSources.map((source) => (
+        {dataSources.filter(s => s.category !== 'future').map((source) => (
           <div key={source.name} className="p-4 hover:bg-zinc-800/30 transition-colors">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -567,7 +569,7 @@ function ApiDataSourcesSection({ language }) {
                 variant="outline"
                 size="sm"
                 onClick={() => testConnection(source.name)}
-                disabled={testingSource === source.name}
+                disabled={testingSource === source.name || source.status === 'FUTURE_SOURCE'}
                 className="border-crypto-border hover:border-whale hover:bg-whale/10"
                 data-testid={`test-${source.name.toLowerCase()}-btn`}
               >
@@ -587,6 +589,29 @@ function ApiDataSourcesSection({ language }) {
           </div>
         ))}
       </div>
+
+      {/* Future Sources Section */}
+      {dataSources.filter(s => s.category === 'future').length > 0 && (
+        <>
+          <div className="p-3 bg-zinc-900/50 border-t border-crypto-border">
+            <p className="text-xs text-zinc-500 font-medium">
+              {language === 'it' ? 'Fonti Future (Non Ancora Integrate)' : 'Future Sources (Not Yet Integrated)'}
+            </p>
+          </div>
+          <div className="divide-y divide-crypto-border/50 opacity-60">
+            {dataSources.filter(s => s.category === 'future').map((source) => (
+              <div key={source.name} className="p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-zinc-600" />
+                  <span className="font-mono font-medium text-zinc-500">{source.name}</span>
+                  {getStatusBadge(source.status)}
+                </div>
+                <p className="text-xs text-zinc-600 ml-4">{source.description}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Footer Note */}
       <div className="p-3 bg-zinc-900/50 border-t border-crypto-border">

@@ -275,7 +275,7 @@ class WhaleActivity(BaseModel):
     sell_pressure: float = 0  # 0-100 sell pressure score
     liquidation_bias: Optional[str] = None  # "longs_liquidated", "shorts_liquidated", or None
     orderbook_aggression: Optional[str] = None  # "aggressive_buying", "aggressive_selling", or None
-    data_source: str = "Multi-Exchange Aggregated"
+    data_source: str = "Kraken (single source)"  # Dynamic based on actual active exchanges
     # NEW FIELDS v1.9.4
     oi_divergence: Optional[str] = None  # "short_closing", "short_opening", "long_closing", "long_opening"
     oi_divergence_strength: float = 0  # 0-100
@@ -434,7 +434,7 @@ class LiquidityLadder(BaseModel):
     more_attractive_side: str  # "above", "below", "balanced"
     sweep_expectation: str  # "sweep_below_first", "sweep_above_first", "no_clear_sweep", "balanced"
     path_analysis: str  # Explanation of likely price path
-    data_source: str = "Multi-Exchange Aggregated"
+    data_source: str = "Kraken (single source)"  # Dynamic based on actual active exchanges
 
 class TradeSignal(BaseModel):
     """Final actionable trading signal synthesizing all intelligence"""
@@ -4199,14 +4199,23 @@ def aggregate_orderbooks(orderbooks: dict) -> dict:
     total_bid_depth = sum(stats["bid_depth"] for stats in exchange_stats.values())
     total_ask_depth = sum(stats["ask_depth"] for stats in exchange_stats.values())
     
+    # Build dynamic data_source label based on ACTUAL active exchanges
+    active_exchanges = list(exchange_stats.keys())
+    if len(active_exchanges) == 1:
+        data_source_label = f"{active_exchanges[0]} (single source)"
+    elif len(active_exchanges) > 1:
+        data_source_label = f"Aggregated ({', '.join(active_exchanges)})"
+    else:
+        data_source_label = "No data sources available"
+    
     return {
         "bids": [[str(b["price"]), str(b["quantity"])] for b in aggregated_bids],
         "asks": [[str(a["price"]), str(a["quantity"])] for a in aggregated_asks],
         "exchange_stats": exchange_stats,
         "total_bid_depth": total_bid_depth,
         "total_ask_depth": total_ask_depth,
-        "exchanges_active": list(exchange_stats.keys()),
-        "data_source": "Aggregated (Kraken, Coinbase, Bitstamp)"
+        "exchanges_active": active_exchanges,
+        "data_source": data_source_label
     }
 
 async def get_aggregated_orderbook():
@@ -11049,7 +11058,7 @@ def build_liquidity_ladder(
     # Get active exchanges
     active_exchanges = []
     if aggregated_orderbook:
-        active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken", "Coinbase", "Bitstamp"])
+        active_exchanges = aggregated_orderbook.get("exchanges_active", ["Kraken"])
     
     # 1. ADD S/R LEVELS TO LADDER
     for level in sr_levels:
@@ -11243,7 +11252,7 @@ def build_liquidity_ladder(
         more_attractive_side=more_attractive_side,
         sweep_expectation=sweep_expectation,
         path_analysis=path_analysis,
-        data_source="Multi-Exchange Aggregated"
+        data_source=f"{', '.join(active_exchanges) or 'Kraken'} ({len(active_exchanges) or 1} source{'s' if len(active_exchanges) > 1 else ''})"
     )
 
 # ============== TRADE SIGNAL GENERATOR ==============
@@ -13284,7 +13293,30 @@ async def get_data_sources():
             "role": "Price data, OHLC, Order Book",
             "status": "CONNECTED",
             "critical": True,
-            "description": "Primary market data provider"
+            "description": "Primary market data provider",
+            "category": "active"
+        },
+        {
+            "name": "Coinbase",
+            "enabled": True,
+            "apiKeyMasked": None,
+            "apiKeyRequired": False,
+            "role": "Order Book aggregation (public API)",
+            "status": "CONNECTED",
+            "critical": False,
+            "description": "Secondary orderbook source (no API key required)",
+            "category": "active"
+        },
+        {
+            "name": "Bitstamp",
+            "enabled": True,
+            "apiKeyMasked": None,
+            "apiKeyRequired": False,
+            "role": "Order Book aggregation (public API)",
+            "status": "CONNECTED",
+            "critical": False,
+            "description": "Tertiary orderbook source (no API key required)",
+            "category": "active"
         },
         {
             "name": "CoinGlass",
@@ -13295,7 +13327,8 @@ async def get_data_sources():
             "status": "CONNECTED" if coinglass_key else "NOT_CONFIGURED",
             "critical": False,
             "description": "Derivatives and liquidation data",
-            "planNote": "Hobbyist plan - some endpoints limited"
+            "planNote": "Hobbyist plan - some endpoints limited",
+            "category": "active"
         },
         {
             "name": "CryptoCompare",
@@ -13303,9 +13336,10 @@ async def get_data_sources():
             "apiKeyMasked": mask_key(cryptocompare_key),
             "apiKeyRequired": False,
             "role": "News feed (optional)",
-            "status": "CONNECTED" if cryptocompare_key else "FALLBACK",
+            "status": "CONNECTED" if cryptocompare_key else "NOT_CONFIGURED",
             "critical": False,
-            "description": "Crypto news aggregation"
+            "description": "Crypto news aggregation",
+            "category": "active"
         },
         {
             "name": "Telegram",
@@ -13315,7 +13349,8 @@ async def get_data_sources():
             "role": "Signal alerts and notifications",
             "status": "CONNECTED" if (telegram_token and telegram_chat) else "NOT_CONFIGURED",
             "critical": False,
-            "description": "Real-time alert delivery"
+            "description": "Real-time alert delivery",
+            "category": "active"
         },
         {
             "name": "MongoDB",
@@ -13325,7 +13360,31 @@ async def get_data_sources():
             "role": "Signal history, setups, shadow tracking",
             "status": "CONNECTED",
             "critical": True,
-            "description": "Primary database"
+            "description": "Primary database",
+            "category": "active"
+        },
+        # Future sources - NOT YET INTEGRATED
+        {
+            "name": "Binance",
+            "enabled": False,
+            "apiKeyMasked": None,
+            "apiKeyRequired": True,
+            "role": "Price data, Order Book, Futures (planned)",
+            "status": "FUTURE_SOURCE",
+            "critical": False,
+            "description": "Future integration - not yet available",
+            "category": "future"
+        },
+        {
+            "name": "Bybit",
+            "enabled": False,
+            "apiKeyMasked": None,
+            "apiKeyRequired": True,
+            "role": "Price data, Order Book, Derivatives (planned)",
+            "status": "FUTURE_SOURCE",
+            "critical": False,
+            "description": "Future integration - not yet available",
+            "category": "future"
         }
     ]
     
@@ -13385,6 +13444,22 @@ async def test_connection(source_name: str):
                 resp = await client.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC")
                 if resp.status_code == 200:
                     return {"source": source_name, "status": "VALID", "message": "News feed accessible"}
+                return {"source": source_name, "status": "UNAVAILABLE", "error": f"HTTP {resp.status_code}"}
+        
+        elif source_name_lower == "coinbase":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://api.exchange.coinbase.com/products/BTC-USD/book?level=1")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {"source": source_name, "status": "VALID", "message": f"Order book accessible, best bid: ${float(data.get('bids', [[0]])[0][0]):,.2f}"}
+                return {"source": source_name, "status": "UNAVAILABLE", "error": f"HTTP {resp.status_code}"}
+        
+        elif source_name_lower == "bitstamp":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://www.bitstamp.net/api/v2/order_book/btcusd/")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {"source": source_name, "status": "VALID", "message": f"Order book accessible, best bid: ${float(data.get('bids', [[0]])[0][0]):,.2f}"}
                 return {"source": source_name, "status": "UNAVAILABLE", "error": f"HTTP {resp.status_code}"}
         
         elif source_name_lower == "telegram":
@@ -13732,6 +13807,14 @@ async def get_orderbook_analysis():
     
     active_exchanges = aggregated_orderbook.get("exchanges_active", [])
     
+    # Build dynamic data_source label based on ACTUAL active exchanges
+    if len(active_exchanges) == 0:
+        data_source_label = "Kraken (single source)"
+    elif len(active_exchanges) == 1:
+        data_source_label = f"{active_exchanges[0]} (single source)"
+    else:
+        data_source_label = f"Aggregated ({', '.join(active_exchanges)})"
+    
     return OrderBookAnalysis(
         top_bid_wall={"price": round(top_bid[0], 2), "quantity": round(top_bid[1], 4)},
         top_ask_wall={"price": round(top_ask[0], 2), "quantity": round(top_ask[1], 4)},
@@ -13739,7 +13822,7 @@ async def get_orderbook_analysis():
         imbalance_direction=direction,
         bid_depth=round(bid_depth, 2),
         ask_depth=round(ask_depth, 2),
-        data_source=f"Aggregated ({', '.join(active_exchanges)})",
+        data_source=data_source_label,
         exchange_comparison=aggregated_orderbook.get("exchange_stats")
     )
 
