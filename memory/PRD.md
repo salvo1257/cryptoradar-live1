@@ -1,5 +1,124 @@
-# CryptoRadar v3.2.7 - Product Requirements Document
+# CryptoRadar v3.2.8 - Product Requirements Document
 **Last Updated:** 2026-04-09
+
+## ✅ PRE-DEPLOY IMPROVEMENTS (2026-04-09)
+
+### 1. LEARN MODE CONSISTENCY
+**Status:** ✅ COMPLETE
+
+All dashboard modules now support consistent explanation structure:
+- **Cosa succede** (What's happening)
+- **Perché** (Why)
+- **Azione** (Action)
+
+**Modules with full Learn Mode support:**
+| Module | Status |
+|--------|--------|
+| Direzione Liquidità | ✅ Added |
+| Order Book | ✅ Already had |
+| Supporti e Resistenze | ✅ Already had |
+| Whale Activity | ✅ Already had |
+| Liquidity Magnet | ✅ Already had |
+| Market Energy | ✅ Already had |
+
+**Fallback:** "Dati insufficienti per spiegazione" when data missing.
+
+---
+
+### 2. WHALE ACTIVITY HANDLING
+**Status:** ✅ COMPLETE
+
+**New Behavior:**
+- If whale data available: Use as confirmation layer only
+  - Strong BUY (>60%) → supports LONG
+  - Strong SELL (<40%) → supports SHORT
+  - Weak/balanced (40-60%) → neutral, non-decisive
+- If whale data unavailable (N/A):
+  - Do NOT treat as bullish or bearish
+  - Do NOT block signals
+  - Show: "Whale: dato non disponibile - non considerato nella decisione"
+
+---
+
+### 3. FINAL ACTION / DECISION LAYER
+**Status:** ✅ COMPLETE (Educational layer only)
+
+**Behavior:**
+- Summarizes current situation: LONG / SHORT / ATTENDI
+- Does NOT replace V3 engine
+- Does NOT suppress valid V3 logic
+- Adjusts alignment threshold when whale data unavailable (3 signals → 2 required)
+
+---
+
+### 4. R:R OPERATIONAL PROTECTION
+**Status:** ✅ COMPLETE
+
+**Rules:**
+| R:R Range | Behavior |
+|-----------|----------|
+| < 0.3 | BLOCK - "R:R troppo basso - segnale non operativo" |
+| 0.3 - 0.5 | WEAK - "R:R debole - solo educativo" |
+| >= 0.5 | OPERATIONAL - Normal behavior |
+
+---
+
+### 5. SETTINGS → API & DATA SOURCES
+**Status:** ✅ COMPLETE
+
+**New Admin Section Features:**
+- Shows all data sources with status
+- Masked API keys (security)
+- Test Connection button for each source
+- Role description for each source
+
+**Sources Displayed:**
+| Source | Status | Role |
+|--------|--------|------|
+| Kraken | CONNECTED | Price data, OHLC, Order Book |
+| CoinGlass | CONNECTED | OI, Funding, Liquidations, Whale |
+| CryptoCompare | FALLBACK | News feed (optional) |
+| Telegram | NOT_CONFIGURED | Signal alerts |
+| MongoDB | CONNECTED | Database |
+
+**Test Results:**
+- VALID / INVALID / PLAN_LIMITATION / UNAVAILABLE / NETWORK_ERROR
+
+**API Endpoints Added:**
+- `GET /api/system/data-sources` - List all sources
+- `GET /api/system/test-connection/{source}` - Test specific source
+
+---
+
+### 6. UNCHANGED COMPONENTS
+Verified NOT modified:
+- ✅ Core V3 signal generation logic
+- ✅ Scoring algorithms
+- ✅ Entry/exit conditions
+- ✅ Same-direction lock logic
+- ✅ Shadow Targets (preview mode)
+- ✅ Liquidity Zone Engine (preview mode)
+
+---
+
+### 7. PRE-DEPLOY SAFETY CHECK RESULTS
+
+| Check | Result |
+|-------|--------|
+| Kraken API | ✅ VALID |
+| CoinGlass API | ✅ VALID |
+| MongoDB | ✅ VALID |
+| Liquidity Magnet endpoint | ✅ Working |
+| Open Interest endpoint | ✅ Working |
+| Whale Activity endpoint | ✅ Working (shows N/A handled) |
+| Learn Mode consistency | ✅ All modules have explanations |
+| Final Action layer | ✅ Visible, not blocking V3 |
+| R:R protection | ✅ < 0.3 triggers WAIT |
+| Same-direction lock | ✅ PARTIAL_WIN = OPEN |
+
+## **DEPLOYMENT STATUS: ✅ SAFE TO DEPLOY**
+
+---
 
 ## ✅ SAME-DIRECTION SIGNAL LOCK (2026-04-09)
 

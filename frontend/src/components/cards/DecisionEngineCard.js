@@ -70,11 +70,14 @@ export function DecisionEngineCard({ language = 'it' }) {
       warnings: 'Avvisi',
       compression: 'Mercato in compressione',
       neutralLiquidity: 'Liquidità neutrale',
-      lowRR: 'R:R insufficiente',
+      lowRR: 'R:R troppo basso - segnale non operativo',
+      weakRR: 'R:R debole (0.3-0.5) - solo educativo',
       whaleAligned: 'Whale allineate',
+      whaleUnavailable: 'Whale: dato non disponibile - non considerato',
       biasAligned: 'Bias confermato',
       oiRising: 'OI in aumento',
-      liquidityAligned: 'Liquidità direzionale'
+      liquidityAligned: 'Liquidità direzionale',
+      educationalOnly: 'Solo contesto educativo'
     },
     en: {
       title: 'FINAL ACTION',
@@ -87,11 +90,14 @@ export function DecisionEngineCard({ language = 'it' }) {
       warnings: 'Warnings',
       compression: 'Market in compression',
       neutralLiquidity: 'Neutral liquidity',
-      lowRR: 'Insufficient R:R',
+      lowRR: 'R:R too low - non-operational signal',
+      weakRR: 'Weak R:R (0.3-0.5) - educational only',
       whaleAligned: 'Whales aligned',
+      whaleUnavailable: 'Whale: data unavailable - not considered',
       biasAligned: 'Bias confirmed',
       oiRising: 'OI rising',
-      liquidityAligned: 'Directional liquidity'
+      liquidityAligned: 'Directional liquidity',
+      educationalOnly: 'Educational context only'
     }
   }[language] || {
     it: {
@@ -105,11 +111,14 @@ export function DecisionEngineCard({ language = 'it' }) {
       warnings: 'Avvisi',
       compression: 'Mercato in compressione',
       neutralLiquidity: 'Liquidità neutrale',
-      lowRR: 'R:R insufficiente',
+      lowRR: 'R:R troppo basso - segnale non operativo',
+      weakRR: 'R:R debole (0.3-0.5) - solo educativo',
       whaleAligned: 'Whale allineate',
+      whaleUnavailable: 'Whale: dato non disponibile - non considerato',
       biasAligned: 'Bias confermato',
       oiRising: 'OI in aumento',
-      liquidityAligned: 'Liquidità direzionale'
+      liquidityAligned: 'Liquidità direzionale',
+      educationalOnly: 'Solo contesto educativo'
     }
   };
 
@@ -131,11 +140,27 @@ export function DecisionEngineCard({ language = 'it' }) {
     const riskReward = v3Data?.risk_reward || 0;
     const magnetDirection = magnetData?.target_direction || 'NEUTRAL';
     const magnetStrength = magnetData?.magnet_strength || 'LOW';
-    const whaleDirection = whaleData?.direction || 'balanced';
-    const whalePressure = whaleData?.buy_pressure || 0;
+    const whaleDirection = whaleData?.direction || null;  // null = unavailable
+    const whalePressure = whaleData?.buy_pressure;  // undefined = unavailable
     const oiChange = openInterest?.change_24h || 0;
     const v3Direction = v3Data?.direction || null;
     const liquidityDirection = liquidity?.direction || null;
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // WHALE ACTIVITY AVAILABILITY CHECK
+    // If whale data is unavailable, do NOT treat as bullish/bearish
+    // Just note it and exclude from decision
+    // ═══════════════════════════════════════════════════════════════════
+    const isWhaleDataAvailable = whaleDirection !== null && 
+                                  whaleDirection !== 'N/A' && 
+                                  whaleDirection !== 'unavailable' &&
+                                  whalePressure !== undefined &&
+                                  whalePressure !== null;
+    
+    let whaleUnavailableNote = null;
+    if (!isWhaleDataAvailable) {
+      whaleUnavailableNote = { type: 'info', text: t.whaleUnavailable, icon: AlertTriangle };
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // RULE 1: BLOCK CONDITIONS → WAIT
@@ -151,9 +176,21 @@ export function DecisionEngineCard({ language = 'it' }) {
       warnings.push({ type: 'block', text: t.compression, icon: Activity });
     }
     
-    // Check: R:R < 0.3
+    // ═══════════════════════════════════════════════════════════════════
+    // R:R OPERATIONAL PROTECTION
+    // R:R < 0.3 → BLOCK (non-operational)
+    // R:R 0.3-0.5 → WEAK (educational only, show warning)
+    // R:R >= 0.5 → OPERATIONAL (normal behavior)
+    // ═══════════════════════════════════════════════════════════════════
+    let isWeakRR = false;
+    
     if (riskReward > 0 && riskReward < 0.3) {
-      warnings.push({ type: 'block', text: `${t.lowRR} (${riskReward.toFixed(2)})`, icon: Shield });
+      // HARD BLOCK - R:R too low
+      warnings.push({ type: 'block', text: t.lowRR, icon: Shield });
+    } else if (riskReward >= 0.3 && riskReward < 0.5) {
+      // WEAK - educational only
+      isWeakRR = true;
+      warnings.push({ type: 'warning', text: `${t.weakRR} (${riskReward.toFixed(2)})`, icon: Shield });
     }
 
     // If ANY block condition is true → WAIT
@@ -162,7 +199,9 @@ export function DecisionEngineCard({ language = 'it' }) {
     if (hasBlockCondition) {
       finalAction = 'WAIT';
       reason = t.blockReason;
-      return { finalAction, reason, warnings: warnings.slice(0, 2), alignedSignals, isConflict: false };
+      // Add whale unavailable note if applicable
+      const allWarnings = whaleUnavailableNote ? [...warnings, whaleUnavailableNote] : warnings;
+      return { finalAction, reason, warnings: allWarnings.slice(0, 2), alignedSignals, isConflict: false, isWeakRR };
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -171,25 +210,46 @@ export function DecisionEngineCard({ language = 'it' }) {
     
     // Check bullish alignment
     const isBiasBullish = bias === 'BULLISH' || bias === 'bullish' || biasPercent > 60;
-    const isWhaleBuying = whaleDirection === 'buying' || whaleDirection === 'BUYING' || whalePressure > 50;
     const isOiRising = oiChange > 0;
     const isLiquidityUp = magnetDirection === 'UP' || liquidityDirection === 'UP' || liquidityDirection === 'bullish';
     
     // Check bearish alignment
     const isBiasBearish = bias === 'BEARISH' || bias === 'bearish' || biasPercent < 40;
-    const isWhaleSelling = whaleDirection === 'selling' || whaleDirection === 'SELLING' || whalePressure < 50;
     const isOiFalling = oiChange < 0;
     const isLiquidityDown = magnetDirection === 'DOWN' || liquidityDirection === 'DOWN' || liquidityDirection === 'bearish';
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // WHALE ACTIVITY - Confirmation layer only
+    // If available: use as confirmation (strong BUY → supports LONG, etc.)
+    // If unavailable: do NOT count, do NOT block, just note it
+    // ═══════════════════════════════════════════════════════════════════
+    let isWhaleBullish = false;
+    let isWhaleBearish = false;
+    
+    if (isWhaleDataAvailable) {
+      const isStrongBuy = whaleDirection === 'buying' || whaleDirection === 'BUYING' || whalePressure > 60;
+      const isStrongSell = whaleDirection === 'selling' || whaleDirection === 'SELLING' || whalePressure < 40;
+      // Weak/balanced (40-60) = neutral, non-decisive
+      
+      if (isStrongBuy) isWhaleBullish = true;
+      if (isStrongSell) isWhaleBearish = true;
+    }
 
-    // Count bullish signals
+    // Count aligned signals (excluding whale if unavailable)
     let bullishCount = 0;
     let bearishCount = 0;
 
     if (isBiasBullish) { bullishCount++; alignedSignals.push({ direction: 'LONG', text: t.biasAligned }); }
     if (isBiasBearish) { bearishCount++; }
     
-    if (isWhaleBuying) { bullishCount++; alignedSignals.push({ direction: 'LONG', text: t.whaleAligned }); }
-    if (isWhaleSelling) { bearishCount++; }
+    // Only count whale if data is available and strong
+    if (isWhaleDataAvailable && isWhaleBullish) { 
+      bullishCount++; 
+      alignedSignals.push({ direction: 'LONG', text: t.whaleAligned }); 
+    }
+    if (isWhaleDataAvailable && isWhaleBearish) { 
+      bearishCount++; 
+    }
     
     if (isOiRising) { bullishCount++; alignedSignals.push({ direction: 'LONG', text: t.oiRising }); }
     if (isOiFalling) { bearishCount++; }
@@ -197,23 +257,52 @@ export function DecisionEngineCard({ language = 'it' }) {
     if (isLiquidityUp) { bullishCount++; alignedSignals.push({ direction: 'LONG', text: t.liquidityAligned }); }
     if (isLiquidityDown) { bearishCount++; }
 
-    // Strong alignment: ALL 4 signals agree
-    if (bullishCount >= 3 && bearishCount === 0) {
+    // Calculate required alignment threshold
+    // If whale unavailable, we have 3 signals instead of 4, so require 2+ for alignment
+    const totalSignals = isWhaleDataAvailable ? 4 : 3;
+    const alignmentThreshold = isWhaleDataAvailable ? 3 : 2;
+    
+    // Add whale unavailable note to all returns if applicable
+    const addWhaleNote = (warningsArray) => {
+      if (whaleUnavailableNote) {
+        return [...warningsArray.slice(0, 1), whaleUnavailableNote].slice(0, 2);
+      }
+      return warningsArray.slice(0, 2);
+    };
+
+    // Strong alignment: signals agree (adjusted for available data)
+    if (bullishCount >= alignmentThreshold && bearishCount === 0) {
       finalAction = 'LONG';
-      reason = t.alignedSignals;
-      return { finalAction, reason, warnings: warnings.slice(0, 2), alignedSignals: alignedSignals.filter(s => s.direction === 'LONG'), isConflict: false };
+      reason = isWeakRR ? t.educationalOnly : t.alignedSignals;
+      return { 
+        finalAction: isWeakRR ? 'WAIT' : 'LONG',  // Weak R:R = still WAIT but show context
+        reason, 
+        warnings: addWhaleNote(warnings), 
+        alignedSignals: alignedSignals.filter(s => s.direction === 'LONG'), 
+        isConflict: false,
+        isWeakRR,
+        displayAction: 'LONG'  // Show what action WOULD be without R:R issue
+      };
     }
     
-    if (bearishCount >= 3 && bullishCount === 0) {
+    if (bearishCount >= alignmentThreshold && bullishCount === 0) {
       finalAction = 'SHORT';
-      reason = t.alignedSignals;
+      reason = isWeakRR ? t.educationalOnly : t.alignedSignals;
       // Build bearish aligned signals
       const bearishAligned = [];
       if (isBiasBearish) bearishAligned.push({ direction: 'SHORT', text: t.biasAligned });
-      if (isWhaleSelling) bearishAligned.push({ direction: 'SHORT', text: t.whaleAligned });
+      if (isWhaleDataAvailable && isWhaleBearish) bearishAligned.push({ direction: 'SHORT', text: t.whaleAligned });
       if (isOiFalling) bearishAligned.push({ direction: 'SHORT', text: t.oiRising.replace('aumento', 'calo').replace('rising', 'falling') });
       if (isLiquidityDown) bearishAligned.push({ direction: 'SHORT', text: t.liquidityAligned });
-      return { finalAction, reason, warnings: warnings.slice(0, 2), alignedSignals: bearishAligned, isConflict: false };
+      return { 
+        finalAction: isWeakRR ? 'WAIT' : 'SHORT',
+        reason, 
+        warnings: addWhaleNote(warnings), 
+        alignedSignals: bearishAligned, 
+        isConflict: false,
+        isWeakRR,
+        displayAction: 'SHORT'
+      };
     }
 
     // ─────────────────────────────────────────────────────────────────

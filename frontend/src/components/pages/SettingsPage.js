@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, Check, X, Info, MessageCircle, Bell, BellOff } from 'lucide-react';
+import { Save, Send, Check, X, Info, MessageCircle, Bell, BellOff, Database, RefreshCw, Shield, AlertTriangle, CheckCircle, Wifi, WifiOff } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -7,6 +7,9 @@ import { Switch } from '../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Separator } from '../ui/separator';
 import { toast } from 'sonner';
+import { cn } from '../../lib/utils';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function SettingsPage() {
   const { t, settings, updateSettings, testTelegram, language, setLanguage } = useApp();
@@ -334,6 +337,263 @@ export function SettingsPage() {
             <span className="text-sm">System Health Check</span>
           </a>
         </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          API & DATA SOURCES - Admin Section
+          Shows current API/data-source configuration and connection status
+      ═══════════════════════════════════════════════════════════════════ */}
+      <ApiDataSourcesSection language={language} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API & DATA SOURCES COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ApiDataSourcesSection({ language }) {
+  const [dataSources, setDataSources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [testingSource, setTestingSource] = useState(null);
+
+  const t = {
+    it: {
+      title: 'API & Fonti Dati',
+      subtitle: 'Configurazione e stato delle connessioni',
+      source: 'Fonte',
+      status: 'Stato',
+      role: 'Ruolo',
+      lastCheck: 'Ultimo controllo',
+      testConnection: 'Test Connessione',
+      apiKey: 'API Key',
+      enabled: 'Attivo',
+      disabled: 'Disattivo',
+      valid: 'VALIDO',
+      invalid: 'NON VALIDO',
+      planLimit: 'LIMITE PIANO',
+      unavailable: 'NON DISPONIBILE',
+      networkError: 'ERRORE RETE',
+      testing: 'Testing...',
+      adminOnly: 'Solo amministratore',
+      noChanges: 'Le modifiche API saranno disponibili in una versione futura'
+    },
+    en: {
+      title: 'API & Data Sources',
+      subtitle: 'Configuration and connection status',
+      source: 'Source',
+      status: 'Status',
+      role: 'Role',
+      lastCheck: 'Last check',
+      testConnection: 'Test Connection',
+      apiKey: 'API Key',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      valid: 'VALID',
+      invalid: 'INVALID',
+      planLimit: 'PLAN LIMITATION',
+      unavailable: 'UNAVAILABLE',
+      networkError: 'NETWORK ERROR',
+      testing: 'Testing...',
+      adminOnly: 'Admin only',
+      noChanges: 'API changes will be available in a future version'
+    }
+  }[language] || {
+    it: {
+      title: 'API & Fonti Dati',
+      subtitle: 'Configurazione e stato delle connessioni',
+      source: 'Fonte',
+      status: 'Stato',
+      role: 'Ruolo',
+      lastCheck: 'Ultimo controllo',
+      testConnection: 'Test Connessione',
+      apiKey: 'API Key',
+      enabled: 'Attivo',
+      disabled: 'Disattivo',
+      valid: 'VALIDO',
+      invalid: 'NON VALIDO',
+      planLimit: 'LIMITE PIANO',
+      unavailable: 'NON DISPONIBILE',
+      networkError: 'ERRORE RETE',
+      testing: 'Testing...',
+      adminOnly: 'Solo amministratore',
+      noChanges: 'Le modifiche API saranno disponibili in una versione futura'
+    }
+  };
+
+  // Fetch data sources status
+  useEffect(() => {
+    const fetchDataSources = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/system/data-sources`);
+        if (response.ok) {
+          const data = await response.json();
+          setDataSources(data.sources || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch data sources:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDataSources();
+  }, []);
+
+  // Test connection for a specific source
+  const testConnection = async (sourceName) => {
+    setTestingSource(sourceName);
+    try {
+      const response = await fetch(`${API_URL}/api/system/test-connection/${sourceName}`);
+      const result = await response.json();
+      
+      // Update the source status
+      setDataSources(prev => prev.map(src => 
+        src.name === sourceName 
+          ? { ...src, lastTestResult: result.status, lastTestTime: new Date().toISOString() }
+          : src
+      ));
+
+      if (result.status === 'VALID') {
+        toast.success(`${sourceName}: ${t.valid}`);
+      } else if (result.status === 'PLAN_LIMITATION') {
+        toast.warning(`${sourceName}: ${t.planLimit}`);
+      } else {
+        toast.error(`${sourceName}: ${result.status}`);
+      }
+    } catch (error) {
+      toast.error(`${sourceName}: ${t.networkError}`);
+    } finally {
+      setTestingSource(null);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const config = {
+      'VALID': { color: 'bg-bullish/20 text-bullish border-bullish/30', icon: CheckCircle },
+      'CONNECTED': { color: 'bg-bullish/20 text-bullish border-bullish/30', icon: CheckCircle },
+      'PLAN_LIMITATION': { color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30', icon: AlertTriangle },
+      'INVALID': { color: 'bg-bearish/20 text-bearish border-bearish/30', icon: X },
+      'UNAVAILABLE': { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: WifiOff },
+      'NETWORK_ERROR': { color: 'bg-bearish/20 text-bearish border-bearish/30', icon: WifiOff }
+    }[status] || { color: 'bg-zinc-600/20 text-zinc-400 border-zinc-500/30', icon: Info };
+
+    const StatusIcon = config.icon;
+    return (
+      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono border", config.color)}>
+        <StatusIcon className="w-3 h-3" />
+        {status}
+      </span>
+    );
+  };
+
+  const maskApiKey = (key) => {
+    if (!key) return '••••••••';
+    if (key.length <= 8) return '••••••••';
+    return key.substring(0, 4) + '••••••••' + key.substring(key.length - 4);
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-crypto-card border border-crypto-border rounded-sm p-4 animate-pulse">
+        <div className="h-8 bg-zinc-800 rounded w-1/3 mb-4" />
+        <div className="space-y-3">
+          <div className="h-16 bg-zinc-800 rounded" />
+          <div className="h-16 bg-zinc-800 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-crypto-card border border-crypto-border rounded-sm overflow-hidden" data-testid="api-data-sources-section">
+      {/* Header */}
+      <div className="p-4 border-b border-crypto-border bg-gradient-to-r from-crypto-card to-zinc-900/50">
+        <div className="flex items-center gap-3">
+          <Database className="w-5 h-5 text-whale" />
+          <div>
+            <h3 className="font-heading font-semibold">{t.title}</h3>
+            <p className="text-xs text-zinc-500">{t.subtitle}</p>
+          </div>
+          <span className="ml-auto text-xs px-2 py-1 bg-whale/10 text-whale border border-whale/30 rounded">
+            <Shield className="w-3 h-3 inline mr-1" />
+            {t.adminOnly}
+          </span>
+        </div>
+      </div>
+
+      {/* Data Sources List */}
+      <div className="divide-y divide-crypto-border">
+        {dataSources.map((source) => (
+          <div key={source.name} className="p-4 hover:bg-zinc-800/30 transition-colors">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                {/* Source Name & Status */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    source.enabled ? "bg-bullish" : "bg-zinc-600"
+                  )} />
+                  <span className="font-mono font-medium">{source.name}</span>
+                  {getStatusBadge(source.lastTestResult || source.status)}
+                </div>
+
+                {/* Details */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div className="text-zinc-500">{t.role}:</div>
+                  <div className="text-zinc-300">{source.role}</div>
+                  
+                  <div className="text-zinc-500">{t.apiKey}:</div>
+                  <div className="font-mono text-zinc-400">{maskApiKey(source.apiKeyMasked)}</div>
+                  
+                  <div className="text-zinc-500">{t.status}:</div>
+                  <div className={source.enabled ? "text-bullish" : "text-zinc-500"}>
+                    {source.enabled ? t.enabled : t.disabled}
+                  </div>
+                  
+                  {source.lastTestTime && (
+                    <>
+                      <div className="text-zinc-500">{t.lastCheck}:</div>
+                      <div className="text-zinc-400">
+                        {new Date(source.lastTestTime).toLocaleTimeString()}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Test Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testConnection(source.name)}
+                disabled={testingSource === source.name}
+                className="border-crypto-border hover:border-whale hover:bg-whale/10"
+                data-testid={`test-${source.name.toLowerCase()}-btn`}
+              >
+                {testingSource === source.name ? (
+                  <>
+                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                    {t.testing}
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="w-3 h-3 mr-1" />
+                    {t.testConnection}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer Note */}
+      <div className="p-3 bg-zinc-900/50 border-t border-crypto-border">
+        <p className="text-xs text-zinc-500 flex items-center gap-2">
+          <Info className="w-3 h-3" />
+          {t.noChanges}
+        </p>
       </div>
     </div>
   );

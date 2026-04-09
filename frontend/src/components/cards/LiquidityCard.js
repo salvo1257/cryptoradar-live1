@@ -4,9 +4,10 @@ import { useApp } from '../../contexts/AppContext';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { ScrollArea } from '../ui/scroll-area';
+import { HelpOverlay } from '../ui/HelpOverlay';
 
 export function LiquidityCard({ compact = false }) {
-  const { t, liquidity, learnMode } = useApp();
+  const { t, liquidity, learnMode, language } = useApp();
   const { clusters = [], direction, data_source, exchange_stats } = liquidity || {};
 
   const formatPrice = (p) => {
@@ -229,6 +230,20 @@ export function LiquidityCard({ compact = false }) {
           </div>
         </ScrollArea>
       </div>
+
+      {/* Help Overlay - Learn Mode */}
+      <HelpOverlay 
+        show={learnMode}
+        cardType="liquidity_direction"
+        language={language}
+        contextData={{
+          direction: direction?.direction,
+          aboveClusters: aboveClusters,
+          belowClusters: belowClusters,
+          totalAbove: aboveClusters.reduce((sum, c) => sum + (c.value || 0), 0),
+          totalBelow: belowClusters.reduce((sum, c) => sum + (c.value || 0), 0)
+        }}
+      />
     </div>
   );
 }

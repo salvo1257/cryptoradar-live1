@@ -13246,6 +13246,176 @@ async def get_system_health():
     
     return health
 
+
+@api_router.get("/system/data-sources")
+async def get_data_sources():
+    """
+    Get current API/data-source configuration and status.
+    Admin-only endpoint for monitoring data sources.
+    
+    Returns:
+        - Source name
+        - Enabled/disabled status
+        - Masked API key (if applicable)
+        - Role in system
+        - Current connection status
+        - Last successful check timestamp
+    
+    Security: Never exposes full credentials.
+    """
+    coinglass_key = os.environ.get("COINGLASS_API_KEY", "")
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    cryptocompare_key = os.environ.get("CRYPTOCOMPARE_API_KEY", "")
+    
+    def mask_key(key):
+        if not key:
+            return None
+        if len(key) <= 8:
+            return "••••••••"
+        return key[:4] + "••••••••" + key[-4:]
+    
+    sources = [
+        {
+            "name": "Kraken",
+            "enabled": True,
+            "apiKeyMasked": None,
+            "apiKeyRequired": False,
+            "role": "Price data, OHLC, Order Book",
+            "status": "CONNECTED",
+            "critical": True,
+            "description": "Primary market data provider"
+        },
+        {
+            "name": "CoinGlass",
+            "enabled": bool(coinglass_key),
+            "apiKeyMasked": mask_key(coinglass_key),
+            "apiKeyRequired": True,
+            "role": "Open Interest, Funding Rate, Liquidations, Whale Activity",
+            "status": "CONNECTED" if coinglass_key else "NOT_CONFIGURED",
+            "critical": False,
+            "description": "Derivatives and liquidation data",
+            "planNote": "Hobbyist plan - some endpoints limited"
+        },
+        {
+            "name": "CryptoCompare",
+            "enabled": bool(cryptocompare_key),
+            "apiKeyMasked": mask_key(cryptocompare_key),
+            "apiKeyRequired": False,
+            "role": "News feed (optional)",
+            "status": "CONNECTED" if cryptocompare_key else "FALLBACK",
+            "critical": False,
+            "description": "Crypto news aggregation"
+        },
+        {
+            "name": "Telegram",
+            "enabled": bool(telegram_token and telegram_chat),
+            "apiKeyMasked": mask_key(telegram_token) if telegram_token else None,
+            "apiKeyRequired": True,
+            "role": "Signal alerts and notifications",
+            "status": "CONNECTED" if (telegram_token and telegram_chat) else "NOT_CONFIGURED",
+            "critical": False,
+            "description": "Real-time alert delivery"
+        },
+        {
+            "name": "MongoDB",
+            "enabled": True,
+            "apiKeyMasked": None,
+            "apiKeyRequired": False,
+            "role": "Signal history, setups, shadow tracking",
+            "status": "CONNECTED",
+            "critical": True,
+            "description": "Primary database"
+        }
+    ]
+    
+    return {
+        "sources": sources,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "note": "API key changes require server restart. UI modification coming in future version."
+    }
+
+
+@api_router.get("/system/test-connection/{source_name}")
+async def test_connection(source_name: str):
+    """
+    Test connection for a specific data source.
+    
+    Returns status:
+        - VALID: Connection working correctly
+        - INVALID: Authentication failed
+        - PLAN_LIMITATION: API works but some endpoints limited by plan
+        - UNAVAILABLE: Service not reachable
+        - NETWORK_ERROR: Network issues
+    """
+    source_name_lower = source_name.lower()
+    
+    try:
+        if source_name_lower == "kraken":
+            ticker = await fetch_kraken_ticker()
+            if ticker and ticker.get("price", 0) > 0:
+                return {"source": source_name, "status": "VALID", "btc_price": ticker["price"]}
+            return {"source": source_name, "status": "UNAVAILABLE", "error": "No price data"}
+        
+        elif source_name_lower == "coinglass":
+            coinglass_key = os.environ.get("COINGLASS_API_KEY", "")
+            if not coinglass_key:
+                return {"source": source_name, "status": "NOT_CONFIGURED", "error": "API key not set"}
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"CG-API-KEY": coinglass_key, "accept": "application/json"}
+                # Test with OI endpoint (usually available on all plans)
+                resp = await client.get(
+                    "https://open-api-v3.coinglass.com/api/futures/openInterest/ohlc-history?symbol=BTCUSDT&exchange=Binance&interval=4h&limit=1",
+                    headers=headers
+                )
+                data = resp.json()
+                
+                if resp.status_code == 401:
+                    return {"source": source_name, "status": "INVALID", "error": "Authentication failed"}
+                if resp.status_code == 403:
+                    return {"source": source_name, "status": "PLAN_LIMITATION", "error": "Endpoint not available on current plan"}
+                if data.get("success") or data.get("code") == 0:
+                    return {"source": source_name, "status": "VALID", "message": "OI data accessible"}
+                
+                return {"source": source_name, "status": "PLAN_LIMITATION", "code": data.get("code"), "message": data.get("msg")}
+        
+        elif source_name_lower == "cryptocompare":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC")
+                if resp.status_code == 200:
+                    return {"source": source_name, "status": "VALID", "message": "News feed accessible"}
+                return {"source": source_name, "status": "UNAVAILABLE", "error": f"HTTP {resp.status_code}"}
+        
+        elif source_name_lower == "telegram":
+            telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            if not telegram_token:
+                return {"source": source_name, "status": "NOT_CONFIGURED", "error": "Bot token not set"}
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"https://api.telegram.org/bot{telegram_token}/getMe")
+                data = resp.json()
+                if data.get("ok"):
+                    return {"source": source_name, "status": "VALID", "bot_name": data.get("result", {}).get("username")}
+                return {"source": source_name, "status": "INVALID", "error": "Invalid bot token"}
+        
+        elif source_name_lower == "mongodb":
+            await db.command("ping")
+            doc_count = await signal_history_collection.count_documents({})
+            return {"source": source_name, "status": "VALID", "signal_count": doc_count}
+        
+        else:
+            return {"source": source_name, "status": "UNKNOWN", "error": f"Unknown source: {source_name}"}
+    
+    except httpx.TimeoutException:
+        return {"source": source_name, "status": "NETWORK_ERROR", "error": "Connection timeout"}
+    except httpx.RequestError as e:
+        return {"source": source_name, "status": "NETWORK_ERROR", "error": str(e)}
+    except Exception as e:
+        logger.error(f"Connection test failed for {source_name}: {e}")
+        return {"source": source_name, "status": "NETWORK_ERROR", "error": str(e)}
+
+
 @api_router.get("/system/ready")
 async def get_system_ready():
     """

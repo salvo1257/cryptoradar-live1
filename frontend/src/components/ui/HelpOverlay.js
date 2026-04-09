@@ -308,6 +308,22 @@ function getHelpContent(cardType, language, ctx) {
     },
 
     // ═══════════════════════════════════════════════════════════════════
+    // LIQUIDITY DIRECTION - Direzione Liquidità
+    // ═══════════════════════════════════════════════════════════════════
+    liquidity_direction: {
+      it: {
+        whatItIs: getLiquidityDirectionWhatItIs(ctx, 'it'),
+        whyItHappens: getLiquidityDirectionWhyItHappens(ctx, 'it'),
+        howToRead: getLiquidityDirectionAction(ctx, 'it')
+      },
+      en: {
+        whatItIs: getLiquidityDirectionWhatItIs(ctx, 'en'),
+        whyItHappens: getLiquidityDirectionWhyItHappens(ctx, 'en'),
+        howToRead: getLiquidityDirectionAction(ctx, 'en')
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
     // LIQUIDITY LADDER (fallback)
     // ═══════════════════════════════════════════════════════════════════
     liquidity_ladder: {
@@ -1542,6 +1558,122 @@ function getSupportResistanceAction(ctx, lang) {
     return `Near resistance → watch reaction. Rejection = short. Break = long.`;
   }
   return `Use these levels as targets (TP) or invalidation (SL). Don't enter directly at levels.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIQUIDITY DIRECTION HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getLiquidityDirectionWhatItIs(ctx, lang) {
+  const direction = ctx.direction;
+  const totalAbove = ctx.totalAbove || 0;
+  const totalBelow = ctx.totalBelow || 0;
+  
+  const aboveM = (totalAbove / 1000000).toFixed(1);
+  const belowM = (totalBelow / 1000000).toFixed(1);
+  
+  if (lang === 'it') {
+    if (!direction) {
+      return 'Dati insufficienti per spiegazione.';
+    }
+    if (direction === 'UP') {
+      return `Liquidità maggiore SOPRA ($${aboveM}M vs $${belowM}M sotto). Il prezzo tende a muoversi verso la liquidità.`;
+    }
+    if (direction === 'DOWN') {
+      return `Liquidità maggiore SOTTO ($${belowM}M vs $${aboveM}M sopra). Il prezzo tende a muoversi verso la liquidità.`;
+    }
+    return `Liquidità bilanciata ($${aboveM}M sopra, $${belowM}M sotto). Nessuna direzione dominante.`;
+  }
+  
+  if (!direction) {
+    return 'Insufficient data for explanation.';
+  }
+  if (direction === 'UP') {
+    return `More liquidity ABOVE ($${aboveM}M vs $${belowM}M below). Price tends to move toward liquidity.`;
+  }
+  if (direction === 'DOWN') {
+    return `More liquidity BELOW ($${belowM}M vs $${aboveM}M above). Price tends to move toward liquidity.`;
+  }
+  return `Balanced liquidity ($${aboveM}M above, $${belowM}M below). No dominant direction.`;
+}
+
+function getLiquidityDirectionWhyItHappens(ctx, lang) {
+  const direction = ctx.direction;
+  const aboveClusters = ctx.aboveClusters || [];
+  const belowClusters = ctx.belowClusters || [];
+  
+  if (lang === 'it') {
+    if (!direction) {
+      return 'Attendi aggiornamento dati.';
+    }
+    
+    const strongAbove = aboveClusters.filter(c => c.strength === 'high').length;
+    const strongBelow = belowClusters.filter(c => c.strength === 'high').length;
+    
+    if (strongAbove > strongBelow) {
+      return `${strongAbove} cluster forti sopra. Stop loss dei short concentrati = magnete per il prezzo.`;
+    }
+    if (strongBelow > strongAbove) {
+      return `${strongBelow} cluster forti sotto. Stop loss dei long concentrati = magnete per il prezzo.`;
+    }
+    return `Cluster distribuiti uniformemente. Il mercato potrebbe muoversi in entrambe le direzioni.`;
+  }
+  
+  if (!direction) {
+    return 'Waiting for data update.';
+  }
+  
+  const strongAbove = aboveClusters.filter(c => c.strength === 'high').length;
+  const strongBelow = belowClusters.filter(c => c.strength === 'high').length;
+  
+  if (strongAbove > strongBelow) {
+    return `${strongAbove} strong clusters above. Concentrated short stop losses = price magnet.`;
+  }
+  if (strongBelow > strongAbove) {
+    return `${strongBelow} strong clusters below. Concentrated long stop losses = price magnet.`;
+  }
+  return `Clusters evenly distributed. Market could move in either direction.`;
+}
+
+function getLiquidityDirectionAction(ctx, lang) {
+  const direction = ctx.direction;
+  const totalAbove = ctx.totalAbove || 0;
+  const totalBelow = ctx.totalBelow || 0;
+  const ratio = totalAbove > 0 && totalBelow > 0 ? Math.max(totalAbove/totalBelow, totalBelow/totalAbove) : 1;
+  
+  if (lang === 'it') {
+    if (!direction) {
+      return 'Nessuna azione richiesta.';
+    }
+    
+    if (ratio > 2) {
+      return direction === 'UP' 
+        ? 'Forte squilibrio verso l\'alto. Considera target sopra. Evita short aggressivi.'
+        : 'Forte squilibrio verso il basso. Considera target sotto. Evita long aggressivi.';
+    }
+    if (ratio > 1.3) {
+      return direction === 'UP'
+        ? 'Squilibrio moderato verso l\'alto. Usa come conferma per bias rialzista.'
+        : 'Squilibrio moderato verso il basso. Usa come conferma per bias ribassista.';
+    }
+    return 'Liquidità bilanciata. Aspetta rottura di un cluster significativo prima di agire.';
+  }
+  
+  if (!direction) {
+    return 'No action required.';
+  }
+  
+  if (ratio > 2) {
+    return direction === 'UP'
+      ? 'Strong imbalance upward. Consider targets above. Avoid aggressive shorts.'
+      : 'Strong imbalance downward. Consider targets below. Avoid aggressive longs.';
+  }
+  if (ratio > 1.3) {
+    return direction === 'UP'
+      ? 'Moderate imbalance upward. Use as confirmation for bullish bias.'
+      : 'Moderate imbalance downward. Use as confirmation for bearish bias.';
+  }
+  return 'Balanced liquidity. Wait for significant cluster break before acting.';
 }
 
 export default HelpOverlay;
