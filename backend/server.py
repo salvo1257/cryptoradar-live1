@@ -17886,7 +17886,7 @@ async def get_dedup_status():
     }
 
 @api_router.get("/system/shadow-tracking-status")
-async def get_shadow_tracking_status():
+async def get_system_shadow_tracking_status():
     """
     Get the status of the shadow outcome tracking system.
     Shows all actively tracked signals and their current state.
@@ -17897,7 +17897,11 @@ async def get_shadow_tracking_status():
     tracked_signals = []
     
     for signal_id, tracking in active_shadow_tracking.items():
-        age_hours = (now - tracking["created_at"]).total_seconds() / 3600
+        created_at = tracking["created_at"]
+        # Ensure created_at is timezone-aware for comparison
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age_hours = (now - created_at).total_seconds() / 3600
         tracked_signals.append({
             "signal_id": signal_id[:8] + "...",
             "direction": tracking["direction"],
