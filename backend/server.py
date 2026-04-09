@@ -2158,10 +2158,15 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         # SAME-DIRECTION SIGNAL LOCK CHECK
         # Execution constraint: Cannot have multiple OPEN signals in same direction
         # 
-        # OPEN statuses: ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2
-        # CLOSED statuses: WIN, LOSS, EXPIRED, CANCELLED, PARTIAL_WIN, FULL_WIN
+        # OPEN statuses (trade still active, blocks new signals):
+        #   - ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2, PARTIAL_WIN
+        # 
+        # CLOSED statuses (trade complete, unlocks direction):
+        #   - WIN, LOSS, EXPIRED, CANCELLED, FULL_WIN
+        #
+        # NOTE: PARTIAL_WIN = T1 hit but still holding for T2 = STILL OPEN
         # ═══════════════════════════════════════════════════════════════════
-        OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2"]
+        OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2", "PARTIAL_WIN"]
         
         # Check if there's an existing OPEN signal in the same direction
         existing_open_signal = await signal_history_collection.find_one({
@@ -14150,11 +14155,16 @@ async def get_v3_signal_lock_status():
     Shows which directions are currently LOCKED due to open signals.
     A direction is LOCKED if there's an OPEN signal in that direction.
     
-    OPEN statuses: ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2
-    CLOSED statuses: WIN, LOSS, EXPIRED, CANCELLED, PARTIAL_WIN, FULL_WIN
+    OPEN statuses (trade still active, blocks new signals):
+      - ENTRY_READY, ACTIVE, PENDING, T1_HIT_WAITING_T2, PARTIAL_WIN
+    
+    CLOSED statuses (trade complete, unlocks direction):
+      - WIN, LOSS, EXPIRED, CANCELLED, FULL_WIN
+    
+    NOTE: PARTIAL_WIN = T1 hit but still holding for T2 = STILL OPEN
     """
-    OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2"]
-    CLOSED_SIGNAL_STATUSES = ["WIN", "LOSS", "EXPIRED", "CANCELLED", "PARTIAL_WIN", "FULL_WIN"]
+    OPEN_SIGNAL_STATUSES = ["ENTRY_READY", "ACTIVE", "PENDING", "T1_HIT_WAITING_T2", "PARTIAL_WIN"]
+    CLOSED_SIGNAL_STATUSES = ["WIN", "LOSS", "EXPIRED", "CANCELLED", "FULL_WIN"]
     
     # Check for open LONG signal
     open_long = await signal_history_collection.find_one({

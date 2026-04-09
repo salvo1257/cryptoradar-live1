@@ -14,19 +14,21 @@ This is an execution constraint layer - NO changes to core signal logic, scoring
 
 ### Status Definitions
 
-**OPEN Statuses (signal still active):**
-- `ENTRY_READY`
-- `ACTIVE`
-- `PENDING`
-- `T1_HIT_WAITING_T2`
+**OPEN Statuses (trade still active, blocks new signals):**
+- `ENTRY_READY` - Signal generated, awaiting entry
+- `ACTIVE` - Trade entered, position open
+- `PENDING` - Awaiting confirmation
+- `T1_HIT_WAITING_T2` - T1 reached, holding for T2
+- `PARTIAL_WIN` - T1 hit, still holding remainder for T2
 
-**CLOSED Statuses (signal complete):**
-- `WIN`
-- `LOSS`
-- `EXPIRED`
-- `CANCELLED`
-- `PARTIAL_WIN`
-- `FULL_WIN`
+**CLOSED Statuses (trade complete, unlocks direction):**
+- `WIN` - Full target hit
+- `LOSS` - Stop loss hit
+- `EXPIRED` - Signal timed out
+- `CANCELLED` - Manually cancelled
+- `FULL_WIN` - Both T1 and T2 hit
+
+**NOTE:** `PARTIAL_WIN` remains OPEN because the trade is still operationally active (holding for T2).
 
 ### Implementation
 
