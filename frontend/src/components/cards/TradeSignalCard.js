@@ -682,27 +682,65 @@ export function TradeSignalCard({ compact = false }) {
               </div>
             </div>
 
-            {/* Target 1 - Using corrected display */}
+            {/* Target 1 - Using corrected display with cluster info */}
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-bullish" />
                 {lang.target1 || 'Target 1'}
+                {signal.targets_from_clusters && signal.target_1_cluster && (
+                  <span className="text-[9px] px-1 py-0.5 bg-bullish/20 text-bullish rounded">
+                    {language === 'it' ? 'CLUSTER' : 'CLUSTER'}
+                  </span>
+                )}
               </div>
               <div className="font-mono text-sm text-bullish">
                 ${formatPrice(getDisplayTargets(signal).target1)}
               </div>
+              {signal.target_1_cluster && (
+                <div className="text-[10px] text-zinc-500 mt-1">
+                  {language === 'it' ? 'Dist:' : 'Dist:'} {signal.target_1_cluster.distance_pct?.toFixed(2)}% | 
+                  {language === 'it' ? ' Vol:' : ' Vol:'} ${(signal.target_1_cluster.value_usd / 1000000).toFixed(1)}M
+                </div>
+              )}
             </div>
 
-            {/* Target 2 - Using corrected display */}
+            {/* Target 2 - Using corrected display with cluster info */}
             <div className="bg-crypto-surface/50 p-3 rounded-sm">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Target className="w-3 h-3 text-whale" />
                 {lang.target2 || 'Target 2'}
+                {signal.targets_from_clusters && signal.target_2_cluster && (
+                  <span className="text-[9px] px-1 py-0.5 bg-whale/20 text-whale rounded">
+                    {language === 'it' ? 'CLUSTER' : 'CLUSTER'}
+                  </span>
+                )}
               </div>
               <div className="font-mono text-sm text-whale">
                 ${formatPrice(getDisplayTargets(signal).target2)}
               </div>
+              {signal.target_2_cluster && (
+                <div className="text-[10px] text-zinc-500 mt-1">
+                  {language === 'it' ? 'Dist:' : 'Dist:'} {signal.target_2_cluster.distance_pct?.toFixed(2)}% | 
+                  {language === 'it' ? ' Vol:' : ' Vol:'} ${(signal.target_2_cluster.value_usd / 1000000).toFixed(1)}M
+                </div>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* Cluster-based target indicator */}
+        {signal.targets_from_clusters && (
+          <div className="mb-3 flex items-center gap-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
+            <Droplets className="w-3 h-3" />
+            <span>
+              {language === 'it' 
+                ? `Target basati su ${signal.clusters_analyzed || 0} cluster di liquidità` 
+                : language === 'de'
+                ? `Ziele basierend auf ${signal.clusters_analyzed || 0} Liquiditätsclustern`
+                : language === 'pl'
+                ? `Cele oparte na ${signal.clusters_analyzed || 0} klastrach płynności`
+                : `Targets based on ${signal.clusters_analyzed || 0} liquidity clusters`}
+            </span>
           </div>
         )}
 
@@ -714,13 +752,15 @@ export function TradeSignalCard({ compact = false }) {
               <span className={cn(
                 "font-mono font-bold",
                 signal.risk_reward_ratio >= 2 ? "text-bullish" : 
-                signal.risk_reward_ratio >= 1.5 ? "text-yellow-500" : "text-bearish"
+                signal.risk_reward_ratio >= 1.0 ? "text-yellow-500" :
+                signal.risk_reward_ratio >= 0.5 ? "text-orange-500" : "text-bearish"
               )}>
-                {signal.risk_reward_ratio?.toFixed(1)}:1
+                {signal.risk_reward_ratio?.toFixed(2)}:1
               </span>
-              {signal.risk_reward_ratio >= 2 && <span className="text-[10px] text-bullish">{language === 'it' ? '✓ Buono' : '✓ Good'}</span>}
-              {signal.risk_reward_ratio >= 1.5 && signal.risk_reward_ratio < 2 && <span className="text-[10px] text-yellow-500">{language === 'it' ? 'Accettabile' : 'Acceptable'}</span>}
-              {signal.risk_reward_ratio < 1.5 && <span className="text-[10px] text-bearish">{language === 'it' ? '⚠️ Basso' : '⚠️ Low'}</span>}
+              {signal.risk_reward_ratio >= 2 && <span className="text-[10px] text-bullish">{language === 'it' ? '✓ Ottimo' : '✓ Excellent'}</span>}
+              {signal.risk_reward_ratio >= 1.0 && signal.risk_reward_ratio < 2 && <span className="text-[10px] text-yellow-500">{language === 'it' ? '✓ Buono' : '✓ Good'}</span>}
+              {signal.risk_reward_ratio >= 0.5 && signal.risk_reward_ratio < 1.0 && <span className="text-[10px] text-orange-500">{language === 'it' ? '⚠️ Debole' : '⚠️ Weak'}</span>}
+              {signal.risk_reward_ratio < 0.5 && <span className="text-[10px] text-bearish">{language === 'it' ? '❌ Non operativo' : '❌ Non-operational'}</span>}
             </div>
           </div>
         )}
