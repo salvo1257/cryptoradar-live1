@@ -1,5 +1,67 @@
 # CryptoRadar Changelog
 
+## v3.3.0 - 2026-04-11
+
+### V3 Cluster Target Validation Engine
+
+**Goal:** Track and validate the new cluster-based target system to confirm it improves trade quality.
+
+#### New Backend Features:
+
+1. **Dedicated Cluster Target Validation System** (`server.py`)
+   - New MongoDB collection: `cluster_target_validation`
+   - Background tracking loop (15s interval)
+   - Automatic registration of new V3 signals with cluster metadata
+   - Real-time outcome tracking (T1 hit, T2 hit, Stop hit, Expired)
+   - MFE/MAE calculation per signal
+   - Persistence across server restarts
+
+2. **API Endpoints Added:**
+   - `GET /api/v3/cluster-validation-summary` - Comprehensive validation summary
+   - `GET /api/v3/cluster-validation-signals` - List individual tracked signals
+
+3. **Tracked Metrics:**
+   - Entry, Stop, T1, T2 prices
+   - R:R at creation
+   - Cluster distance (%) and volume ($)
+   - Outcome: T1_HIT, T2_HIT, STOP_HIT, EXPIRED, BLOCKED
+   - MFE/MAE percentages
+   - Time to outcome
+   - Win rate by direction
+
+4. **Validation Summary Includes:**
+   - Total signals (operational vs blocked)
+   - T1 hit rate, T2 hit rate, stop rate, expired rate
+   - Average R:R at creation vs achieved R:R
+   - Average cluster distance and volume
+   - By-direction breakdown
+   - Live tracking status
+   - Assessment conclusion with data sufficiency indicator
+
+#### Frontend Changes:
+
+1. **New "Cluster Validation" Tab** (`ReliabilityAnalyticsPage.js`)
+   - Shows validation summary when data available
+   - "No Data Yet" state for empty collection
+   - Outcome distribution (T1 HIT, T2 HIT, STOP, EXPIRED)
+   - Target cluster quality metrics (distance, volume)
+   - By-direction breakdown
+   - Live tracking status with active signals
+   - Blocked signals warning
+   - Assessment section with confidence indicator
+
+#### Cluster Target Rules (Enforced):
+- Minimum distance: 0.5%
+- Minimum volume: $500K
+- Minimum R:R: 0.5
+- Signals failing these checks are marked as BLOCKED (NO_VALID_CLUSTERS)
+
+#### Files Modified:
+- `/app/backend/server.py` - Added cluster validation engine, APIs, startup tasks
+- `/app/frontend/src/components/pages/ReliabilityAnalyticsPage.js` - Added cluster tab
+
+---
+
 ## v3.2.9 - 2026-04-09
 
 ### Full Language Consistency Implementation

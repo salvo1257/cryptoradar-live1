@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, RefreshCw, TrendingUp, TrendingDown, Target, 
   AlertTriangle, CheckCircle, XCircle, Clock, Info, Award,
-  Calendar, Zap, Droplets, ArrowUpRight, ArrowDownRight, GitCompare
+  Calendar, Zap, Droplets, ArrowUpRight, ArrowDownRight, GitCompare,
+  Crosshair, Activity
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
@@ -16,6 +17,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 export function ReliabilityAnalyticsPage() {
   const { t, language } = useApp();
   const [analytics, setAnalytics] = useState(null);
+  const [clusterValidation, setClusterValidation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -32,9 +34,20 @@ export function ReliabilityAnalyticsPage() {
     }
   }, []);
 
+  const fetchClusterValidation = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v3/cluster-validation-summary`);
+      const data = await response.json();
+      setClusterValidation(data);
+    } catch (error) {
+      console.error('Error fetching cluster validation:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAnalytics();
-  }, [fetchAnalytics]);
+    fetchClusterValidation();
+  }, [fetchAnalytics, fetchClusterValidation]);
 
   const getReliabilityColor = (score) => {
     if (score >= 60) return 'text-bullish';
@@ -96,6 +109,7 @@ export function ReliabilityAnalyticsPage() {
 
   const tabs = [
     { id: 'overview', label: language === 'it' ? 'Panoramica' : 'Overview', icon: BarChart3 },
+    { id: 'cluster', label: language === 'it' ? 'Validazione Cluster' : 'Cluster Validation', icon: Crosshair },
     { id: 'v1v2', label: 'v1 vs v2', icon: GitCompare },
     { id: 'heatmap', label: 'Heatmap', icon: Zap },
     { id: 'breakdown', label: language === 'it' ? 'Dettagli' : 'Breakdown', icon: Target },
@@ -119,7 +133,7 @@ export function ReliabilityAnalyticsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={fetchAnalytics} variant="outline" size="sm" disabled={loading}>
+        <Button onClick={() => { fetchAnalytics(); fetchClusterValidation(); }} variant="outline" size="sm" disabled={loading}>
           <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
           {language === 'it' ? 'Aggiorna' : 'Refresh'}
         </Button>
@@ -310,6 +324,336 @@ export function ReliabilityAnalyticsPage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Cluster Target Validation Tab */}
+      {activeTab === 'cluster' && (
+        <div className="space-y-4" data-testid="cluster-validation-tab">
+          {/* Header Info */}
+          <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-sm p-4">
+            <div className="flex items-start gap-3">
+              <Crosshair className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-semibold text-cyan-400 mb-1">
+                  {language === 'it' ? 'Validazione Sistema Target Cluster V3' : 'V3 Cluster Target System Validation'}
+                </h4>
+                <p className="text-xs text-zinc-400">
+                  {language === 'it' 
+                    ? 'Tracciamento dedicato per validare se i target basati su cluster di liquidità migliorano la qualità dei trade. I target devono avere: distanza minima 0.5%, volume minimo $500K, R:R minimo 0.5.'
+                    : 'Dedicated tracking to validate if liquidity cluster-based targets improve trade quality. Targets must have: min 0.5% distance, min $500K volume, min 0.5 R:R.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {clusterValidation?.status === 'NO_DATA' ? (
+            <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-8 text-center">
+              <Activity className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-zinc-400 mb-2">
+                {language === 'it' ? 'Nessun Dato Ancora' : 'No Data Yet'}
+              </h3>
+              <p className="text-sm text-zinc-500 max-w-md mx-auto">
+                {language === 'it' 
+                  ? 'I nuovi segnali V3 verranno automaticamente tracciati. Aspetta che vengano generati segnali con il nuovo sistema di target cluster.'
+                  : 'New V3 signals will be automatically tracked. Wait for signals to be generated with the new cluster target system.'}
+              </p>
+            </div>
+          ) : clusterValidation?.status === 'VALIDATION_ACTIVE' ? (
+            <>
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Total Signals */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'Segnali Totali' : 'Total Signals'}</div>
+                  <div className="text-2xl font-mono font-bold text-white">
+                    {clusterValidation.signal_counts?.total_signals || 0}
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1">
+                    {clusterValidation.signal_counts?.operational || 0} {language === 'it' ? 'operativi' : 'operational'}
+                  </div>
+                </div>
+
+                {/* T1 Hit Rate */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'T1 Hit Rate' : 'T1 Hit Rate'}</div>
+                  <div className={cn(
+                    "text-2xl font-mono font-bold",
+                    (clusterValidation.outcome_rates?.t1_hit_rate || 0) >= 50 ? "text-bullish" : "text-yellow-400"
+                  )}>
+                    {clusterValidation.outcome_rates?.t1_hit_rate || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1">
+                    T2: {clusterValidation.outcome_rates?.t2_hit_rate || 0}%
+                  </div>
+                </div>
+
+                {/* R:R Analysis */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <div className="text-xs text-zinc-500 mb-1">{language === 'it' ? 'R:R Medio' : 'Avg R:R'}</div>
+                  <div className={cn(
+                    "text-2xl font-mono font-bold",
+                    (clusterValidation.rr_analysis?.avg_rr_at_creation || 0) >= 1 ? "text-bullish" : "text-yellow-400"
+                  )}>
+                    {clusterValidation.rr_analysis?.avg_rr_at_creation || 0}
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1">
+                    {language === 'it' ? 'Realizzato' : 'Achieved'}: {clusterValidation.rr_analysis?.achieved_rr || 0}
+                  </div>
+                </div>
+
+                {/* Win Rate */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <div className="text-xs text-zinc-500 mb-1">Win Rate</div>
+                  <div className={cn(
+                    "text-2xl font-mono font-bold",
+                    (clusterValidation.outcome_rates?.win_rate || 0) >= 50 ? "text-bullish" : 
+                    (clusterValidation.outcome_rates?.win_rate || 0) >= 30 ? "text-yellow-400" : "text-bearish"
+                  )}>
+                    {clusterValidation.outcome_rates?.win_rate || 0}%
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1">
+                    Stop: {clusterValidation.outcome_rates?.stop_hit_rate || 0}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Outcome Distribution & Target Quality */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Outcome Distribution */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-crypto-accent" />
+                    {language === 'it' ? 'Distribuzione Outcome' : 'Outcome Distribution'}
+                  </h3>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="bg-bullish/20 p-3 rounded-sm">
+                      <div className="text-xl font-mono font-bold text-bullish">
+                        {clusterValidation.outcome_rates?.t1_hit_rate || 0}%
+                      </div>
+                      <div className="text-[10px] text-zinc-500">T1 HIT</div>
+                    </div>
+                    <div className="bg-green-500/20 p-3 rounded-sm">
+                      <div className="text-xl font-mono font-bold text-green-400">
+                        {clusterValidation.outcome_rates?.t2_hit_rate || 0}%
+                      </div>
+                      <div className="text-[10px] text-zinc-500">T2 HIT</div>
+                    </div>
+                    <div className="bg-bearish/20 p-3 rounded-sm">
+                      <div className="text-xl font-mono font-bold text-bearish">
+                        {clusterValidation.outcome_rates?.stop_hit_rate || 0}%
+                      </div>
+                      <div className="text-[10px] text-zinc-500">STOP</div>
+                    </div>
+                    <div className="bg-yellow-500/20 p-3 rounded-sm">
+                      <div className="text-xl font-mono font-bold text-yellow-400">
+                        {clusterValidation.outcome_rates?.expired_rate || 0}%
+                      </div>
+                      <div className="text-[10px] text-zinc-500">EXPIRED</div>
+                    </div>
+                  </div>
+
+                  {/* MFE/MAE */}
+                  <div className="mt-4 pt-4 border-t border-crypto-border">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-zinc-500">{language === 'it' ? 'MFE Medio' : 'Avg MFE'}:</span>
+                        <span className="ml-2 font-mono text-bullish">
+                          +{clusterValidation.rr_analysis?.avg_mfe_pct || 0}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-zinc-500">{language === 'it' ? 'MAE Medio' : 'Avg MAE'}:</span>
+                        <span className="ml-2 font-mono text-bearish">
+                          -{clusterValidation.rr_analysis?.avg_mae_pct || 0}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Target Cluster Quality */}
+                <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                    <Droplets className="w-4 h-4 text-crypto-accent" />
+                    {language === 'it' ? 'Qualità Cluster Target' : 'Target Cluster Quality'}
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    {/* T1 Cluster */}
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-2">Target 1 {language === 'it' ? 'Cluster' : 'Cluster'}</div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Distanza Media' : 'Avg Distance'}</div>
+                          <div className="text-lg font-mono font-bold text-cyan-400">
+                            {clusterValidation.target_quality?.t1?.avg_distance_pct || 0}%
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Volume Medio' : 'Avg Volume'}</div>
+                          <div className="text-lg font-mono font-bold text-cyan-400">
+                            ${((clusterValidation.target_quality?.t1?.avg_volume_usd || 0) / 1000).toFixed(0)}K
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* T2 Cluster */}
+                    <div className="bg-crypto-surface/50 p-3 rounded-sm">
+                      <div className="text-xs text-zinc-500 mb-2">Target 2 {language === 'it' ? 'Cluster' : 'Cluster'}</div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Distanza Media' : 'Avg Distance'}</div>
+                          <div className="text-lg font-mono font-bold text-purple-400">
+                            {clusterValidation.target_quality?.t2?.avg_distance_pct || 0}%
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-500">{language === 'it' ? 'Volume Medio' : 'Avg Volume'}</div>
+                          <div className="text-lg font-mono font-bold text-purple-400">
+                            ${((clusterValidation.target_quality?.t2?.avg_volume_usd || 0) / 1000).toFixed(0)}K
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* By Direction */}
+              <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4">
+                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-crypto-accent" />
+                  {language === 'it' ? 'Per Direzione' : 'By Direction'}
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* LONG */}
+                  <div className="bg-bullish/10 border border-bullish/20 p-4 rounded-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Badge className="bg-bullish/20 text-bullish font-mono">LONG</Badge>
+                      <span className="text-xs text-zinc-500">
+                        ({clusterValidation.by_direction?.LONG?.count || 0} {language === 'it' ? 'segnali' : 'signals'})
+                      </span>
+                    </div>
+                    <div className="text-2xl font-mono font-bold text-bullish">
+                      {clusterValidation.by_direction?.LONG?.win_rate || 0}%
+                    </div>
+                    <div className="text-xs text-zinc-500">Win Rate</div>
+                  </div>
+
+                  {/* SHORT */}
+                  <div className="bg-bearish/10 border border-bearish/20 p-4 rounded-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Badge className="bg-bearish/20 text-bearish font-mono">SHORT</Badge>
+                      <span className="text-xs text-zinc-500">
+                        ({clusterValidation.by_direction?.SHORT?.count || 0} {language === 'it' ? 'segnali' : 'signals'})
+                      </span>
+                    </div>
+                    <div className="text-2xl font-mono font-bold text-bearish">
+                      {clusterValidation.by_direction?.SHORT?.win_rate || 0}%
+                    </div>
+                    <div className="text-xs text-zinc-500">Win Rate</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Tracking Status */}
+              {clusterValidation.live_tracking?.active_signals > 0 && (
+                <div className="bg-crypto-card/60 border border-cyan-500/30 rounded-sm p-4">
+                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-cyan-400 animate-pulse" />
+                    {language === 'it' ? 'Tracking Live' : 'Live Tracking'}
+                    <Badge className="bg-cyan-500/20 text-cyan-400 text-[10px]">
+                      {clusterValidation.live_tracking.active_signals} {language === 'it' ? 'attivi' : 'active'}
+                    </Badge>
+                  </h3>
+                  <div className="space-y-2">
+                    {(clusterValidation.live_tracking.signals_being_tracked || []).map((sig, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 bg-crypto-surface/50 rounded-sm text-xs">
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn(
+                            "font-mono text-[10px]",
+                            sig.direction === 'LONG' ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
+                          )}>
+                            {sig.direction}
+                          </Badge>
+                          <span className="text-zinc-400 font-mono">{sig.signal_id}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-zinc-500">
+                            ${sig.entry_price?.toLocaleString()} → ${sig.t1?.toLocaleString()}
+                          </span>
+                          {sig.t1_hit && <Badge className="bg-bullish/20 text-bullish text-[9px]">T1 ✓</Badge>}
+                          <span className={cn("font-mono", sig.current_mfe > 0 ? "text-bullish" : "text-bearish")}>
+                            MFE: {sig.current_mfe > 0 ? '+' : ''}{sig.current_mfe}%
+                          </span>
+                          <span className="text-zinc-500">{sig.age_minutes}m</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Blocked Signals Info */}
+              {(clusterValidation.signal_counts?.blocked_no_valid_clusters || 0) > 0 && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-sm p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-semibold text-yellow-400 mb-1">
+                        {language === 'it' ? 'Segnali Bloccati' : 'Blocked Signals'}
+                      </h4>
+                      <p className="text-xs text-zinc-400">
+                        <span className="font-mono text-yellow-400">
+                          {clusterValidation.signal_counts.blocked_no_valid_clusters}
+                        </span>
+                        {' '}{language === 'it' 
+                          ? 'segnali sono stati bloccati perché non hanno trovato cluster validi (distanza < 0.5% o volume < $500K). Questo è intenzionale per evitare target di bassa qualità.'
+                          : 'signals were blocked because no valid clusters were found (distance < 0.5% or volume < $500K). This is intentional to avoid low-quality targets.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Assessment */}
+              <div className={cn(
+                "border rounded-sm p-4",
+                clusterValidation.assessment?.has_sufficient_data
+                  ? "bg-crypto-card/60 border-crypto-border"
+                  : "bg-orange-500/10 border-orange-500/30"
+              )}>
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-crypto-accent" />
+                  {language === 'it' ? 'Valutazione' : 'Assessment'}
+                </h3>
+                <p className="text-sm text-zinc-300">
+                  {clusterValidation.assessment?.conclusion || 'Collecting data...'}
+                </p>
+                {!clusterValidation.assessment?.has_sufficient_data && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-orange-400">
+                    <Clock className="w-4 h-4" />
+                    {language === 'it' 
+                      ? `Necessari ${clusterValidation.assessment?.minimum_for_confidence || 20} segnali completati per una valutazione affidabile. Attualmente: ${clusterValidation.signal_counts?.completed || 0}`
+                      : `Need ${clusterValidation.assessment?.minimum_for_confidence || 20} completed signals for reliable assessment. Currently: ${clusterValidation.signal_counts?.completed || 0}`}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-8 text-center">
+              <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <p className="text-zinc-400">
+                {language === 'it' ? 'Errore nel caricamento dati cluster' : 'Error loading cluster data'}
+              </p>
+              <Button onClick={fetchClusterValidation} variant="outline" className="mt-4">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                {language === 'it' ? 'Riprova' : 'Retry'}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

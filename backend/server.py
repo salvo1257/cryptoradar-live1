@@ -1767,6 +1767,728 @@ async def restore_pending_shadow_signals():
         return 0
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3 CLUSTER TARGET VALIDATION ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+# Purpose: Track and validate the NEW cluster-based target system separately
+# This provides dedicated metrics for:
+# - Cluster-based target hit rates vs old percentage fallback
+# - R:R improvement analysis
+# - Average cluster distance and volume
+# - MFE/MAE for cluster-targeted signals
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Active cluster target tracking: {signal_id: cluster_tracking_data}
+active_cluster_target_tracking = {}
+cluster_validation_task = None
+
+class ClusterTargetOutcome(str, Enum):
+    PENDING = "PENDING"
+    T1_HIT = "T1_HIT"          # Target 1 hit (partial win)
+    T2_HIT = "T2_HIT"          # Target 2 hit (full win)
+    STOP_HIT = "STOP_HIT"      # Stop loss hit
+    EXPIRED = "EXPIRED"        # Time limit reached without outcome
+    BLOCKED = "BLOCKED"        # Signal was blocked due to NO_VALID_CLUSTERS
+
+
+async def register_cluster_target_signal(
+    signal_id: str,
+    direction: str,
+    entry_price: float,
+    stop_loss: float,
+    target_1: float,
+    target_2: float,
+    target_1_cluster: dict = None,
+    target_2_cluster: dict = None,
+    rr_at_creation: float = 0,
+    is_operational: bool = True,
+    block_reason: str = None,
+    created_at: datetime = None
+) -> bool:
+    """
+    Register a V3 signal for cluster target validation tracking.
+    
+    This tracks specifically:
+    - Cluster distance at creation
+    - Cluster volume at creation
+    - R:R at creation
+    - Whether signal was blocked (NO_VALID_CLUSTERS)
+    - Outcome tracking (T1 hit, T2 hit, stop, expired)
+    - MFE/MAE calculation
+    """
+    global active_cluster_target_tracking
+    
+    if signal_id in active_cluster_target_tracking:
+        logger.debug(f"[CLUSTER VALIDATE] Signal {signal_id[:8]} already registered")
+        return False
+    
+    # Extract cluster metadata
+    t1_distance_pct = target_1_cluster.get("distance_pct", 0) if target_1_cluster else 0
+    t1_volume_usd = target_1_cluster.get("value_usd", 0) if target_1_cluster else 0
+    t1_source = target_1_cluster.get("source", "unknown") if target_1_cluster else "unknown"
+    
+    t2_distance_pct = target_2_cluster.get("distance_pct", 0) if target_2_cluster else 0
+    t2_volume_usd = target_2_cluster.get("value_usd", 0) if target_2_cluster else 0
+    t2_source = target_2_cluster.get("source", "unknown") if target_2_cluster else "unknown"
+    
+    tracking_data = {
+        "signal_id": signal_id,
+        "direction": direction,
+        "created_at": created_at or datetime.now(timezone.utc),
+        
+        # Price levels
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+        "target_2": target_2,
+        
+        # Cluster metadata at creation
+        "t1_cluster": {
+            "distance_pct": t1_distance_pct,
+            "volume_usd": t1_volume_usd,
+            "source": t1_source
+        },
+        "t2_cluster": {
+            "distance_pct": t2_distance_pct,
+            "volume_usd": t2_volume_usd,
+            "source": t2_source
+        },
+        
+        # R:R at creation
+        "rr_at_creation": rr_at_creation,
+        
+        # Operational status
+        "is_operational": is_operational,
+        "block_reason": block_reason,  # e.g., "NO_VALID_CLUSTERS"
+        
+        # Outcome tracking
+        "outcome": ClusterTargetOutcome.BLOCKED.value if not is_operational else ClusterTargetOutcome.PENDING.value,
+        "outcome_price": None,
+        "outcome_time": None,
+        
+        # Target hit tracking
+        "t1_hit": False,
+        "t1_hit_time": None,
+        "t1_hit_price": None,
+        "t2_hit": False,
+        "t2_hit_time": None,
+        "t2_hit_price": None,
+        "stop_hit": False,
+        "stop_hit_time": None,
+        "stop_hit_price": None,
+        
+        # MFE/MAE tracking
+        "max_favorable_price": entry_price,
+        "max_adverse_price": entry_price,
+        "mfe_pct": 0,
+        "mae_pct": 0,
+        
+        # Monitoring stats
+        "price_checks": 0,
+        "last_check_price": entry_price,
+        "last_check_time": None
+    }
+    
+    active_cluster_target_tracking[signal_id] = tracking_data
+    
+    # Also persist to MongoDB collection for durability
+    try:
+        collection = db["cluster_target_validation"]
+        await collection.insert_one({
+            **tracking_data,
+            "created_at": tracking_data["created_at"]
+        })
+        logger.info(f"[CLUSTER VALIDATE] ✅ Registered signal {signal_id[:8]} for validation: "
+                   f"{direction} entry=${entry_price:,.0f}, T1=${target_1:,.0f} (dist={t1_distance_pct:.2f}%, vol=${t1_volume_usd:,.0f}), "
+                   f"R:R={rr_at_creation:.2f}, operational={is_operational}")
+    except Exception as e:
+        logger.error(f"[CLUSTER VALIDATE] Error persisting tracking data: {e}")
+    
+    return True
+
+
+async def check_cluster_target_outcome(signal_id: str, current_price: float) -> Optional[Dict[str, Any]]:
+    """
+    Check if a cluster-tracked signal has reached an outcome.
+    Returns outcome data if reached, None if still pending.
+    """
+    global active_cluster_target_tracking
+    
+    if signal_id not in active_cluster_target_tracking:
+        return None
+    
+    tracking = active_cluster_target_tracking[signal_id]
+    
+    # Skip if already finalized or blocked
+    if tracking["outcome"] in [ClusterTargetOutcome.T2_HIT.value, 
+                               ClusterTargetOutcome.STOP_HIT.value, 
+                               ClusterTargetOutcome.EXPIRED.value,
+                               ClusterTargetOutcome.BLOCKED.value]:
+        return None
+    
+    direction = tracking["direction"]
+    entry_price = tracking["entry_price"]
+    stop_loss = tracking["stop_loss"]
+    target_1 = tracking["target_1"]
+    target_2 = tracking["target_2"]
+    
+    # Update check count and time
+    tracking["price_checks"] += 1
+    tracking["last_check_price"] = current_price
+    tracking["last_check_time"] = datetime.now(timezone.utc)
+    
+    # Update MFE/MAE
+    if direction == "LONG":
+        tracking["max_favorable_price"] = max(tracking["max_favorable_price"], current_price)
+        tracking["max_adverse_price"] = min(tracking["max_adverse_price"], current_price)
+        tracking["mfe_pct"] = ((tracking["max_favorable_price"] - entry_price) / entry_price) * 100
+        tracking["mae_pct"] = ((entry_price - tracking["max_adverse_price"]) / entry_price) * 100
+    else:
+        tracking["max_favorable_price"] = min(tracking["max_favorable_price"], current_price)
+        tracking["max_adverse_price"] = max(tracking["max_adverse_price"], current_price)
+        tracking["mfe_pct"] = ((entry_price - tracking["max_favorable_price"]) / entry_price) * 100
+        tracking["mae_pct"] = ((tracking["max_adverse_price"] - entry_price) / entry_price) * 100
+    
+    now = datetime.now(timezone.utc)
+    outcome = None
+    
+    # Check outcome conditions
+    if direction == "LONG":
+        # Check stop loss
+        if current_price <= stop_loss and not tracking["stop_hit"]:
+            tracking["stop_hit"] = True
+            tracking["stop_hit_time"] = now
+            tracking["stop_hit_price"] = current_price
+            outcome = ClusterTargetOutcome.STOP_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] ❌ STOP HIT {signal_id[:8]}: price=${current_price:,.0f} <= SL=${stop_loss:,.0f}")
+        
+        # Check target 1
+        if current_price >= target_1 and not tracking["t1_hit"]:
+            tracking["t1_hit"] = True
+            tracking["t1_hit_time"] = now
+            tracking["t1_hit_price"] = current_price
+            if not outcome:  # Don't override stop hit
+                outcome = ClusterTargetOutcome.T1_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] 🎯 T1 HIT {signal_id[:8]}: price=${current_price:,.0f} >= T1=${target_1:,.0f}")
+        
+        # Check target 2
+        if current_price >= target_2 and not tracking["t2_hit"]:
+            tracking["t2_hit"] = True
+            tracking["t2_hit_time"] = now
+            tracking["t2_hit_price"] = current_price
+            outcome = ClusterTargetOutcome.T2_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] 🎉 T2 HIT {signal_id[:8]}: price=${current_price:,.0f} >= T2=${target_2:,.0f}")
+    
+    else:  # SHORT
+        # Check stop loss
+        if current_price >= stop_loss and not tracking["stop_hit"]:
+            tracking["stop_hit"] = True
+            tracking["stop_hit_time"] = now
+            tracking["stop_hit_price"] = current_price
+            outcome = ClusterTargetOutcome.STOP_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] ❌ STOP HIT {signal_id[:8]}: price=${current_price:,.0f} >= SL=${stop_loss:,.0f}")
+        
+        # Check target 1
+        if current_price <= target_1 and not tracking["t1_hit"]:
+            tracking["t1_hit"] = True
+            tracking["t1_hit_time"] = now
+            tracking["t1_hit_price"] = current_price
+            if not outcome:
+                outcome = ClusterTargetOutcome.T1_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] 🎯 T1 HIT {signal_id[:8]}: price=${current_price:,.0f} <= T1=${target_1:,.0f}")
+        
+        # Check target 2
+        if current_price <= target_2 and not tracking["t2_hit"]:
+            tracking["t2_hit"] = True
+            tracking["t2_hit_time"] = now
+            tracking["t2_hit_price"] = current_price
+            outcome = ClusterTargetOutcome.T2_HIT.value
+            logger.info(f"[CLUSTER VALIDATE] 🎉 T2 HIT {signal_id[:8]}: price=${current_price:,.0f} <= T2=${target_2:,.0f}")
+    
+    # If terminal outcome reached, return data
+    if outcome in [ClusterTargetOutcome.T2_HIT.value, ClusterTargetOutcome.STOP_HIT.value]:
+        tracking["outcome"] = outcome
+        tracking["outcome_price"] = current_price
+        tracking["outcome_time"] = now
+        return {
+            "signal_id": signal_id,
+            "outcome": outcome,
+            "outcome_price": current_price,
+            "outcome_time": now,
+            "tracking_data": tracking.copy()
+        }
+    
+    # Update intermediate outcome (T1_HIT is not terminal)
+    if outcome == ClusterTargetOutcome.T1_HIT.value:
+        tracking["outcome"] = outcome
+    
+    return None
+
+
+async def finalize_cluster_target_outcome(signal_id: str, outcome_data: Dict[str, Any]) -> bool:
+    """
+    Finalize and persist a cluster target outcome to the database.
+    Removes signal from active tracking.
+    """
+    global active_cluster_target_tracking
+    
+    try:
+        tracking = outcome_data.get("tracking_data", {})
+        
+        # Calculate final metrics
+        entry_price = tracking.get("entry_price", 0)
+        outcome_price = outcome_data.get("outcome_price", 0)
+        direction = tracking.get("direction", "LONG")
+        
+        if direction == "LONG":
+            pnl_pct = ((outcome_price - entry_price) / entry_price) * 100 if entry_price else 0
+        else:
+            pnl_pct = ((entry_price - outcome_price) / entry_price) * 100 if entry_price else 0
+        
+        # Calculate time to outcome
+        created_at = tracking.get("created_at")
+        outcome_time = outcome_data.get("outcome_time")
+        time_to_outcome_mins = None
+        if created_at and outcome_time:
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            time_to_outcome_mins = round((outcome_time - created_at).total_seconds() / 60, 1)
+        
+        # Update MongoDB collection
+        collection = db["cluster_target_validation"]
+        await collection.update_one(
+            {"signal_id": signal_id},
+            {"$set": {
+                "outcome": outcome_data.get("outcome"),
+                "outcome_price": outcome_price,
+                "outcome_time": outcome_time,
+                "pnl_pct": round(pnl_pct, 3),
+                "t1_hit": tracking.get("t1_hit", False),
+                "t1_hit_time": tracking.get("t1_hit_time"),
+                "t1_hit_price": tracking.get("t1_hit_price"),
+                "t2_hit": tracking.get("t2_hit", False),
+                "t2_hit_time": tracking.get("t2_hit_time"),
+                "t2_hit_price": tracking.get("t2_hit_price"),
+                "stop_hit": tracking.get("stop_hit", False),
+                "stop_hit_time": tracking.get("stop_hit_time"),
+                "stop_hit_price": tracking.get("stop_hit_price"),
+                "mfe_pct": round(tracking.get("mfe_pct", 0), 3),
+                "mae_pct": round(tracking.get("mae_pct", 0), 3),
+                "max_favorable_price": tracking.get("max_favorable_price"),
+                "max_adverse_price": tracking.get("max_adverse_price"),
+                "price_checks": tracking.get("price_checks", 0),
+                "time_to_outcome_mins": time_to_outcome_mins,
+                "finalized_at": datetime.now(timezone.utc)
+            }}
+        )
+        
+        # Remove from active tracking
+        if signal_id in active_cluster_target_tracking:
+            del active_cluster_target_tracking[signal_id]
+        
+        logger.info(f"[CLUSTER VALIDATE] ✅ Finalized {signal_id[:8]}: {outcome_data.get('outcome')}, "
+                   f"PnL={pnl_pct:.2f}%, MFE={tracking.get('mfe_pct', 0):.2f}%, MAE={tracking.get('mae_pct', 0):.2f}%, "
+                   f"Time={time_to_outcome_mins}min")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[CLUSTER VALIDATE] Error finalizing outcome: {e}")
+        return False
+
+
+async def check_expired_cluster_signals() -> int:
+    """
+    Check for cluster signals that have expired (>12h without outcome).
+    """
+    global active_cluster_target_tracking
+    
+    now = datetime.now(timezone.utc)
+    expiry_hours = 12
+    expired_count = 0
+    
+    expired_signals = []
+    for signal_id, tracking in active_cluster_target_tracking.items():
+        created_at = tracking.get("created_at")
+        if created_at:
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            
+            age_hours = (now - created_at).total_seconds() / 3600
+            if age_hours > expiry_hours and tracking["outcome"] == ClusterTargetOutcome.PENDING.value:
+                expired_signals.append(signal_id)
+    
+    for signal_id in expired_signals:
+        tracking = active_cluster_target_tracking[signal_id]
+        
+        # Determine final outcome based on T1 hit status
+        if tracking.get("t1_hit"):
+            final_outcome = ClusterTargetOutcome.T1_HIT.value  # Expired with T1 hit = partial win
+        else:
+            final_outcome = ClusterTargetOutcome.EXPIRED.value  # Expired without any target = no outcome
+        
+        outcome_data = {
+            "signal_id": signal_id,
+            "outcome": final_outcome,
+            "outcome_price": tracking.get("last_check_price", tracking["entry_price"]),
+            "outcome_time": now,
+            "tracking_data": tracking.copy()
+        }
+        
+        await finalize_cluster_target_outcome(signal_id, outcome_data)
+        expired_count += 1
+        logger.info(f"[CLUSTER VALIDATE] ⏰ Expired signal {signal_id[:8]} after {expiry_hours}h - outcome: {final_outcome}")
+    
+    return expired_count
+
+
+async def cluster_validation_loop():
+    """
+    Background loop that checks all active cluster signals every 15 seconds.
+    Runs in parallel with the main shadow tracking loop.
+    """
+    logger.info("[CLUSTER VALIDATE] 🚀 Starting cluster validation loop (15s interval)")
+    
+    while True:
+        try:
+            if active_cluster_target_tracking:
+                # Get current BTC price
+                ticker = await fetch_kraken_ticker()
+                if ticker:
+                    current_price = ticker["price"]
+                    
+                    # Check each active signal
+                    signals_to_process = list(active_cluster_target_tracking.keys())
+                    for signal_id in signals_to_process:
+                        if signal_id in active_cluster_target_tracking:
+                            outcome_data = await check_cluster_target_outcome(signal_id, current_price)
+                            if outcome_data:
+                                await finalize_cluster_target_outcome(signal_id, outcome_data)
+                    
+                    # Check for expired signals
+                    await check_expired_cluster_signals()
+                    
+                    logger.debug(f"[CLUSTER VALIDATE] Checked {len(signals_to_process)} signals at ${current_price:,.0f}, "
+                               f"{len(active_cluster_target_tracking)} still active")
+            
+            await asyncio.sleep(15)  # 15 second interval
+            
+        except Exception as e:
+            logger.error(f"[CLUSTER VALIDATE] Loop error: {e}")
+            await asyncio.sleep(15)
+
+
+def start_cluster_validation_task():
+    """Start the cluster validation background task."""
+    global cluster_validation_task
+    if cluster_validation_task is None or cluster_validation_task.done():
+        cluster_validation_task = asyncio.create_task(cluster_validation_loop())
+        logger.info("[CLUSTER VALIDATE] Background task started")
+
+
+async def restore_pending_cluster_signals():
+    """
+    Restore pending cluster signals to active tracking on startup.
+    """
+    global active_cluster_target_tracking
+    
+    try:
+        collection = db["cluster_target_validation"]
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=12)
+        
+        # Find pending signals
+        pending = await collection.find({
+            "outcome": {"$in": [ClusterTargetOutcome.PENDING.value, ClusterTargetOutcome.T1_HIT.value]},
+            "created_at": {"$gte": cutoff}
+        }).to_list(100)
+        
+        restored = 0
+        for doc in pending:
+            signal_id = doc.get("signal_id")
+            if not signal_id or signal_id in active_cluster_target_tracking:
+                continue
+            
+            # Restore to active tracking
+            active_cluster_target_tracking[signal_id] = {
+                "signal_id": signal_id,
+                "direction": doc.get("direction"),
+                "created_at": doc.get("created_at"),
+                "entry_price": doc.get("entry_price"),
+                "stop_loss": doc.get("stop_loss"),
+                "target_1": doc.get("target_1"),
+                "target_2": doc.get("target_2"),
+                "t1_cluster": doc.get("t1_cluster", {}),
+                "t2_cluster": doc.get("t2_cluster", {}),
+                "rr_at_creation": doc.get("rr_at_creation", 0),
+                "is_operational": doc.get("is_operational", True),
+                "block_reason": doc.get("block_reason"),
+                "outcome": doc.get("outcome", ClusterTargetOutcome.PENDING.value),
+                "outcome_price": doc.get("outcome_price"),
+                "outcome_time": doc.get("outcome_time"),
+                "t1_hit": doc.get("t1_hit", False),
+                "t1_hit_time": doc.get("t1_hit_time"),
+                "t1_hit_price": doc.get("t1_hit_price"),
+                "t2_hit": doc.get("t2_hit", False),
+                "t2_hit_time": doc.get("t2_hit_time"),
+                "t2_hit_price": doc.get("t2_hit_price"),
+                "stop_hit": doc.get("stop_hit", False),
+                "stop_hit_time": doc.get("stop_hit_time"),
+                "stop_hit_price": doc.get("stop_hit_price"),
+                "max_favorable_price": doc.get("max_favorable_price", doc.get("entry_price", 0)),
+                "max_adverse_price": doc.get("max_adverse_price", doc.get("entry_price", 0)),
+                "mfe_pct": doc.get("mfe_pct", 0),
+                "mae_pct": doc.get("mae_pct", 0),
+                "price_checks": doc.get("price_checks", 0),
+                "last_check_price": doc.get("entry_price", 0),
+                "last_check_time": None
+            }
+            restored += 1
+        
+        logger.info(f"[CLUSTER VALIDATE] ✅ Restored {restored} pending cluster signals for tracking")
+        return restored
+        
+    except Exception as e:
+        logger.error(f"[CLUSTER VALIDATE] Error restoring signals: {e}")
+        return 0
+
+
+async def get_cluster_validation_summary() -> Dict[str, Any]:
+    """
+    Generate comprehensive validation summary for the V3 cluster-based target system.
+    
+    Returns:
+    - Total signals tracked
+    - Average R:R at creation
+    - T1 hit rate, T2 hit rate
+    - Expired rate, Stop hit rate
+    - Average target distance (T1, T2)
+    - Average cluster volume (T1, T2)
+    - Average MFE/MAE
+    - Blocked signals count (NO_VALID_CLUSTERS)
+    """
+    try:
+        collection = db["cluster_target_validation"]
+        
+        # Get all signals
+        all_signals = await collection.find({}).to_list(1000)
+        total_signals = len(all_signals)
+        
+        if total_signals == 0:
+            return {
+                "status": "NO_DATA",
+                "message": "No cluster-targeted signals have been tracked yet",
+                "total_signals": 0
+            }
+        
+        # Separate operational vs blocked
+        operational = [s for s in all_signals if s.get("is_operational", True)]
+        blocked = [s for s in all_signals if not s.get("is_operational", True)]
+        
+        # Count outcomes (only operational signals)
+        t1_hits = sum(1 for s in operational if s.get("t1_hit", False))
+        t2_hits = sum(1 for s in operational if s.get("t2_hit", False))
+        stop_hits = sum(1 for s in operational if s.get("stop_hit", False))
+        expired = sum(1 for s in operational if s.get("outcome") == ClusterTargetOutcome.EXPIRED.value)
+        pending = sum(1 for s in operational if s.get("outcome") in [ClusterTargetOutcome.PENDING.value, ClusterTargetOutcome.T1_HIT.value])
+        
+        # Calculate rates (only for completed signals)
+        completed = [s for s in operational if s.get("outcome") not in [ClusterTargetOutcome.PENDING.value, ClusterTargetOutcome.T1_HIT.value, ClusterTargetOutcome.BLOCKED.value]]
+        completed_count = len(completed)
+        
+        t1_rate = (t1_hits / completed_count * 100) if completed_count > 0 else 0
+        t2_rate = (t2_hits / completed_count * 100) if completed_count > 0 else 0
+        stop_rate = (stop_hits / completed_count * 100) if completed_count > 0 else 0
+        expired_rate = (expired / completed_count * 100) if completed_count > 0 else 0
+        
+        # Calculate averages (only operational signals)
+        rr_values = [s.get("rr_at_creation", 0) for s in operational if s.get("rr_at_creation")]
+        avg_rr = sum(rr_values) / len(rr_values) if rr_values else 0
+        
+        # T1 cluster metrics
+        t1_distances = [s.get("t1_cluster", {}).get("distance_pct", 0) for s in operational if s.get("t1_cluster")]
+        t1_volumes = [s.get("t1_cluster", {}).get("volume_usd", 0) for s in operational if s.get("t1_cluster")]
+        avg_t1_distance = sum(t1_distances) / len(t1_distances) if t1_distances else 0
+        avg_t1_volume = sum(t1_volumes) / len(t1_volumes) if t1_volumes else 0
+        
+        # T2 cluster metrics
+        t2_distances = [s.get("t2_cluster", {}).get("distance_pct", 0) for s in operational if s.get("t2_cluster")]
+        t2_volumes = [s.get("t2_cluster", {}).get("volume_usd", 0) for s in operational if s.get("t2_cluster")]
+        avg_t2_distance = sum(t2_distances) / len(t2_distances) if t2_distances else 0
+        avg_t2_volume = sum(t2_volumes) / len(t2_volumes) if t2_volumes else 0
+        
+        # MFE/MAE (only completed signals)
+        mfe_values = [s.get("mfe_pct", 0) for s in completed if s.get("mfe_pct") is not None]
+        mae_values = [s.get("mae_pct", 0) for s in completed if s.get("mae_pct") is not None]
+        avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
+        avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0
+        
+        # PnL metrics
+        pnl_values = [s.get("pnl_pct", 0) for s in completed if s.get("pnl_pct") is not None]
+        avg_pnl = sum(pnl_values) / len(pnl_values) if pnl_values else 0
+        win_count = sum(1 for p in pnl_values if p > 0)
+        win_rate = (win_count / len(pnl_values) * 100) if pnl_values else 0
+        
+        # Time to outcome
+        time_values = [s.get("time_to_outcome_mins", 0) for s in completed if s.get("time_to_outcome_mins")]
+        avg_time_to_outcome = sum(time_values) / len(time_values) if time_values else 0
+        
+        # Direction breakdown
+        long_signals = [s for s in completed if s.get("direction") == "LONG"]
+        short_signals = [s for s in completed if s.get("direction") == "SHORT"]
+        
+        long_win_rate = (sum(1 for s in long_signals if s.get("pnl_pct", 0) > 0) / len(long_signals) * 100) if long_signals else 0
+        short_win_rate = (sum(1 for s in short_signals if s.get("pnl_pct", 0) > 0) / len(short_signals) * 100) if short_signals else 0
+        
+        # Live tracking status
+        active_count = len(active_cluster_target_tracking)
+        active_signals = []
+        now = datetime.now(timezone.utc)
+        for sig_id, tracking in list(active_cluster_target_tracking.items())[:10]:
+            created = tracking.get("created_at")
+            if created and isinstance(created, str):
+                created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_min = round((now - created).total_seconds() / 60, 1) if created else 0
+            
+            active_signals.append({
+                "signal_id": sig_id[:12],
+                "direction": tracking.get("direction"),
+                "entry_price": tracking.get("entry_price"),
+                "t1": tracking.get("target_1"),
+                "t2": tracking.get("target_2"),
+                "t1_hit": tracking.get("t1_hit", False),
+                "current_mfe": round(tracking.get("mfe_pct", 0), 2),
+                "current_mae": round(tracking.get("mae_pct", 0), 2),
+                "price_checks": tracking.get("price_checks", 0),
+                "age_minutes": age_min
+            })
+        
+        return {
+            "status": "VALIDATION_ACTIVE",
+            "engine_version": "cluster_target_v1.0",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            
+            # Signal counts
+            "signal_counts": {
+                "total_signals": total_signals,
+                "operational": len(operational),
+                "blocked_no_valid_clusters": len(blocked),
+                "completed": completed_count,
+                "pending": pending
+            },
+            
+            # Outcome rates (%)
+            "outcome_rates": {
+                "t1_hit_rate": round(t1_rate, 1),
+                "t2_hit_rate": round(t2_rate, 1),
+                "stop_hit_rate": round(stop_rate, 1),
+                "expired_rate": round(expired_rate, 1),
+                "win_rate": round(win_rate, 1)
+            },
+            
+            # R:R analysis
+            "rr_analysis": {
+                "avg_rr_at_creation": round(avg_rr, 2),
+                "avg_mfe_pct": round(avg_mfe, 2),
+                "avg_mae_pct": round(avg_mae, 2),
+                "achieved_rr": round(avg_mfe / avg_mae, 2) if avg_mae > 0 else 0
+            },
+            
+            # Target cluster quality
+            "target_quality": {
+                "t1": {
+                    "avg_distance_pct": round(avg_t1_distance, 2),
+                    "avg_volume_usd": round(avg_t1_volume, 0)
+                },
+                "t2": {
+                    "avg_distance_pct": round(avg_t2_distance, 2),
+                    "avg_volume_usd": round(avg_t2_volume, 0)
+                }
+            },
+            
+            # Performance
+            "performance": {
+                "avg_pnl_pct": round(avg_pnl, 2),
+                "avg_time_to_outcome_mins": round(avg_time_to_outcome, 1)
+            },
+            
+            # By direction
+            "by_direction": {
+                "LONG": {
+                    "count": len(long_signals),
+                    "win_rate": round(long_win_rate, 1)
+                },
+                "SHORT": {
+                    "count": len(short_signals),
+                    "win_rate": round(short_win_rate, 1)
+                }
+            },
+            
+            # Live tracking
+            "live_tracking": {
+                "active_signals": active_count,
+                "tracking_interval_seconds": 15,
+                "signals_being_tracked": active_signals
+            },
+            
+            # Assessment
+            "assessment": {
+                "has_sufficient_data": completed_count >= 20,
+                "minimum_for_confidence": 20,
+                "conclusion": _generate_cluster_validation_conclusion(
+                    completed_count, t1_rate, t2_rate, stop_rate, avg_rr, avg_mfe, avg_mae, len(blocked)
+                )
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"[CLUSTER VALIDATE] Error generating summary: {e}")
+        import traceback
+        return {"status": "ERROR", "error": str(e), "traceback": traceback.format_exc()}
+
+
+def _generate_cluster_validation_conclusion(
+    completed: int, t1_rate: float, t2_rate: float, stop_rate: float, 
+    avg_rr: float, avg_mfe: float, avg_mae: float, blocked_count: int
+) -> str:
+    """Generate assessment conclusion based on validation metrics."""
+    if completed < 10:
+        return f"Insufficient data ({completed} completed signals). Continue collecting until 20+ signals for reliable assessment."
+    
+    if completed < 20:
+        # Early assessment
+        if t1_rate >= 50 and avg_rr >= 1.0:
+            return f"Early results promising: {t1_rate:.0f}% T1 hit rate with {avg_rr:.2f} avg R:R. Continue monitoring."
+        elif stop_rate > 40:
+            return f"Warning: High stop rate ({stop_rate:.0f}%). Cluster selection may need refinement."
+        else:
+            return f"Mixed early results. T1 hit: {t1_rate:.0f}%, Stop: {stop_rate:.0f}%. Continue collecting data."
+    
+    # Full assessment (20+ signals)
+    achieved_rr = avg_mfe / avg_mae if avg_mae > 0 else 0
+    
+    if t1_rate >= 60 and avg_rr >= 1.2 and achieved_rr >= 1.0:
+        return (f"✅ CLUSTER TARGETS VALIDATED: Strong performance with {t1_rate:.0f}% T1 hit rate, "
+                f"{avg_rr:.2f} avg R:R at creation, {achieved_rr:.2f} achieved R:R. "
+                f"System is improving trade quality.")
+    elif t1_rate >= 50 and stop_rate < 35:
+        return (f"⚠️ MODERATE PERFORMANCE: {t1_rate:.0f}% T1 hit rate is acceptable. "
+                f"Stop rate {stop_rate:.0f}% within limits. May need fine-tuning on cluster volume thresholds.")
+    elif stop_rate > 40:
+        return (f"❌ HIGH STOP RATE: {stop_rate:.0f}% of signals hitting stop loss. "
+                f"Cluster targets may be too aggressive or R:R calculation needs review. "
+                f"Consider increasing minimum distance threshold.")
+    else:
+        return (f"📊 MIXED RESULTS: T1 {t1_rate:.0f}%, T2 {t2_rate:.0f}%, Stop {stop_rate:.0f}%. "
+                f"Achieved R:R: {achieved_rr:.2f}. Continue monitoring for clearer pattern.")
+
+
+
+
 async def get_telegram_settings():
     """Fetch Telegram settings from database"""
     try:
@@ -2336,6 +3058,43 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         except Exception as val_err:
             logger.debug(f"[Shadow Validation] Non-critical error queuing validation: {val_err}")
         
+        # ═══════════════════════════════════════════════════════════════════
+        # V3 CLUSTER TARGET VALIDATION ENGINE - Track cluster-based targets
+        # Specifically validates the NEW cluster target system performance
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            # Determine if signal is operational (has valid clusters)
+            has_valid_targets = setup_data.get("has_valid_targets", True)
+            block_reason = setup_data.get("target_block_reason")
+            
+            # Get cluster metadata
+            t1_cluster = setup_data.get("target_1_cluster")
+            t2_cluster = setup_data.get("target_2_cluster")
+            
+            # Calculate R:R at creation
+            risk = abs(current_price - stop_loss) if stop_loss else 0
+            reward = abs(target_1 - current_price) if target_1 else 0
+            rr_at_creation = reward / risk if risk > 0 else 0
+            
+            await register_cluster_target_signal(
+                signal_id=signal_id,
+                direction=direction,
+                entry_price=current_price,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                target_1_cluster=t1_cluster,
+                target_2_cluster=t2_cluster,
+                rr_at_creation=round(rr_at_creation, 2),
+                is_operational=has_valid_targets and not block_reason,
+                block_reason=block_reason,
+                created_at=datetime.now(timezone.utc)
+            )
+            logger.info(f"[Cluster Validate] Registered {signal_id[:8]} for cluster target validation "
+                       f"(operational={has_valid_targets}, R:R={rr_at_creation:.2f})")
+        except Exception as cluster_err:
+            logger.error(f"[Cluster Validate] Error registering for validation: {cluster_err}")
+        
         return {
             "recorded": True, 
             "signal_id": signal_id,
@@ -2343,7 +3102,8 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             "setup_id": setup_id,
             "direction": direction,
             "engine": "v3",
-            "shadow_tracking": True
+            "shadow_tracking": True,
+            "cluster_validation": True
         }
         
     except Exception as e:
@@ -15237,6 +15997,105 @@ async def get_shadow_validation_logs(limit: int = Query(default=50, le=200)):
         return {"error": str(e), "status": "ERROR"}
 
 
+@api_router.get("/v3/cluster-validation-summary")
+async def get_cluster_validation_summary_endpoint():
+    """
+    V3 CLUSTER TARGET VALIDATION SUMMARY
+    
+    Dedicated endpoint for validating the NEW cluster-based target system.
+    Tracks ALL metrics needed to determine if cluster targets improve trade quality.
+    
+    Returns:
+    - Total signals tracked (operational vs blocked)
+    - T1 hit rate, T2 hit rate, stop hit rate, expired rate
+    - Average R:R at creation vs achieved R:R
+    - Average target distance (T1, T2) in %
+    - Average cluster volume (T1, T2) in USD
+    - Average MFE/MAE
+    - Win rate
+    - By-direction breakdown
+    - Live tracking status
+    - Assessment conclusion
+    
+    This is the PRIMARY endpoint for validating cluster target quality.
+    """
+    try:
+        summary = await get_cluster_validation_summary()
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error fetching cluster validation summary: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
+
+
+@api_router.get("/v3/cluster-validation-signals")
+async def get_cluster_validation_signals(
+    limit: int = Query(default=50, le=200),
+    outcome_filter: str = Query(default=None, description="Filter by outcome: PENDING, T1_HIT, T2_HIT, STOP_HIT, EXPIRED, BLOCKED")
+):
+    """
+    V3 CLUSTER VALIDATION SIGNALS LIST
+    
+    Returns individual cluster-tracked signals with full details:
+    - Entry, stop, T1, T2 prices
+    - Cluster distance/volume metadata
+    - R:R at creation
+    - Outcome status and prices
+    - MFE/MAE values
+    - Time to outcome
+    
+    Use this to inspect individual signals and verify cluster target behavior.
+    """
+    try:
+        collection = db["cluster_target_validation"]
+        
+        # Build query
+        query = {}
+        if outcome_filter:
+            query["outcome"] = outcome_filter
+        
+        cursor = collection.find(query).sort("created_at", -1).limit(limit)
+        signals = []
+        
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            if isinstance(doc.get("created_at"), datetime):
+                doc["created_at"] = doc["created_at"].isoformat()
+            if isinstance(doc.get("outcome_time"), datetime):
+                doc["outcome_time"] = doc["outcome_time"].isoformat()
+            if isinstance(doc.get("finalized_at"), datetime):
+                doc["finalized_at"] = doc["finalized_at"].isoformat()
+            if isinstance(doc.get("t1_hit_time"), datetime):
+                doc["t1_hit_time"] = doc["t1_hit_time"].isoformat()
+            if isinstance(doc.get("t2_hit_time"), datetime):
+                doc["t2_hit_time"] = doc["t2_hit_time"].isoformat()
+            if isinstance(doc.get("stop_hit_time"), datetime):
+                doc["stop_hit_time"] = doc["stop_hit_time"].isoformat()
+            signals.append(doc)
+        
+        # Counts
+        total = await collection.count_documents({})
+        outcome_counts = {}
+        for outcome in ["PENDING", "T1_HIT", "T2_HIT", "STOP_HIT", "EXPIRED", "BLOCKED"]:
+            outcome_counts[outcome] = await collection.count_documents({"outcome": outcome})
+        
+        return {
+            "status": "CLUSTER_VALIDATION_ACTIVE",
+            "total_signals": total,
+            "showing": len(signals),
+            "outcome_filter_applied": outcome_filter,
+            "outcome_counts": outcome_counts,
+            "signals": signals,
+            "note": "Use outcome_filter query param to filter by specific outcome"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching cluster validation signals: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
+
+
 @api_router.get("/v3/promotion-readiness")
 async def get_promotion_readiness():
     """
@@ -18566,10 +19425,22 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Shadow Tracking: Failed to start - {e}")
     
+    # ============== START CLUSTER TARGET VALIDATION LOOP ==============
+    try:
+        # Restore pending cluster signals
+        cluster_restored = await restore_pending_cluster_signals()
+        
+        # Start cluster validation tracking loop
+        start_cluster_validation_task()
+        logger.info(f"✅ Cluster Target Validation: Started (15s interval, {cluster_restored} signals restored)")
+    except Exception as e:
+        logger.error(f"❌ Cluster Target Validation: Failed to start - {e}")
+    
     logger.info("=" * 50)
     logger.info("CryptoRadar startup complete!")
     logger.info(f"   - Signal Dedup Window: {SIGNAL_DEDUP_WINDOW_MINUTES} minutes")
     logger.info("   - Shadow Tracking: Active")
+    logger.info("   - Cluster Validation: Active")
     logger.info("=" * 50)
 
 @app.on_event("shutdown")

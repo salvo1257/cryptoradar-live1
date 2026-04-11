@@ -1,5 +1,46 @@
-# CryptoRadar v3.2.8 - Product Requirements Document
-**Last Updated:** 2026-04-09
+# CryptoRadar v3.3.0 - Product Requirements Document
+**Last Updated:** 2026-04-11
+
+## ✅ V3 CLUSTER TARGET VALIDATION ENGINE (2026-04-11)
+**Status:** ✅ COMPLETE
+
+### Purpose
+Dedicated shadow validation system to track and validate the new cluster-based target system, confirming whether liquidity cluster targets improve trade quality compared to old percentage-based targets.
+
+### Features Implemented
+1. **Backend Tracking System**
+   - New collection: `cluster_target_validation`
+   - Background loop (15s interval) for real-time outcome tracking
+   - Auto-registration of V3 signals with cluster metadata
+   - MFE/MAE tracking per signal
+   - Persistence across server restarts
+
+2. **API Endpoints**
+   - `GET /api/v3/cluster-validation-summary` - Summary with all validation metrics
+   - `GET /api/v3/cluster-validation-signals` - Individual signal list
+
+3. **Tracked Data Per Signal**
+   - Entry, Stop, T1, T2 prices
+   - R:R at creation
+   - T1/T2 cluster distance (%) and volume ($)
+   - Outcome: T1_HIT, T2_HIT, STOP_HIT, EXPIRED, BLOCKED
+   - MFE/MAE percentages
+   - Time to outcome
+
+4. **Validation Summary Metrics**
+   - T1 hit rate, T2 hit rate, stop rate, expired rate, win rate
+   - Average R:R (at creation vs achieved)
+   - Average target distance and cluster volume
+   - By-direction breakdown
+   - Assessment conclusion with data sufficiency check
+
+5. **Frontend Tab** (`ReliabilityAnalyticsPage.js`)
+   - "Cluster Validation" tab in Reliability Analytics
+   - Full visualization of all metrics
+   - Live tracking status display
+   - Blocked signals warning
+
+---
 
 ## ✅ PRE-DEPLOY IMPROVEMENTS (2026-04-09)
 
