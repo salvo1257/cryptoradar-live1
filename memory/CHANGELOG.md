@@ -100,6 +100,130 @@ VOLUME_PERCENTILE_CUTOFF = 70  # Top 30% only
 
 ---
 
+### V3.3 Enhanced Intelligence Modules
+
+**Goal:** Use CoinGlass data already available to make V3 modules more intelligent and connected.
+
+#### 1. Market Bias (V3.3 Enhanced)
+
+**New Data Sources:**
+- Global Long/Short Account Ratio (contrarian signal when extreme)
+- Top Trader Long/Short Ratio (follow smart money)
+- Top Position Long/Short Ratio (institutional positioning)
+
+**New Fields:**
+- `derivatives_bias`: BULLISH/BEARISH/NEUTRAL from derivatives
+- `derivatives_strength`: 0-100 strength of derivatives signal
+- `crowd_positioning`: overcrowded_long/short, leaning_long/short, balanced
+- `top_accounts_bias`: BULLISH/BEARISH/NEUTRAL
+- `top_positions_bias`: BULLISH/BEARISH/NEUTRAL
+- `derivatives_explanation`: Full explanation
+
+**Logic:**
+- Crowd positioning > 1.5 ratio = contrarian bearish (overcrowded long)
+- Crowd positioning < 0.67 ratio = contrarian bullish (overcrowded short)
+- Top traders > 1.3 = follow smart money bullish
+- Top traders < 0.77 = follow smart money bearish
+
+#### 2. Market Energy (V3.3 Enhanced)
+
+**New Data Sources:**
+- CoinGlass Buy/Sell Taker Volume (aggressive participation)
+- CoinGlass Liquidation data (acceleration/squeeze potential)
+- OI expansion/contraction (fuel for move)
+
+**New Fields:**
+- `energy_state`: LOW/MEDIUM/HIGH overall fuel state
+- `fuel_score`: 0-100 how much fuel is available
+- `buy_sell_pressure`: BUY/SELL/BALANCED
+- `buy_sell_ratio`: Buy ratio percentage
+- `liquidation_acceleration`: NONE/BUILDING/ACTIVE
+- `liquidation_pressure_side`: LONG/SHORT/BALANCED
+- `fuel_explanation`: Explanation of fuel state
+
+**Logic:**
+- Buy ratio > 58% = aggressive buying = +25 fuel
+- Sell ratio > 58% = aggressive selling = +25 fuel
+- Liquidations > $100M = ACTIVE acceleration = +30 fuel
+- OI expansion > 3% = +25 fuel
+
+#### 3. Liquidity Magnet (V3.3 Enhanced)
+
+**New Data Sources:**
+- Liquidation pressure direction
+- Buy/Sell aggression
+- Top traders positioning
+- OI context
+
+**New Fields:**
+- `cluster_validated`: true/false - Is cluster validated by derivatives?
+- `derivatives_support`: STRONG/MODERATE/WEAK/CONFLICTING
+- `liquidation_pressure_direction`: UP/DOWN/BALANCED
+- `buy_sell_aggression`: BUYING/SELLING/BALANCED
+- `cluster_validation_reason`: Why cluster is/isn't validated
+
+**Logic:**
+- Liquidation pressure aligns with target direction = +30 validation
+- Buy/Sell aggression supports direction = +25 validation
+- OI expansion = +15 validation
+- Top traders aligned = +20 validation
+- Score >= 50 = STRONG support, validated
+- Score >= 25 = MODERATE support, validated
+- Score >= 0 = WEAK support, not validated
+- Score < 0 = CONFLICTING, not validated
+
+#### 4. Market Regime (V3.3 Enhanced)
+
+**New Fields:**
+- `target_profile`: CONSERVATIVE/BALANCED/EXTENDED
+- `max_target_distance_pct`: Maximum allowed target distance
+- `target_constraint_reason`: Why targets are constrained
+
+**Target Permissiveness Logic:**
+- COMPRESSION: Conservative (1.5% max) unless high breakout probability
+- RANGE: Conservative (1.5% max), slightly more if strong pressure
+- TREND: Extended (4% max) if bias and energy aligned
+- EXPANSION: Extended (4.5% max) if fully aligned
+
+#### 5. Module Integration
+
+**Decision Hierarchy:**
+1. Regime decides target permissiveness
+2. Bias decides allowed directional side
+3. Liquidity Magnet selects the most relevant cluster
+4. Energy decides whether move is realistically reachable
+
+**Integration Quality:**
+- STRONG: All modules aligned, cluster validated
+- MODERATE: Partial alignment or weak cluster validation
+- WEAK: Conflicting modules (e.g., magnet vs bias)
+
+#### New API Endpoint
+
+`GET /api/v3/intelligence-status`
+
+Returns complete status of all V3 intelligence modules with:
+- Market Bias with derivatives positioning
+- Market Energy with fuel analysis
+- Liquidity Magnet with cluster validation
+- Market Regime with target permissiveness
+- Module Integration summary with decision hierarchy
+
+#### CoinGlass Endpoints Used:
+- `/futures/global-long-short-account-ratio/history` - Crowd positioning
+- `/futures/top-long-short-account-ratio/history` - Top traders
+- `/futures/top-long-short-position-ratio/history` - Top positions
+- `/futures/aggregated-taker-buy-sell-volume/history` - Buy/Sell pressure
+- `/futures/openInterest/history` - OI data (existing)
+- `/futures/liquidation/detail` - Liquidation data (existing)
+
+#### Limitations (HOBBYIST Plan):
+- Rate limits may cause temporary data unavailability
+- Some endpoints may return 429 during high traffic
+- System gracefully degrades when derivatives data unavailable
+
+---
+
 ## v3.2.9 - 2026-04-09
 
 ### Full Language Consistency Implementation

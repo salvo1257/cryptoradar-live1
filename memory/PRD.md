@@ -1,6 +1,51 @@
 # CryptoRadar v3.3.0 - Product Requirements Document
 **Last Updated:** 2026-04-11
 
+## ✅ V3.3 ENHANCED INTELLIGENCE MODULES (2026-04-11)
+**Status:** ✅ COMPLETE
+
+### Purpose
+Enhanced V3 intelligence modules using CoinGlass derivatives data for better market analysis and target validation.
+
+### Changes Implemented
+
+#### 1. Market Bias (V3.3 Enhanced)
+- **New Data Sources:** Global L/S Ratio, Top Trader L/S, Top Position L/S
+- **New Fields:** derivatives_bias, derivatives_strength, crowd_positioning, top_accounts_bias, top_positions_bias
+- **Logic:** Crowd positioning (contrarian) + Top traders (follow smart money)
+
+#### 2. Market Energy (V3.3 Enhanced)
+- **New Data Sources:** Buy/Sell Taker Volume, Liquidation Data, OI Expansion
+- **New Fields:** energy_state, fuel_score, buy_sell_pressure, liquidation_acceleration
+- **Logic:** Measures "fuel" available for move based on derivatives activity
+
+#### 3. Liquidity Magnet (V3.3 Enhanced)
+- **New Data Sources:** Liquidation pressure, Buy/Sell aggression, Top traders, OI
+- **New Fields:** cluster_validated, derivatives_support, cluster_validation_reason
+- **Logic:** Validates clusters with derivatives pressure (STRONG/MODERATE/WEAK/CONFLICTING)
+
+#### 4. Market Regime (V3.3 Enhanced)
+- **New Fields:** target_profile, max_target_distance_pct, target_constraint_reason
+- **Logic:** Regime determines target permissiveness (CONSERVATIVE/BALANCED/EXTENDED)
+
+#### 5. Module Integration
+- Decision hierarchy: Regime → Bias → Magnet → Energy
+- Integration quality assessment: STRONG/MODERATE/WEAK
+- Recommendation based on module alignment
+
+### New API Endpoint
+- `GET /api/v3/intelligence-status` - Complete V3.3 intelligence status
+
+### Documentation
+- `/app/memory/V3_INTELLIGENCE_MANUAL.md` - Complete V3.3 manual
+- `/app/memory/CHANGELOG.md` - Updated with V3.3 changes
+
+### Limitations
+- CoinGlass HOBBYIST plan rate limits may cause temporary data unavailability
+- System gracefully degrades when derivatives data unavailable
+
+---
+
 ## ✅ V3 CLUSTER TARGET VALIDATION ENGINE (2026-04-11)
 **Status:** ✅ COMPLETE
 

@@ -218,6 +218,13 @@ class MarketBias(BaseModel):
     analysis_text: str = ""
     inputs: Dict[str, Any]
     exchange_consensus: Optional[Dict[str, str]] = None  # Per-exchange bias
+    # V3.3: Enhanced with derivatives positioning
+    derivatives_bias: Optional[str] = None  # BULLISH/BEARISH/NEUTRAL from derivatives
+    derivatives_strength: Optional[float] = None  # 0-100 strength of derivatives signal
+    crowd_positioning: Optional[str] = None  # overcrowded_long/short, leaning_long/short, balanced
+    top_accounts_bias: Optional[str] = None  # BULLISH/BEARISH/NEUTRAL
+    top_positions_bias: Optional[str] = None  # BULLISH/BEARISH/NEUTRAL
+    derivatives_explanation: Optional[str] = None  # Full explanation of derivatives context
 
 class OpenInterest(BaseModel):
     total_oi: float
@@ -309,6 +316,14 @@ class MarketEnergy(BaseModel):
     signals: List[str] = []  # Detected signals
     expansion_warning: bool = False  # True if expansion likely soon
     data_source: str = "Multi-Exchange + CoinGlass"
+    # V3.3: Enhanced with derivatives fuel analysis
+    energy_state: Optional[str] = None  # "LOW", "MEDIUM", "HIGH" - overall fuel state
+    fuel_score: Optional[float] = None  # 0-100 how much fuel is available
+    buy_sell_pressure: Optional[str] = None  # "BUY", "SELL", "BALANCED"
+    buy_sell_ratio: Optional[float] = None  # Buy ratio percentage
+    liquidation_acceleration: Optional[str] = None  # "NONE", "BUILDING", "ACTIVE"
+    liquidation_pressure_side: Optional[str] = None  # "LONG", "SHORT", "BALANCED"
+    fuel_explanation: Optional[str] = None  # Explanation of fuel/energy state
 
 # ============== MARKET REGIME ==============
 
@@ -338,6 +353,11 @@ class MarketRegime(BaseModel):
     signals: List[str] = []  # Key regime signals
     explanation: str  # Summary explanation
     data_source: str = "Multi-Factor Analysis"
+    
+    # V3.3: Target permissiveness based on regime
+    target_profile: Optional[str] = None  # "CONSERVATIVE", "BALANCED", "EXTENDED"
+    max_target_distance_pct: Optional[float] = None  # Maximum allowed target distance
+    target_constraint_reason: Optional[str] = None  # Why targets are constrained
 
 # ============== LIQUIDITY MAGNET ==============
 
@@ -359,6 +379,12 @@ class LiquidityMagnet(BaseModel):
     signals: List[str] = []  # Detected signals
     explanation: str  # Summary explanation
     data_source: str = "Multi-Exchange + CoinGlass"
+    # V3.3: Cluster validation with derivatives pressure
+    cluster_validated: Optional[bool] = None  # Is nearest cluster validated by derivatives?
+    derivatives_support: Optional[str] = None  # "STRONG", "MODERATE", "WEAK", "CONFLICTING"
+    liquidation_pressure_direction: Optional[str] = None  # "UP", "DOWN", "BALANCED"
+    buy_sell_aggression: Optional[str] = None  # "BUYING", "SELLING", "BALANCED"
+    cluster_validation_reason: Optional[str] = None  # Why cluster is/isn't validated
 
 # ============== LIQUIDITY ZONE ENGINE (PREVIEW) ==============
 # Zone-based liquidity detection - groups nearby levels into clusters
@@ -5512,8 +5538,15 @@ def calculate_support_resistance(candles: List[dict], current_price: float, orde
     """Calculate support and resistance levels from price data and order book"""
     return calculate_support_resistance_enhanced(candles, current_price, orderbook)
 
-def calculate_market_bias(candles: List[dict], orderbook: dict = None, lang: str = "it") -> MarketBias:
-    """Calculate market bias from multiple indicators including real order book"""
+def calculate_market_bias(candles: List[dict], orderbook: dict = None, derivatives_context: dict = None, lang: str = "it") -> MarketBias:
+    """
+    Calculate market bias from multiple indicators including real order book.
+    
+    V3.3 ENHANCEMENT: Now integrates CoinGlass derivatives positioning:
+    - Global long/short ratio (crowd positioning - contrarian signal when extreme)
+    - Top trader long/short ratio (smart money - follow)
+    - Top position long/short ratio (institutional positioning)
+    """
     if not candles or len(candles) < 20:
         return MarketBias(
             bias="NEUTRAL",
@@ -5674,6 +5707,97 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None, lang: str
             else:
                 exchange_consensus[exchange] = "NEUTRAL"
     
+    # ══════════════════════════════════════════════════════════════════════
+    # V3.3: DERIVATIVES POSITIONING INTEGRATION
+    # Combines exchange consensus with CoinGlass derivatives data
+    # ══════════════════════════════════════════════════════════════════════
+    derivatives_bias = None
+    derivatives_strength = 0
+    crowd_positioning = None
+    top_accounts_bias = None
+    top_positions_bias = None
+    derivatives_explanation = None
+    
+    if derivatives_context and derivatives_context.get("data_available"):
+        deriv_signals = []
+        deriv_score = 0
+        
+        ls_ratio = derivatives_context.get("long_short_ratio", {})
+        
+        # 1. Global Long/Short Ratio (crowd positioning - contrarian when extreme)
+        if ls_ratio:
+            global_ratio = ls_ratio.get("global_ratio", 1.0)
+            
+            if global_ratio > 1.5:
+                crowd_positioning = "overcrowded_long"
+                deriv_score -= 20  # Contrarian: crowd too long = bearish signal
+                deriv_signals.append(get_translation("crowd_overcrowded_long", lang) if lang != "en" else f"Crowd overcrowded LONG ({global_ratio:.2f}) - contrarian bearish")
+            elif global_ratio < 0.67:
+                crowd_positioning = "overcrowded_short"
+                deriv_score += 20  # Contrarian: crowd too short = bullish signal
+                deriv_signals.append(get_translation("crowd_overcrowded_short", lang) if lang != "en" else f"Crowd overcrowded SHORT ({global_ratio:.2f}) - contrarian bullish")
+            elif global_ratio > 1.2:
+                crowd_positioning = "leaning_long"
+                deriv_score -= 10
+                deriv_signals.append(get_translation("crowd_leaning_long", lang) if lang != "en" else "Crowd leaning long")
+            elif global_ratio < 0.83:
+                crowd_positioning = "leaning_short"
+                deriv_score += 10
+                deriv_signals.append(get_translation("crowd_leaning_short", lang) if lang != "en" else "Crowd leaning short")
+            else:
+                crowd_positioning = "balanced"
+        
+        # 2. Top Trader Long/Short Ratio (follow smart money)
+        if ls_ratio:
+            top_ratio = ls_ratio.get("top_trader_ratio", 1.0)
+            
+            if top_ratio > 1.3:
+                top_accounts_bias = "BULLISH"
+                deriv_score += 25
+                deriv_signals.append(get_translation("top_traders_bullish", lang) if lang != "en" else f"Top traders BULLISH ({top_ratio:.2f})")
+            elif top_ratio < 0.77:
+                top_accounts_bias = "BEARISH"
+                deriv_score -= 25
+                deriv_signals.append(get_translation("top_traders_bearish", lang) if lang != "en" else f"Top traders BEARISH ({top_ratio:.2f})")
+            else:
+                top_accounts_bias = "NEUTRAL"
+        
+        # 3. Top Position Long/Short Ratio (institutional positioning)
+        if ls_ratio:
+            pos_ratio = ls_ratio.get("top_position_ratio", 1.0)
+            
+            if pos_ratio > 1.25:
+                top_positions_bias = "BULLISH"
+                deriv_score += 15
+                deriv_signals.append(get_translation("top_positions_bullish", lang) if lang != "en" else "Top positions bullish")
+            elif pos_ratio < 0.8:
+                top_positions_bias = "BEARISH"
+                deriv_score -= 15
+                deriv_signals.append(get_translation("top_positions_bearish", lang) if lang != "en" else "Top positions bearish")
+            else:
+                top_positions_bias = "NEUTRAL"
+        
+        # Calculate derivatives bias
+        if deriv_score > 20:
+            derivatives_bias = "BULLISH"
+            derivatives_strength = min(abs(deriv_score), 100)
+        elif deriv_score < -20:
+            derivatives_bias = "BEARISH"
+            derivatives_strength = min(abs(deriv_score), 100)
+        else:
+            derivatives_bias = "NEUTRAL"
+            derivatives_strength = abs(deriv_score)
+        
+        # Build explanation
+        if deriv_signals:
+            derivatives_explanation = ". ".join(deriv_signals[:3])
+        
+        # Adjust main bias confidence based on derivatives alignment
+        if derivatives_bias == bias:
+            confidence = min(100, confidence + 10)  # Aligned - boost confidence
+        elif derivatives_bias != "NEUTRAL" and bias != "NEUTRAL" and derivatives_bias != bias:
+            confidence = max(30, confidence - 15)  # Conflicting - reduce confidence
+    
     return MarketBias(
         bias=bias,
         confidence=round(confidence, 1),
@@ -5691,7 +5815,14 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None, lang: str
             "rsi": round(rsi, 1),
             "orderbook_imbalance": round(ob_imbalance, 2)
         },
-        exchange_consensus=exchange_consensus
+        exchange_consensus=exchange_consensus,
+        # V3.3: Derivatives positioning
+        derivatives_bias=derivatives_bias,
+        derivatives_strength=round(derivatives_strength, 1) if derivatives_strength else None,
+        crowd_positioning=crowd_positioning,
+        top_accounts_bias=top_accounts_bias,
+        top_positions_bias=top_positions_bias,
+        derivatives_explanation=derivatives_explanation
     )
 
 def detect_patterns(candles: List[dict]) -> List[PatternDetection]:
@@ -6703,6 +6834,279 @@ async def get_full_liquidation_data(current_price: float = None):
     return result
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEW V3.3 COINGLASS DATA FETCHERS - Long/Short Ratios, Buy/Sell Volume
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def fetch_coinglass_long_short_ratio():
+    """
+    Fetch Global Long/Short Account Ratio from CoinGlass.
+    This shows what percentage of accounts are long vs short across exchanges.
+    
+    Returns:
+    - global_ratio: Overall long/short ratio (>1 = more longs, <1 = more shorts)
+    - long_account_percent: % of accounts that are long
+    - short_account_percent: % of accounts that are short
+    - top_trader_ratio: Top traders' long/short ratio
+    - top_position_ratio: Top positions' long/short ratio
+    """
+    try:
+        if not COINGLASS_API_KEY:
+            logger.warning("[CoinGlass L/S Ratio] No API key configured")
+            return None
+        
+        headers = {"CG-API-KEY": COINGLASS_API_KEY, "accept": "application/json"}
+        result = {}
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            # 1. Global Long/Short Account Ratio
+            try:
+                response = await http_client.get(
+                    f"{COINGLASS_API_URL}/futures/global-long-short-account-ratio/history",
+                    params={"symbol": "BTC", "interval": "1h", "limit": 5},
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("code") == "0" and data.get("data"):
+                        latest = data["data"][-1] if data["data"] else {}
+                        result["global_ratio"] = float(latest.get("longShortRatio", 1.0))
+                        result["long_account_percent"] = float(latest.get("longAccount", 50))
+                        result["short_account_percent"] = float(latest.get("shortAccount", 50))
+                        logger.info(f"[CoinGlass L/S Ratio] Global: {result['global_ratio']:.2f} (Long: {result['long_account_percent']:.1f}%)")
+                    else:
+                        logger.warning(f"[CoinGlass L/S Ratio] Global API returned code: {data.get('code')} - may be rate limited")
+                elif response.status_code == 429:
+                    logger.warning("[CoinGlass L/S Ratio] Rate limited (429) on global ratio")
+                else:
+                    logger.warning(f"[CoinGlass L/S Ratio] Global API returned status: {response.status_code}")
+            except Exception as e:
+                logger.debug(f"[CoinGlass L/S Ratio] Global ratio error: {e}")
+            
+            # Small delay to avoid rate limiting
+            await asyncio.sleep(0.2)
+            
+            # 2. Top Trader Long/Short Account Ratio
+            try:
+                response = await http_client.get(
+                    f"{COINGLASS_API_URL}/futures/top-long-short-account-ratio/history",
+                    params={"symbol": "BTC", "interval": "1h", "limit": 5},
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("code") == "0" and data.get("data"):
+                        latest = data["data"][-1] if data["data"] else {}
+                        result["top_trader_ratio"] = float(latest.get("longShortRatio", 1.0))
+                        result["top_long_percent"] = float(latest.get("longAccount", 50))
+                        result["top_short_percent"] = float(latest.get("shortAccount", 50))
+                        logger.info(f"[CoinGlass L/S Ratio] Top Traders: {result['top_trader_ratio']:.2f}")
+                    else:
+                        logger.warning(f"[CoinGlass L/S Ratio] Top trader API returned code: {data.get('code')}")
+                elif response.status_code == 429:
+                    logger.warning("[CoinGlass L/S Ratio] Rate limited (429) on top traders")
+            except Exception as e:
+                logger.debug(f"[CoinGlass L/S Ratio] Top trader error: {e}")
+            
+            await asyncio.sleep(0.2)
+            
+            # 3. Top Position Long/Short Ratio
+            try:
+                response = await http_client.get(
+                    f"{COINGLASS_API_URL}/futures/top-long-short-position-ratio/history",
+                    params={"symbol": "BTC", "interval": "1h", "limit": 5},
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("code") == "0" and data.get("data"):
+                        latest = data["data"][-1] if data["data"] else {}
+                        result["top_position_ratio"] = float(latest.get("longShortRatio", 1.0))
+                        logger.info(f"[CoinGlass L/S Ratio] Top Positions: {result['top_position_ratio']:.2f}")
+            except Exception as e:
+                logger.debug(f"[CoinGlass L/S Ratio] Top position error: {e}")
+        
+        if result:
+            return result
+        logger.warning("[CoinGlass L/S Ratio] No data retrieved - possibly rate limited")
+        return None
+        
+    except Exception as e:
+        logger.error(f"[CoinGlass L/S Ratio] Error: {e}")
+        return None
+
+
+async def fetch_coinglass_taker_buy_sell():
+    """
+    Fetch Aggregated Taker Buy/Sell Volume from CoinGlass.
+    This shows aggressive buying vs selling activity (market orders).
+    
+    Returns:
+    - buy_ratio: Percentage of volume that is aggressive buying
+    - sell_ratio: Percentage of volume that is aggressive selling
+    - buy_volume: Absolute buy volume
+    - sell_volume: Absolute sell volume
+    - net_flow: buy_volume - sell_volume (positive = buying pressure)
+    """
+    try:
+        if not COINGLASS_API_KEY:
+            return None
+        
+        headers = {"CG-API-KEY": COINGLASS_API_KEY, "accept": "application/json"}
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.get(
+                f"{COINGLASS_API_URL}/futures/aggregated-taker-buy-sell-volume/history",
+                params={"symbol": "BTC", "interval": "1h", "limit": 5},
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == "0" and data.get("data"):
+                    latest = data["data"][-1] if data["data"] else {}
+                    
+                    buy_vol = float(latest.get("buyVol", 0))
+                    sell_vol = float(latest.get("sellVol", 0))
+                    total_vol = buy_vol + sell_vol
+                    
+                    result = {
+                        "buy_volume": buy_vol,
+                        "sell_volume": sell_vol,
+                        "buy_ratio": (buy_vol / total_vol * 100) if total_vol > 0 else 50,
+                        "sell_ratio": (sell_vol / total_vol * 100) if total_vol > 0 else 50,
+                        "net_flow": buy_vol - sell_vol,
+                        "pressure_direction": "BUY" if buy_vol > sell_vol * 1.1 else ("SELL" if sell_vol > buy_vol * 1.1 else "BALANCED")
+                    }
+                    
+                    logger.info(f"[CoinGlass Buy/Sell] Ratio: {result['buy_ratio']:.1f}% buy / {result['sell_ratio']:.1f}% sell, "
+                               f"Pressure: {result['pressure_direction']}")
+                    return result
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"[CoinGlass Buy/Sell] Error: {e}")
+        return None
+
+
+async def fetch_coinglass_derivatives_context():
+    """
+    Fetch complete derivatives context for V3 intelligence modules.
+    Combines: Long/Short Ratios, Buy/Sell Volume, OI, Liquidations.
+    
+    This is the main function that modules should call for derivatives data.
+    """
+    try:
+        # Fetch all data in parallel
+        ls_ratio_task = fetch_coinglass_long_short_ratio()
+        buy_sell_task = fetch_coinglass_taker_buy_sell()
+        oi_task = fetch_coinglass_open_interest()
+        liq_task = fetch_coinglass_liquidation()
+        
+        ls_ratio, buy_sell, oi_data, liq_data = await asyncio.gather(
+            ls_ratio_task, buy_sell_task, oi_task, liq_task,
+            return_exceptions=True
+        )
+        
+        # Handle exceptions
+        ls_ratio = ls_ratio if not isinstance(ls_ratio, Exception) else None
+        buy_sell = buy_sell if not isinstance(buy_sell, Exception) else None
+        oi_data = oi_data if not isinstance(oi_data, Exception) else None
+        liq_data = liq_data if not isinstance(liq_data, Exception) else None
+        
+        # Calculate derivatives bias
+        derivatives_bias = "NEUTRAL"
+        derivatives_strength = 0
+        
+        bias_signals = []
+        
+        # Long/Short Ratio Analysis
+        if ls_ratio:
+            global_ratio = ls_ratio.get("global_ratio", 1.0)
+            top_ratio = ls_ratio.get("top_trader_ratio", 1.0)
+            
+            # Crowd positioning (contrarian signal when extreme)
+            if global_ratio > 1.5:
+                bias_signals.append(("BEARISH", 20, "crowd_overcrowded_long"))
+            elif global_ratio < 0.67:
+                bias_signals.append(("BULLISH", 20, "crowd_overcrowded_short"))
+            elif global_ratio > 1.2:
+                bias_signals.append(("BEARISH", 10, "crowd_leaning_long"))
+            elif global_ratio < 0.83:
+                bias_signals.append(("BULLISH", 10, "crowd_leaning_short"))
+            
+            # Top traders (follow the smart money)
+            if top_ratio > 1.3:
+                bias_signals.append(("BULLISH", 25, "top_traders_long"))
+            elif top_ratio < 0.77:
+                bias_signals.append(("BEARISH", 25, "top_traders_short"))
+        
+        # Buy/Sell Pressure Analysis
+        if buy_sell:
+            pressure = buy_sell.get("pressure_direction", "BALANCED")
+            buy_ratio = buy_sell.get("buy_ratio", 50)
+            
+            if pressure == "BUY" and buy_ratio > 55:
+                bias_signals.append(("BULLISH", 15, "aggressive_buying"))
+            elif pressure == "SELL" and buy_ratio < 45:
+                bias_signals.append(("BEARISH", 15, "aggressive_selling"))
+        
+        # OI Trend Analysis
+        if oi_data:
+            oi_change = oi_data.get("change_24h", 0)
+            if oi_change > 5:
+                bias_signals.append(("FOLLOW_TREND", 10, "oi_expansion"))
+            elif oi_change < -5:
+                bias_signals.append(("REVERSAL", 10, "oi_contraction"))
+        
+        # Liquidation Pressure Analysis
+        if liq_data:
+            long_liq = liq_data.get("long_liquidation_24h", 0)
+            short_liq = liq_data.get("short_liquidation_24h", 0)
+            total_liq = long_liq + short_liq
+            
+            if total_liq > 0:
+                long_pct = (long_liq / total_liq) * 100
+                if long_pct > 65:
+                    bias_signals.append(("BEARISH", 15, "long_liquidation_cascade"))
+                elif long_pct < 35:
+                    bias_signals.append(("BULLISH", 15, "short_squeeze"))
+        
+        # Calculate final bias
+        bullish_score = sum(s[1] for s in bias_signals if s[0] == "BULLISH")
+        bearish_score = sum(s[1] for s in bias_signals if s[0] == "BEARISH")
+        
+        if bullish_score > bearish_score + 15:
+            derivatives_bias = "BULLISH"
+            derivatives_strength = min(bullish_score, 100)
+        elif bearish_score > bullish_score + 15:
+            derivatives_bias = "BEARISH"
+            derivatives_strength = min(bearish_score, 100)
+        else:
+            derivatives_bias = "NEUTRAL"
+            derivatives_strength = max(bullish_score, bearish_score)
+        
+        return {
+            "long_short_ratio": ls_ratio,
+            "buy_sell": buy_sell,
+            "open_interest": oi_data,
+            "liquidation": liq_data,
+            "derivatives_bias": derivatives_bias,
+            "derivatives_strength": derivatives_strength,
+            "bias_signals": [s[2] for s in bias_signals],
+            "data_available": bool(ls_ratio or buy_sell or oi_data or liq_data)
+        }
+        
+    except Exception as e:
+        logger.error(f"[CoinGlass Derivatives Context] Error: {e}")
+        return {
+            "derivatives_bias": "NEUTRAL",
+            "derivatives_strength": 0,
+            "data_available": False
+        }
+
+
 async def generate_open_interest(current_price: float, candles: List[dict] = None, lang: str = "it") -> OpenInterest:
     """Generate Open Interest data from CoinGlass API"""
     
@@ -6846,10 +7250,16 @@ def analyze_market_energy(
     aggregated_orderbook: dict,
     open_interest_data: dict = None,
     liquidity_clusters: List = None,
+    derivatives_context: dict = None,  # V3.3: New parameter for derivatives data
     lang: str = "it"
 ) -> MarketEnergy:
     """
-    Market Energy / Compression Detector v1.0
+    Market Energy / Compression Detector v2.0 (Enhanced)
+    
+    V3.3 ENHANCEMENTS:
+    - Integrates CoinGlass buy/sell ratio for aggressive participation detection
+    - Integrates liquidation pressure for squeeze/acceleration potential
+    - Calculates overall "fuel" score based on derivatives pressure
     
     Detects when BTC is building energy before a significant move by analyzing:
     1. Price range compression
@@ -6857,8 +7267,10 @@ def analyze_market_energy(
     3. Open Interest behavior during compression
     4. Liquidity build-up on both sides
     5. Order book pressure build-up
+    6. [V3.3] Buy/Sell aggression pressure
+    7. [V3.3] Liquidation acceleration/pressure
     
-    Returns energy score, compression level, and breakout probability.
+    Returns energy score, compression level, fuel state, and breakout probability.
     """
     
     signals = []
@@ -7147,7 +7559,95 @@ def analyze_market_energy(
             expansion_warning = True
             signals.append(get_translation("expansion_likely", lang))
     
-    # ======== 10. BUILD EXPLANATION ========
+    # ======== 10. V3.3 DERIVATIVES FUEL ANALYSIS ========
+    energy_state = "LOW"
+    fuel_score = 0
+    buy_sell_pressure = "BALANCED"
+    buy_sell_ratio = 50.0
+    liquidation_acceleration = "NONE"
+    liquidation_pressure_side = "BALANCED"
+    fuel_explanation = None
+    
+    if derivatives_context and derivatives_context.get("data_available"):
+        # Buy/Sell Aggression Analysis
+        buy_sell_data = derivatives_context.get("buy_sell", {})
+        if buy_sell_data:
+            buy_sell_ratio = buy_sell_data.get("buy_ratio", 50)
+            bs_pressure = buy_sell_data.get("pressure_direction", "BALANCED")
+            buy_sell_pressure = bs_pressure
+            
+            # Strong buy/sell imbalance = fuel for move
+            if buy_sell_ratio > 58:
+                fuel_score += 25
+                signals.append(get_translation("aggressive_buying_detected", lang) if lang != "en" else f"Aggressive buying detected ({buy_sell_ratio:.0f}%)")
+            elif buy_sell_ratio < 42:
+                fuel_score += 25
+                signals.append(get_translation("aggressive_selling_detected", lang) if lang != "en" else f"Aggressive selling detected ({100-buy_sell_ratio:.0f}%)")
+            elif buy_sell_ratio > 53 or buy_sell_ratio < 47:
+                fuel_score += 10
+        
+        # Liquidation Pressure Analysis
+        liq_data = derivatives_context.get("liquidation", {})
+        if liq_data:
+            long_liq = liq_data.get("long_liquidation_24h", 0)
+            short_liq = liq_data.get("short_liquidation_24h", 0)
+            total_liq = long_liq + short_liq
+            
+            # High liquidation activity = acceleration potential
+            if total_liq > 100000000:  # >$100M liquidated
+                liquidation_acceleration = "ACTIVE"
+                fuel_score += 30
+                
+                if total_liq > 0:
+                    long_pct = (long_liq / total_liq) * 100
+                    if long_pct > 60:
+                        liquidation_pressure_side = "LONG"
+                        signals.append(get_translation("long_liquidation_pressure", lang) if lang != "en" else f"Long liquidation pressure ({long_pct:.0f}%)")
+                    elif long_pct < 40:
+                        liquidation_pressure_side = "SHORT"
+                        signals.append(get_translation("short_squeeze_building", lang) if lang != "en" else f"Short squeeze building ({100-long_pct:.0f}%)")
+            elif total_liq > 50000000:  # >$50M
+                liquidation_acceleration = "BUILDING"
+                fuel_score += 15
+        
+        # OI Expansion (new positioning = fuel)
+        oi_data = derivatives_context.get("open_interest", {})
+        if oi_data:
+            oi_24h_change = oi_data.get("change_24h", 0)
+            if oi_24h_change > 3:
+                fuel_score += 25
+                signals.append(get_translation("oi_expansion_fuel", lang) if lang != "en" else f"OI expansion adds fuel (+{oi_24h_change:.1f}%)")
+            elif oi_24h_change > 1:
+                fuel_score += 10
+            elif oi_24h_change < -3:
+                fuel_score -= 15  # OI contraction = less fuel
+        
+        # Calculate final fuel/energy state
+        fuel_score = max(0, min(100, fuel_score))
+        
+        if fuel_score >= 60:
+            energy_state = "HIGH"
+        elif fuel_score >= 30:
+            energy_state = "MEDIUM"
+        else:
+            energy_state = "LOW"
+        
+        # Build fuel explanation
+        fuel_parts = []
+        if energy_state == "HIGH":
+            fuel_parts.append(get_translation("high_fuel_available", lang) if lang != "en" else "High fuel available for move")
+            if buy_sell_pressure != "BALANCED":
+                fuel_parts.append(f"({buy_sell_pressure} pressure)")
+            if liquidation_acceleration != "NONE":
+                fuel_parts.append(f"+ liquidation {liquidation_acceleration.lower()}")
+        elif energy_state == "MEDIUM":
+            fuel_parts.append(get_translation("moderate_fuel", lang) if lang != "en" else "Moderate fuel - move possible")
+        else:
+            fuel_parts.append(get_translation("low_fuel_choppy", lang) if lang != "en" else "Low fuel - expect choppy action")
+        
+        fuel_explanation = " ".join(fuel_parts)
+    
+    # ======== 11. BUILD EXPLANATION ========
     explanation = _build_energy_explanation(
         energy_score, compression_level, range_width_percent,
         oi_trend, oi_change_percent, liquidity_buildup,
@@ -7173,7 +7673,15 @@ def analyze_market_energy(
         explanation=explanation,
         signals=signals[:5],
         expansion_warning=expansion_warning,
-        data_source="Multi-Exchange + CoinGlass"
+        data_source="Multi-Exchange + CoinGlass",
+        # V3.3: Enhanced fuel analysis
+        energy_state=energy_state,
+        fuel_score=round(fuel_score, 1),
+        buy_sell_pressure=buy_sell_pressure,
+        buy_sell_ratio=round(buy_sell_ratio, 1),
+        liquidation_acceleration=liquidation_acceleration,
+        liquidation_pressure_side=liquidation_pressure_side,
+        fuel_explanation=fuel_explanation
     )
 
 
@@ -7538,6 +8046,62 @@ def detect_market_regime(
     oi_supportive = oi_rising if regime in ["TREND", "COMPRESSION"] else not oi_falling
     trap_risk_level = "HIGH" if trap_risk_detected else ("MEDIUM" if range_score > 60 else "LOW")
     
+    # ======== 8. V3.3 TARGET PERMISSIVENESS ========
+    # Regime determines how far targets can be set
+    
+    target_profile = "BALANCED"  # Default
+    max_target_distance_pct = 2.0  # Default 2%
+    target_constraint_reason = None
+    
+    if regime == "COMPRESSION":
+        # Compression: only allow extended targets if breakout confirmed
+        if breakout_prob == "HIGH" and (energy_score >= 60 or expansion_ready == "HIGH"):
+            target_profile = "EXTENDED"
+            max_target_distance_pct = 3.5
+            target_constraint_reason = get_translation("compression_breakout_extended", lang) if lang != "en" else "Compression with high breakout probability - extended targets allowed"
+        else:
+            target_profile = "CONSERVATIVE"
+            max_target_distance_pct = 1.5
+            target_constraint_reason = get_translation("compression_wait_breakout", lang) if lang != "en" else "Compression without clear breakout - conservative targets only"
+    
+    elif regime == "RANGE":
+        # Range: prefer bounded targets within range
+        target_profile = "CONSERVATIVE"
+        max_target_distance_pct = 1.5
+        # Allow slightly more if strong pressure exists
+        if energy_score >= 55 and (magnet_direction in ["UP", "DOWN"]):
+            target_profile = "BALANCED"
+            max_target_distance_pct = 2.0
+            target_constraint_reason = get_translation("range_pressure_balanced", lang) if lang != "en" else "Range market with directional pressure - balanced targets"
+        else:
+            target_constraint_reason = get_translation("range_bounded_targets", lang) if lang != "en" else "Ranging market - targets bounded within range structure"
+    
+    elif regime == "TREND":
+        # Trend: allow extended if bias and energy aligned
+        if bias_alignment and energy_score >= 50:
+            target_profile = "EXTENDED"
+            max_target_distance_pct = 4.0
+            target_constraint_reason = get_translation("trend_aligned_extended", lang) if lang != "en" else "Trending market with aligned bias and energy - extended targets allowed"
+        elif bias_alignment:
+            target_profile = "BALANCED"
+            max_target_distance_pct = 2.5
+            target_constraint_reason = get_translation("trend_balanced", lang) if lang != "en" else "Trending market - balanced targets"
+        else:
+            target_profile = "CONSERVATIVE"
+            max_target_distance_pct = 1.5
+            target_constraint_reason = get_translation("trend_weak_bias", lang) if lang != "en" else "Trend without strong bias alignment - conservative targets"
+    
+    elif regime == "EXPANSION":
+        # Expansion: follow the move but don't chase
+        if whale_alignment and liquidity_alignment:
+            target_profile = "EXTENDED"
+            max_target_distance_pct = 4.5
+            target_constraint_reason = get_translation("expansion_fully_aligned", lang) if lang != "en" else "Expansion with full alignment - extended targets"
+        else:
+            target_profile = "BALANCED"
+            max_target_distance_pct = 2.5
+            target_constraint_reason = get_translation("expansion_partial_aligned", lang) if lang != "en" else "Expansion in progress - balanced targets, don't chase"
+    
     return MarketRegime(
         regime=regime,
         regime_strength=regime_strength,
@@ -7557,7 +8121,11 @@ def detect_market_regime(
         distance_to_sr=distance_to_sr,
         signals=signals[:5],  # Limit to top 5 signals
         explanation=explanation,
-        data_source="Multi-Factor Analysis"
+        data_source="Multi-Factor Analysis",
+        # V3.3: Target permissiveness
+        target_profile=target_profile,
+        max_target_distance_pct=round(max_target_distance_pct, 2),
+        target_constraint_reason=target_constraint_reason
     )
 
 
@@ -10757,11 +11325,18 @@ def analyze_liquidity_magnet(
     liquidity_clusters: List = None,
     liquidation_data: dict = None,
     open_interest_data: dict = None,
-    market_energy_data: dict = None,  # NEW: For context scoring
+    market_energy_data: dict = None,  # For context scoring
+    derivatives_context: dict = None,  # V3.3: For cluster validation
     lang: str = "it"
 ) -> LiquidityMagnet:
     """
-    Liquidity Magnet Score v2.0 - STRENGTH-BASED SELECTION (NOT proximity)
+    Liquidity Magnet Score v2.1 - STRENGTH-BASED SELECTION + DERIVATIVES VALIDATION
+    
+    V3.3 ENHANCEMENTS:
+    - Validates liquidity clusters using CoinGlass derivatives pressure
+    - Checks if liquidation pressure supports movement toward cluster
+    - Checks if buy/sell aggression supports the directional move
+    - Returns cluster_validated flag for target selection
     
     CRITICAL CHANGE: Selects STRONGEST liquidity clusters, not nearest.
     This produces more realistic targets with better R:R.
@@ -10771,10 +11346,11 @@ def analyze_liquidity_magnet(
     2. VALUE SCORE (0-50): log10(value) * 10
     3. DISTANCE SCORE (0-30): Optimal range 0.5-2.5% = max score
     4. CONTEXT SCORE (0-20): OI change, compression, breakout prob, volume
-    5. TOTAL = value + distance + context
-    6. SELECT: Primary = highest score, Secondary = second highest
+    5. DERIVATIVES VALIDATION: Check if derivatives support the cluster
+    6. TOTAL = value + distance + context
+    7. SELECT: Primary = highest validated score, Secondary = second highest
     
-    Returns magnet score, target direction, and likely sweep expectation.
+    Returns magnet score, target direction, validation status, and likely sweep expectation.
     """
     import math
     
@@ -11236,11 +11812,123 @@ def analyze_liquidity_magnet(
         logger.debug(f"[Magnet v2.2] Primary: ${primary_magnet.get('value', 0)/1e6:.1f}M @ {primary_magnet.get('distance_pct', 0):.2f}% "
                     f"[{primary_significance}] (score={primary_magnet.get('total_score', 0):.0f}), Dir={target_direction}")
     
+    # ======== 11. V3.3 DERIVATIVES CLUSTER VALIDATION ========
+    # Validate primary cluster using derivatives pressure
+    cluster_validated = False
+    derivatives_support = "WEAK"
+    liquidation_pressure_direction = "BALANCED"
+    buy_sell_aggression = "BALANCED"
+    cluster_validation_reason = None
+    
+    if derivatives_context and derivatives_context.get("data_available") and not no_clear_magnet:
+        validation_score = 0
+        validation_reasons = []
+        
+        # 1. Liquidation Pressure Analysis
+        liq_data = derivatives_context.get("liquidation", {})
+        if liq_data:
+            long_liq = liq_data.get("long_liquidation_24h", 0)
+            short_liq = liq_data.get("short_liquidation_24h", 0)
+            total_liq = long_liq + short_liq
+            
+            if total_liq > 0:
+                long_pct = (long_liq / total_liq) * 100
+                
+                if long_pct > 60:
+                    liquidation_pressure_direction = "DOWN"
+                    if target_direction == "DOWN":
+                        validation_score += 30
+                        validation_reasons.append("liquidation_pressure_supports_down")
+                    elif target_direction == "UP":
+                        validation_score -= 15
+                        validation_reasons.append("liquidation_pressure_against_up")
+                elif long_pct < 40:
+                    liquidation_pressure_direction = "UP"
+                    if target_direction == "UP":
+                        validation_score += 30
+                        validation_reasons.append("short_squeeze_supports_up")
+                    elif target_direction == "DOWN":
+                        validation_score -= 15
+                        validation_reasons.append("short_squeeze_against_down")
+                else:
+                    liquidation_pressure_direction = "BALANCED"
+        
+        # 2. Buy/Sell Aggression Analysis
+        buy_sell_data = derivatives_context.get("buy_sell", {})
+        if buy_sell_data:
+            buy_ratio = buy_sell_data.get("buy_ratio", 50)
+            pressure = buy_sell_data.get("pressure_direction", "BALANCED")
+            
+            if pressure == "BUY":
+                buy_sell_aggression = "BUYING"
+                if target_direction == "UP":
+                    validation_score += 25
+                    validation_reasons.append("aggressive_buying_supports_up")
+                elif target_direction == "DOWN":
+                    validation_score -= 10
+                    validation_reasons.append("buying_against_down")
+            elif pressure == "SELL":
+                buy_sell_aggression = "SELLING"
+                if target_direction == "DOWN":
+                    validation_score += 25
+                    validation_reasons.append("aggressive_selling_supports_down")
+                elif target_direction == "UP":
+                    validation_score -= 10
+                    validation_reasons.append("selling_against_up")
+            else:
+                buy_sell_aggression = "BALANCED"
+        
+        # 3. OI Context
+        oi_data = derivatives_context.get("open_interest", {})
+        if oi_data:
+            oi_change = oi_data.get("change_24h", 0)
+            if oi_change > 2:
+                validation_score += 15
+                validation_reasons.append("oi_expansion_adds_fuel")
+            elif oi_change < -2:
+                validation_score -= 5
+        
+        # 4. Top Traders Alignment
+        ls_ratio = derivatives_context.get("long_short_ratio", {})
+        if ls_ratio:
+            top_ratio = ls_ratio.get("top_trader_ratio", 1.0)
+            if target_direction == "UP" and top_ratio > 1.2:
+                validation_score += 20
+                validation_reasons.append("top_traders_long")
+            elif target_direction == "DOWN" and top_ratio < 0.83:
+                validation_score += 20
+                validation_reasons.append("top_traders_short")
+        
+        # Determine validation status
+        if validation_score >= 50:
+            cluster_validated = True
+            derivatives_support = "STRONG"
+            cluster_validation_reason = get_translation("cluster_strong_support", lang) if lang != "en" else f"Cluster strongly supported by derivatives ({', '.join(validation_reasons[:2])})"
+        elif validation_score >= 25:
+            cluster_validated = True
+            derivatives_support = "MODERATE"
+            cluster_validation_reason = get_translation("cluster_moderate_support", lang) if lang != "en" else f"Cluster moderately supported ({', '.join(validation_reasons[:2])})"
+        elif validation_score >= 0:
+            cluster_validated = False
+            derivatives_support = "WEAK"
+            cluster_validation_reason = get_translation("cluster_weak_support", lang) if lang != "en" else "Cluster has weak derivatives support - lower probability of being hit"
+        else:
+            cluster_validated = False
+            derivatives_support = "CONFLICTING"
+            cluster_validation_reason = get_translation("cluster_conflicting_pressure", lang) if lang != "en" else f"Derivatives pressure CONFLICTS with cluster direction ({', '.join(validation_reasons[:2])})"
+        
+        logger.debug(f"[Magnet v3.3] Derivatives validation: score={validation_score}, "
+                    f"validated={cluster_validated}, support={derivatives_support}, "
+                    f"reasons={validation_reasons}")
+    else:
+        # No derivatives data - validation unknown
+        cluster_validation_reason = "No derivatives data available for validation"
+    
     # Build data source string
     if no_clear_magnet:
         data_source_str = "Multi-Exchange + CoinGlass (v2.2, NON_ACTIONABLE - liquidity too close)"
     else:
-        data_source_str = f"Multi-Exchange + CoinGlass (v2.2, significance={primary_significance})"
+        data_source_str = f"Multi-Exchange + CoinGlass (v3.3, significance={primary_significance}, deriv_support={derivatives_support})"
     
     # When no_clear_magnet is True, use current_price and 0.0 as placeholders
     # (Pydantic model requires float, not None for these required fields)
@@ -11269,7 +11957,13 @@ def analyze_liquidity_magnet(
         attraction_ratio=round(score_ratio, 2),
         signals=signals[:5],
         explanation=explanation,
-        data_source=data_source_str
+        data_source=data_source_str,
+        # V3.3: Derivatives validation
+        cluster_validated=cluster_validated if not no_clear_magnet else False,
+        derivatives_support=derivatives_support if not no_clear_magnet else "NONE",
+        liquidation_pressure_direction=liquidation_pressure_direction,
+        buy_sell_aggression=buy_sell_aggression,
+        cluster_validation_reason=cluster_validation_reason
     )
 
 
@@ -15139,7 +15833,10 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         )
     
     # Generate all intelligence components
-    market_bias = calculate_market_bias(candles, aggregated_orderbook)
+    # V3.3: Fetch derivatives context for enhanced module intelligence
+    derivatives_context = await fetch_coinglass_derivatives_context()
+    
+    market_bias = calculate_market_bias(candles, aggregated_orderbook, derivatives_context)
     
     sr_levels = calculate_support_resistance_enhanced(candles, current_price, aggregated_orderbook)
     
@@ -15224,23 +15921,25 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         lang=lang
     )
     
-    # NEW v1.9.5: Analyze Market Energy / Compression
+    # NEW v1.9.5: Analyze Market Energy / Compression (V3.3 Enhanced)
     market_energy = analyze_market_energy(
         candles=candles,
         current_price=current_price,
         aggregated_orderbook=aggregated_orderbook,
         open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
         liquidity_clusters=clusters,
+        derivatives_context=derivatives_context,
         lang=lang
     )
     
-    # NEW v2.0: Analyze Liquidity Magnet
+    # NEW v2.0: Analyze Liquidity Magnet (V3.3 Enhanced with cluster validation)
     liquidity_magnet = analyze_liquidity_magnet(
         current_price=current_price,
         aggregated_orderbook=aggregated_orderbook,
         liquidity_clusters=clusters,
         liquidation_data=liquidation_data,
         open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
+        derivatives_context=derivatives_context,
         lang=lang
     )
     
@@ -15378,13 +16077,16 @@ async def get_v3_trade_signal(lang: str = Query(default="it", description="Langu
         )
     
     # ===== 2. GENERATE INTELLIGENCE COMPONENTS =====
+    # V3.3: Fetch derivatives context for enhanced module intelligence
+    derivatives_context = await fetch_coinglass_derivatives_context()
+    
     # Support/Resistance (structure-based + volume-reinforced)
     sr_levels = calculate_support_resistance_enhanced(candles_4h, current_price, aggregated_orderbook)
     supports = [l for l in sr_levels if l.level_type == "support"]
     resistances = [l for l in sr_levels if l.level_type == "resistance"]
     
-    # Market Bias
-    market_bias = calculate_market_bias(candles_4h, aggregated_orderbook)
+    # Market Bias (V3.3 Enhanced with derivatives positioning)
+    market_bias = calculate_market_bias(candles_4h, aggregated_orderbook, derivatives_context)
     
     # Liquidity clusters
     clusters, liquidity_direction = generate_liquidity_clusters_enhanced(candles_4h, current_price, aggregated_orderbook, lang)
@@ -15403,23 +16105,25 @@ async def get_v3_trade_signal(lang: str = Query(default="it", description="Langu
     # Get funding rate
     funding_rate = await generate_funding_rate(aggregated_orderbook, None, lang)
     
-    # Market Energy
+    # Market Energy (V3.3 Enhanced with derivatives fuel analysis)
     market_energy = analyze_market_energy(
         candles=candles_4h,
         current_price=current_price,
         aggregated_orderbook=aggregated_orderbook,
         open_interest_data=oi_data_dict,
         liquidity_clusters=clusters,
+        derivatives_context=derivatives_context,
         lang=lang
     )
     
-    # Liquidity Magnet
+    # Liquidity Magnet (V3.3 Enhanced with cluster validation)
     liquidity_magnet = analyze_liquidity_magnet(
         current_price=current_price,
         aggregated_orderbook=aggregated_orderbook,
         liquidity_clusters=clusters,
-        liquidation_data=None,
+        liquidation_data=derivatives_context.get("liquidation") if derivatives_context else None,
         open_interest_data=oi_data_dict,
+        derivatives_context=derivatives_context,
         lang=lang
     )
     
@@ -16253,6 +16957,315 @@ async def get_cluster_validation_signals(
         logger.error(f"Error fetching cluster validation signals: {e}")
         import traceback
         return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
+
+
+@api_router.get("/v3/intelligence-status")
+async def get_v3_intelligence_status(lang: str = Query(default="en")):
+    """
+    V3.3 ENHANCED INTELLIGENCE STATUS
+    
+    Returns complete status of all V3 intelligence modules with new derivatives data:
+    
+    1. MARKET BIAS (V3.3 Enhanced)
+       - exchange_consensus + derivatives_positioning
+       - crowd_positioning, top_accounts_bias, top_positions_bias
+       - derivatives_explanation
+       
+    2. MARKET ENERGY (V3.3 Enhanced)
+       - energy_score + fuel_score
+       - buy_sell_pressure, liquidation_acceleration
+       - fuel_explanation
+       
+    3. LIQUIDITY MAGNET (V3.3 Enhanced)
+       - target_direction + cluster_validated
+       - derivatives_support, liquidation_pressure_direction
+       - cluster_validation_reason
+       
+    4. MARKET REGIME (V3.3 Enhanced)
+       - regime + target_profile
+       - max_target_distance_pct
+       - target_constraint_reason
+    
+    5. MODULE INTEGRATION STATUS
+       - How modules connect logically
+       - Current target permissiveness decision
+    """
+    try:
+        # Fetch current market data
+        ticker_task = fetch_kraken_ticker()
+        candles_task = fetch_kraken_ohlc("60")  # 1H candles
+        orderbook_task = get_aggregated_orderbook()
+        
+        ticker, candles, aggregated_orderbook = await asyncio.gather(
+            ticker_task, candles_task, orderbook_task
+        )
+        
+        current_price = ticker["price"] if ticker else 0
+        
+        if current_price == 0:
+            return {"error": "Unable to fetch market data", "status": "API_ERROR"}
+        
+        # Fetch derivatives context
+        derivatives_context = await fetch_coinglass_derivatives_context()
+        
+        # Generate all intelligence components with V3.3 enhancements
+        
+        # 1. Market Bias
+        market_bias = calculate_market_bias(candles, aggregated_orderbook, derivatives_context, lang)
+        
+        # 2. Liquidity Clusters
+        clusters, liquidity_direction = generate_liquidity_clusters_enhanced(candles, current_price, aggregated_orderbook, lang)
+        
+        # 3. OI Data
+        oi_data = await fetch_coinglass_open_interest()
+        oi_data_dict = {
+            "change_1h": oi_data.get("change_1h", 0) if oi_data else 0,
+            "change_24h": oi_data.get("change_24h", 0) if oi_data else 0
+        }
+        
+        # 4. Market Energy
+        market_energy = analyze_market_energy(
+            candles=candles,
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            open_interest_data=oi_data_dict,
+            liquidity_clusters=clusters,
+            derivatives_context=derivatives_context,
+            lang=lang
+        )
+        
+        # 5. Liquidity Magnet
+        liquidity_magnet = analyze_liquidity_magnet(
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            liquidity_clusters=clusters,
+            liquidation_data=derivatives_context.get("liquidation") if derivatives_context else None,
+            open_interest_data=oi_data_dict,
+            derivatives_context=derivatives_context,
+            lang=lang
+        )
+        
+        # 6. Market Regime
+        # Build simplified inputs for regime detection
+        market_regime = detect_market_regime(
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liquidity_magnet,
+            liquidity_ladder=None,
+            whale_activity=None,
+            open_interest_data=oi_data_dict,
+            expected_move=market_bias.estimated_move,
+            trap_risk_detected=market_bias.trap_risk == "high",
+            current_price=current_price,
+            supports=[],
+            resistances=[],
+            lang=lang
+        )
+        
+        # Build module integration summary
+        integration_summary = _build_module_integration_summary(
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liquidity_magnet,
+            market_regime=market_regime,
+            lang=lang
+        )
+        
+        return {
+            "status": "V3.3_INTELLIGENCE_ACTIVE",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "current_price": current_price,
+            
+            "market_bias": {
+                "bias": market_bias.bias,
+                "confidence": market_bias.confidence,
+                "trap_risk": market_bias.trap_risk,
+                "squeeze_probability": market_bias.squeeze_probability,
+                "exchange_consensus": market_bias.exchange_consensus,
+                # V3.3 Enhanced
+                "derivatives_bias": market_bias.derivatives_bias,
+                "derivatives_strength": market_bias.derivatives_strength,
+                "crowd_positioning": market_bias.crowd_positioning,
+                "top_accounts_bias": market_bias.top_accounts_bias,
+                "top_positions_bias": market_bias.top_positions_bias,
+                "derivatives_explanation": market_bias.derivatives_explanation
+            },
+            
+            "market_energy": {
+                "energy_score": market_energy.energy_score,
+                "compression_level": market_energy.compression_level,
+                "breakout_probability": market_energy.breakout_probability,
+                "expected_direction": market_energy.expected_direction,
+                "expansion_warning": market_energy.expansion_warning,
+                # V3.3 Enhanced
+                "energy_state": market_energy.energy_state,
+                "fuel_score": market_energy.fuel_score,
+                "buy_sell_pressure": market_energy.buy_sell_pressure,
+                "buy_sell_ratio": market_energy.buy_sell_ratio,
+                "liquidation_acceleration": market_energy.liquidation_acceleration,
+                "liquidation_pressure_side": market_energy.liquidation_pressure_side,
+                "fuel_explanation": market_energy.fuel_explanation
+            },
+            
+            "liquidity_magnet": {
+                "magnet_score": liquidity_magnet.magnet_score,
+                "target_direction": liquidity_magnet.target_direction,
+                "magnet_strength": liquidity_magnet.magnet_strength,
+                "nearest_magnet_price": liquidity_magnet.nearest_magnet_price,
+                "nearest_magnet_distance_percent": liquidity_magnet.nearest_magnet_distance_percent,
+                "nearest_magnet_value": liquidity_magnet.nearest_magnet_value,
+                "sweep_expectation": liquidity_magnet.sweep_expectation,
+                # V3.3 Enhanced
+                "cluster_validated": liquidity_magnet.cluster_validated,
+                "derivatives_support": liquidity_magnet.derivatives_support,
+                "liquidation_pressure_direction": liquidity_magnet.liquidation_pressure_direction,
+                "buy_sell_aggression": liquidity_magnet.buy_sell_aggression,
+                "cluster_validation_reason": liquidity_magnet.cluster_validation_reason
+            },
+            
+            "market_regime": {
+                "regime": market_regime.regime,
+                "regime_strength": market_regime.regime_strength,
+                "directional_bias": market_regime.directional_bias,
+                "suggested_setup": market_regime.suggested_setup,
+                "bias_alignment": market_regime.bias_alignment,
+                "whale_alignment": market_regime.whale_alignment,
+                "liquidity_alignment": market_regime.liquidity_alignment,
+                "trap_risk": market_regime.trap_risk,
+                # V3.3 Enhanced
+                "target_profile": market_regime.target_profile,
+                "max_target_distance_pct": market_regime.max_target_distance_pct,
+                "target_constraint_reason": market_regime.target_constraint_reason
+            },
+            
+            "derivatives_context": {
+                "data_available": derivatives_context.get("data_available", False) if derivatives_context else False,
+                "long_short_ratio": derivatives_context.get("long_short_ratio") if derivatives_context else None,
+                "buy_sell": derivatives_context.get("buy_sell") if derivatives_context else None,
+                "derivatives_bias": derivatives_context.get("derivatives_bias") if derivatives_context else None,
+                "derivatives_strength": derivatives_context.get("derivatives_strength") if derivatives_context else None
+            },
+            
+            "module_integration": integration_summary,
+            
+            "liquidity_clusters": [
+                {
+                    "price": c.price,
+                    "side": c.side,
+                    "distance_percent": c.distance_percent,
+                    "estimated_value": c.estimated_value,
+                    "zone_type": c.zone_type,
+                    "magnet_strength": c.magnet_strength
+                } for c in clusters[:8]
+            ],
+            
+            "liquidity_direction": {
+                "direction": liquidity_direction.direction,
+                "next_target": liquidity_direction.next_target,
+                "distance_percent": liquidity_direction.distance_percent,
+                "imbalance_ratio": liquidity_direction.imbalance_ratio
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching intelligence status: {e}")
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
+
+
+def _build_module_integration_summary(
+    market_bias,
+    market_energy,
+    liquidity_magnet,
+    market_regime,
+    lang: str = "en"
+) -> dict:
+    """
+    Build a summary of how all V3.3 modules integrate for decision making.
+    
+    Target validation hierarchy:
+    1. Regime decides target permissiveness
+    2. Bias decides allowed directional side
+    3. Liquidity Magnet selects the most relevant cluster
+    4. Energy decides whether the move is realistically reachable
+    """
+    
+    # Determine allowed direction based on bias
+    allowed_direction = None
+    if market_bias.bias == "BULLISH" and market_bias.confidence >= 55:
+        allowed_direction = "UP"
+    elif market_bias.bias == "BEARISH" and market_bias.confidence >= 55:
+        allowed_direction = "DOWN"
+    
+    # Check if magnet direction aligns with bias
+    magnet_bias_aligned = (
+        (allowed_direction == "UP" and liquidity_magnet.target_direction == "UP") or
+        (allowed_direction == "DOWN" and liquidity_magnet.target_direction == "DOWN") or
+        (allowed_direction is None)  # Neutral bias = any direction OK
+    )
+    
+    # Check if energy supports the move
+    energy_supports_move = market_energy.energy_state in ["MEDIUM", "HIGH"]
+    fuel_adequate = (market_energy.fuel_score or 0) >= 25
+    
+    # Determine final target recommendation
+    if market_regime.target_profile == "CONSERVATIVE":
+        max_distance = 1.5
+        profile_desc = "Targets limitati a zone vicine (max 1.5%)" if lang == "it" else "Targets limited to nearby zones (max 1.5%)"
+    elif market_regime.target_profile == "EXTENDED":
+        max_distance = market_regime.max_target_distance_pct or 4.0
+        profile_desc = f"Target estesi permessi (max {max_distance}%)" if lang == "it" else f"Extended targets allowed (max {max_distance}%)"
+    else:
+        max_distance = 2.0
+        profile_desc = "Target bilanciati (max 2%)" if lang == "it" else "Balanced targets (max 2%)"
+    
+    # Build integration status
+    integration_quality = "STRONG"
+    integration_issues = []
+    
+    if not magnet_bias_aligned:
+        integration_quality = "WEAK"
+        integration_issues.append("Magnet direction conflicts with bias" if lang == "en" else "Direzione magnete in conflitto con bias")
+    
+    if not energy_supports_move:
+        if integration_quality == "STRONG":
+            integration_quality = "MODERATE"
+        integration_issues.append("Low energy may limit move" if lang == "en" else "Energia bassa può limitare il movimento")
+    
+    if not liquidity_magnet.cluster_validated:
+        if integration_quality == "STRONG":
+            integration_quality = "MODERATE"
+        integration_issues.append("Target cluster not validated by derivatives" if lang == "en" else "Cluster target non validato dai derivati")
+    
+    # Build final recommendation
+    if integration_quality == "STRONG" and liquidity_magnet.cluster_validated:
+        recommendation = "Conditions favorable for target" if lang == "en" else "Condizioni favorevoli per il target"
+    elif integration_quality == "MODERATE":
+        recommendation = "Proceed with caution" if lang == "en" else "Procedere con cautela"
+    else:
+        recommendation = "Wait for better alignment" if lang == "en" else "Attendere migliore allineamento"
+    
+    return {
+        "integration_quality": integration_quality,
+        "allowed_direction": allowed_direction,
+        "magnet_bias_aligned": magnet_bias_aligned,
+        "energy_supports_move": energy_supports_move,
+        "fuel_adequate": fuel_adequate,
+        "cluster_validated": liquidity_magnet.cluster_validated,
+        "target_profile": market_regime.target_profile,
+        "max_target_distance": max_distance,
+        "profile_description": profile_desc,
+        "integration_issues": integration_issues,
+        "recommendation": recommendation,
+        
+        # Decision hierarchy explanation
+        "decision_hierarchy": {
+            "step_1_regime": f"Regime: {market_regime.regime} → {market_regime.target_profile} targets",
+            "step_2_bias": f"Bias: {market_bias.bias} ({market_bias.confidence}%) → Direction: {allowed_direction or 'ANY'}",
+            "step_3_magnet": f"Magnet: {liquidity_magnet.target_direction} (validated: {liquidity_magnet.cluster_validated})",
+            "step_4_energy": f"Energy: {market_energy.energy_state} (fuel: {market_energy.fuel_score}) → Move reachable: {energy_supports_move}"
+        }
+    }
 
 
 @api_router.get("/v3/promotion-readiness")
