@@ -50,15 +50,53 @@
    - Blocked signals warning
    - Assessment section with confidence indicator
 
-#### Cluster Target Rules (Enforced):
-- Minimum distance: 0.5%
-- Minimum volume: $500K
-- Minimum R:R: 0.5
-- Signals failing these checks are marked as BLOCKED (NO_VALID_CLUSTERS)
+---
 
-#### Files Modified:
-- `/app/backend/server.py` - Added cluster validation engine, APIs, startup tasks
-- `/app/frontend/src/components/pages/ReliabilityAnalyticsPage.js` - Added cluster tab
+### Liquidity Zone Engine V2.0
+
+**Goal:** Fix cluster quality - previous clusters were too close (0.03%-0.05%), now enforcing meaningful distances.
+
+#### New Features:
+
+1. **Minimum Distance Filter** (HARD ENFORCEMENT)
+   - Clusters < 0.5% distance are IGNORED (noise)
+   - All returned clusters are now at meaningful target distances
+
+2. **Zone Classification**
+   - Near zone: < 0.5% → FILTERED OUT
+   - Mid zone: 0.5% - 2.0% → T1 CANDIDATES
+   - Far zone: 2.0% - 5.0% → T2 CANDIDATES
+
+3. **Dynamic Volume Filtering**
+   - Replaced fixed 1.5x average threshold
+   - Now uses top 30% by volume percentile (70th percentile cutoff)
+
+4. **Magnet Strength Scoring**
+   - Formula: `magnet_strength = volume * log(distance + 1)`
+   - Higher distance = more meaningful target
+   - Higher volume = stronger attraction
+
+5. **Direction Consistency**
+   - Clusters properly separated by side (above/below)
+   - LONG signals only use ABOVE clusters
+   - SHORT signals only use BELOW clusters
+
+6. **New LiquidityCluster Fields**
+   - `magnet_strength`: float - Attraction score
+   - `zone_type`: str - "mid" or "far"
+   - `volume_percentile`: float - Position in volume ranking (0-100)
+
+#### Configuration Constants:
+```python
+MIN_DISTANCE_PCT = 0.5      # HARD minimum
+MID_ZONE_MAX_PCT = 2.0      # T1 candidates
+FAR_ZONE_MAX_PCT = 5.0      # T2 candidates
+VOLUME_PERCENTILE_CUTOFF = 70  # Top 30% only
+```
+
+#### Result:
+- Before: Clusters at 0.03%-0.05% (useless for targets)
+- After: Clusters at 0.5%+ only (meaningful T1/T2 candidates)
 
 ---
 

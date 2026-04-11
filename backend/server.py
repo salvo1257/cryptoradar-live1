@@ -252,6 +252,9 @@ class LiquidityCluster(BaseModel):
     estimated_value: float
     exchanges: Optional[List[str]] = None  # Which exchanges contribute
     explanation: Optional[str] = None  # What this cluster means
+    magnet_strength: Optional[float] = None  # volume * log(distance + 1)
+    zone_type: Optional[str] = None  # "near" (ignore), "mid" (T1), "far" (T2)
+    volume_percentile: Optional[float] = None  # Position in volume ranking (0-100)
 
 class LiquidityDirection(BaseModel):
     direction: str
@@ -3321,6 +3324,9 @@ BACKEND_TRANSLATIONS = {
         "more_liquidity_above": "Più liquidità sopra il prezzo attuale (${0:,.0f} ordini di vendita vs ${1:,.0f} ordini di acquisto). Il prezzo tende a cercare liquidità - attendersi movimento verso l'alto per cacciare stop.",
         "more_liquidity_below": "Più liquidità sotto il prezzo attuale (${0:,.0f} ordini di acquisto vs ${1:,.0f} ordini di vendita). Il prezzo tende a cercare liquidità - attendersi movimento verso il basso per cacciare stop.",
         "balanced_liquidity_distribution": "Distribuzione liquidità bilanciata. Nessuna direzione chiara - il mercato potrebbe consolidare fino a sviluppo di sbilanciamento.",
+        "no_significant_liquidity": "Nessun cluster di liquidità significativo rilevato a distanze significative.",
+        "t1_candidate_zone": "(Candidato T1 - zona media 0.5-2%)",
+        "t2_candidate_zone": "(Candidato T2 - zona lontana 2-5%)",
         
         # Whale Alerts
         "volume_spike_reason": "Picco di volume rilevato ({0:.1f}x media). Pressione istituzionale di {1} identificata.",
@@ -3607,6 +3613,9 @@ BACKEND_TRANSLATIONS = {
         "more_liquidity_above": "More liquidity above current price (${0:,.0f} sell orders vs ${1:,.0f} buy orders). Price tends to seek liquidity - expect move upward to hunt stops.",
         "more_liquidity_below": "More liquidity below current price (${0:,.0f} buy orders vs ${1:,.0f} sell orders). Price tends to seek liquidity - expect move downward to hunt stops.",
         "balanced_liquidity_distribution": "Balanced liquidity distribution. No clear direction - market may consolidate until imbalance develops.",
+        "no_significant_liquidity": "No significant liquidity clusters detected at meaningful distances.",
+        "t1_candidate_zone": "(T1 candidate - mid zone 0.5-2%)",
+        "t2_candidate_zone": "(T2 candidate - far zone 2-5%)",
         
         # Whale Alerts
         "volume_spike_reason": "Volume spike detected ({0:.1f}x average). Institutional {1} pressure identified.",
@@ -5982,134 +5991,285 @@ def analyze_orderbook(orderbook: dict, current_price: float) -> OrderBookAnalysi
     )
 
 def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: float, aggregated_orderbook: dict = None, lang: str = "it") -> tuple:
-    """Generate liquidity cluster data from aggregated multi-exchange order book analysis"""
-    clusters = []
+    """
+    Generate liquidity cluster data from aggregated multi-exchange order book analysis.
+    
+    V2.0 IMPROVEMENTS:
+    - Minimum distance filter: ignore clusters < 0.5% (too close = noise)
+    - Dynamic volume filtering: use top 30% strongest by volume percentile
+    - Magnet strength scoring: volume * log(distance + 1)
+    - Zone separation: near (ignore), mid (T1 candidates), far (T2 candidates)
+    - Direction consistency: LONG only sees ABOVE, SHORT only sees BELOW
+    
+    ZONE DEFINITIONS:
+    - Near zone: < 0.5% distance → IGNORED (noise)
+    - Mid zone: 0.5% - 2.0% → T1 CANDIDATES (ideal for first target)
+    - Far zone: 2.0% - 5.0% → T2 CANDIDATES (extended targets)
+    """
+    import math
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONFIGURATION CONSTANTS
+    # ═══════════════════════════════════════════════════════════════════════════
+    MIN_DISTANCE_PCT = 0.5      # HARD minimum - ignore anything closer
+    MID_ZONE_MAX_PCT = 2.0      # Mid zone upper bound (T1 candidates)
+    FAR_ZONE_MAX_PCT = 5.0      # Far zone upper bound (T2 candidates)
+    VOLUME_PERCENTILE_CUTOFF = 70  # Only keep top 30% by volume (70th percentile+)
+    
+    raw_clusters = []
     
     # Get active exchanges from aggregated data
     active_exchanges = None
     if aggregated_orderbook and aggregated_orderbook.get("exchange_stats"):
         active_exchanges = list(aggregated_orderbook["exchange_stats"].keys())
     
+    # Debug: Log orderbook size
+    ob_bids = aggregated_orderbook.get("bids", []) if aggregated_orderbook else []
+    ob_asks = aggregated_orderbook.get("asks", []) if aggregated_orderbook else []
+    logger.info(f"[Liquidity Clusters V2] Input: price=${current_price:,.0f}, "
+               f"orderbook_bids={len(ob_bids)}, orderbook_asks={len(ob_asks)}, "
+               f"exchanges={active_exchanges}")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 1: EXTRACT ALL POTENTIAL CLUSTERS FROM ORDER BOOK
+    # ═══════════════════════════════════════════════════════════════════════════
     if aggregated_orderbook:
         bids = aggregated_orderbook.get("bids", [])
         asks = aggregated_orderbook.get("asks", [])
         
-        # Calculate average volumes to identify significant levels
-        bid_volumes = [(float(b[0]), float(b[1])) for b in bids[:50]]
-        ask_volumes = [(float(a[0]), float(a[1])) for a in asks[:50]]
-        
-        if bid_volumes:
-            avg_bid_vol = sum(v[1] for v in bid_volumes) / len(bid_volumes)
+        # Process bid levels (liquidity BELOW current price)
+        for bid in bids[:100]:  # Analyze more levels
+            price = float(bid[0])
+            volume_btc = float(bid[1])
+            value_usd = price * volume_btc
             
-            # Find clusters of significant buy orders (liquidity below)
-            for price, vol in bid_volumes:
-                if vol > avg_bid_vol * 1.5:  # Above average
-                    distance = ((price - current_price) / current_price) * 100
-                    strength = "high" if vol > avg_bid_vol * 3 else "medium" if vol > avg_bid_vol * 2 else "low"
-                    value_usd = price * vol
-                    
-                    # Build localized explanation
-                    explanation = get_translation("buy_orders_at_level", lang, value_usd)
-                    if strength == "high":
-                        explanation += " " + get_translation("major_demand_zone", lang)
-                    elif strength == "medium":
-                        explanation += " " + get_translation("moderate_support", lang)
-                    else:
-                        explanation += " " + get_translation("minor_support", lang)
-                    
-                    clusters.append(LiquidityCluster(
-                        price=round(price, 2),
-                        strength=strength,
-                        distance_percent=round(distance, 2),
-                        side="below",
-                        estimated_value=round(value_usd, 0),
-                        exchanges=active_exchanges,
-                        explanation=explanation
-                    ))
-        
-        if ask_volumes:
-            avg_ask_vol = sum(v[1] for v in ask_volumes) / len(ask_volumes)
+            # Only consider if below current price
+            if price >= current_price:
+                continue
             
-            # Find clusters of significant sell orders (liquidity above)
-            for price, vol in ask_volumes:
-                if vol > avg_ask_vol * 1.5:
-                    distance = ((price - current_price) / current_price) * 100
-                    strength = "high" if vol > avg_ask_vol * 3 else "medium" if vol > avg_ask_vol * 2 else "low"
-                    value_usd = price * vol
-                    
-                    # Build localized explanation
-                    explanation = get_translation("sell_orders_at_level", lang, value_usd)
-                    if strength == "high":
-                        explanation += " " + get_translation("major_supply_zone", lang)
-                    elif strength == "medium":
-                        explanation += " " + get_translation("moderate_resistance", lang)
-                    else:
-                        explanation += " " + get_translation("minor_resistance", lang)
-                    
-                    clusters.append(LiquidityCluster(
-                        price=round(price, 2),
-                        strength=strength,
-                        distance_percent=round(distance, 2),
-                        side="above",
-                        estimated_value=round(value_usd, 0),
-                        exchanges=active_exchanges,
-                        explanation=explanation
-                    ))
+            distance_pct = abs((price - current_price) / current_price) * 100
+            
+            # Skip if too close (< MIN_DISTANCE)
+            if distance_pct < MIN_DISTANCE_PCT:
+                continue
+            
+            # Skip if too far (> FAR_ZONE_MAX)
+            if distance_pct > FAR_ZONE_MAX_PCT:
+                continue
+            
+            raw_clusters.append({
+                "price": price,
+                "value_usd": value_usd,
+                "volume_btc": volume_btc,
+                "distance_pct": distance_pct,
+                "side": "below",
+                "source": "orderbook_bid"
+            })
+        
+        # Process ask levels (liquidity ABOVE current price)
+        for ask in asks[:100]:
+            price = float(ask[0])
+            volume_btc = float(ask[1])
+            value_usd = price * volume_btc
+            
+            # Only consider if above current price
+            if price <= current_price:
+                continue
+            
+            distance_pct = abs((price - current_price) / current_price) * 100
+            
+            # Skip if too close (< MIN_DISTANCE)
+            if distance_pct < MIN_DISTANCE_PCT:
+                continue
+            
+            # Skip if too far (> FAR_ZONE_MAX)
+            if distance_pct > FAR_ZONE_MAX_PCT:
+                continue
+            
+            raw_clusters.append({
+                "price": price,
+                "value_usd": value_usd,
+                "volume_btc": volume_btc,
+                "distance_pct": distance_pct,
+                "side": "above",
+                "source": "orderbook_ask"
+            })
     
-    # Also add historical S/R levels as potential liquidity zones
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 2: ADD HISTORICAL S/R LEVELS AS CLUSTERS (with synthetic volume)
+    # ═══════════════════════════════════════════════════════════════════════════
     if candles and len(candles) >= 20:
         highs = [c["high"] for c in candles[-50:]]
         lows = [c["low"] for c in candles[-50:]]
         
-        # Recent resistance levels
-        for h in sorted(set(highs), reverse=True)[:3]:
-            if h > current_price:
-                distance = ((h - current_price) / current_price) * 100
-                if distance < 5:  # Within 5%
-                    clusters.append(LiquidityCluster(
-                        price=round(h, 2),
-                        strength="medium",
-                        distance_percent=round(distance, 2),
-                        side="above",
-                        estimated_value=0,
-                        explanation=get_translation("recent_high_rejected", lang, h)
-                    ))
+        # Calculate typical volume for synthetic estimates
+        avg_candle_volume = sum(c.get("volume", 0) for c in candles[-50:]) / 50 if candles else 1
+        synthetic_volume = avg_candle_volume * current_price * 0.1  # 10% of avg candle value
         
-        # Recent support levels
-        for l in sorted(set(lows))[:3]:
+        # Recent resistance levels (above)
+        seen_highs = set()
+        for h in sorted(set(highs), reverse=True)[:5]:
+            if h > current_price:
+                distance_pct = ((h - current_price) / current_price) * 100
+                rounded_h = round(h, -1)
+                
+                if MIN_DISTANCE_PCT <= distance_pct <= FAR_ZONE_MAX_PCT and rounded_h not in seen_highs:
+                    seen_highs.add(rounded_h)
+                    touches = sum(1 for x in highs if abs(x - h) / h < 0.003)
+                    raw_clusters.append({
+                        "price": h,
+                        "value_usd": synthetic_volume * (1 + touches * 0.5),  # More touches = stronger
+                        "volume_btc": 0,
+                        "distance_pct": distance_pct,
+                        "side": "above",
+                        "source": "historical_resistance"
+                    })
+        
+        # Recent support levels (below)
+        seen_lows = set()
+        for l in sorted(set(lows))[:5]:
             if l < current_price:
-                distance = ((l - current_price) / current_price) * 100
-                if abs(distance) < 5:
-                    clusters.append(LiquidityCluster(
-                        price=round(l, 2),
-                        strength="medium",
-                        distance_percent=round(distance, 2),
-                        side="below",
-                        estimated_value=0,
-                        explanation=get_translation("recent_low_defended", lang, l)
-                    ))
+                distance_pct = abs((l - current_price) / current_price) * 100
+                rounded_l = round(l, -1)
+                
+                if MIN_DISTANCE_PCT <= distance_pct <= FAR_ZONE_MAX_PCT and rounded_l not in seen_lows:
+                    seen_lows.add(rounded_l)
+                    touches = sum(1 for x in lows if abs(x - l) / l < 0.003)
+                    raw_clusters.append({
+                        "price": l,
+                        "value_usd": synthetic_volume * (1 + touches * 0.5),
+                        "volume_btc": 0,
+                        "distance_pct": distance_pct,
+                        "side": "below",
+                        "source": "historical_support"
+                    })
     
-    # Calculate liquidity direction based on order book imbalance
-    above_value = sum(c.estimated_value for c in clusters if c.side == "above")
-    below_value = sum(c.estimated_value for c in clusters if c.side == "below")
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 3: DYNAMIC VOLUME FILTERING (Top 30% by volume percentile)
+    # ═══════════════════════════════════════════════════════════════════════════
+    if len(raw_clusters) == 0:
+        # No valid clusters found
+        liq_direction = LiquidityDirection(
+            direction="BALANCED",
+            next_target=current_price,
+            distance_percent=0,
+            imbalance_ratio=1.0,
+            explanation=get_translation("no_significant_liquidity", lang) if get_translation("no_significant_liquidity", lang) else "No significant liquidity clusters detected"
+        )
+        return [], liq_direction
     
-    above_clusters = [c for c in clusters if c.side == "above"]
-    below_clusters = [c for c in clusters if c.side == "below"]
+    # Calculate volume percentile for each cluster
+    all_volumes = sorted([c["value_usd"] for c in raw_clusters])
     
-    if above_value > below_value * 1.3 or len(above_clusters) > len(below_clusters) * 1.5:
+    for cluster in raw_clusters:
+        # Find percentile position
+        rank = sum(1 for v in all_volumes if v <= cluster["value_usd"])
+        cluster["volume_percentile"] = (rank / len(all_volumes)) * 100
+        
+        # Calculate MAGNET STRENGTH: volume * log(distance + 1)
+        # Higher distance = more meaningful target, volume = attraction power
+        cluster["magnet_strength"] = cluster["value_usd"] * math.log(cluster["distance_pct"] + 1)
+    
+    # Filter to top 30% by volume (70th percentile and above)
+    filtered_clusters = [c for c in raw_clusters if c["volume_percentile"] >= VOLUME_PERCENTILE_CUTOFF]
+    
+    # If filtering removes everything, keep at least top 5 by magnet strength
+    if len(filtered_clusters) < 3 and len(raw_clusters) > 0:
+        filtered_clusters = sorted(raw_clusters, key=lambda x: x["magnet_strength"], reverse=True)[:5]
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 4: ZONE CLASSIFICATION AND FINAL CLUSTER CREATION
+    # ═══════════════════════════════════════════════════════════════════════════
+    final_clusters = []
+    
+    for c in filtered_clusters:
+        # Determine zone type
+        if c["distance_pct"] < MIN_DISTANCE_PCT:
+            zone_type = "near"  # Should have been filtered, but safety check
+            continue
+        elif c["distance_pct"] <= MID_ZONE_MAX_PCT:
+            zone_type = "mid"  # T1 candidate
+        else:
+            zone_type = "far"  # T2 candidate
+        
+        # Determine strength based on volume percentile
+        if c["volume_percentile"] >= 90:
+            strength = "high"
+        elif c["volume_percentile"] >= 80:
+            strength = "medium"
+        else:
+            strength = "low"
+        
+        # Build explanation
+        zone_label = {
+            "mid": get_translation("t1_candidate_zone", lang) if get_translation("t1_candidate_zone", lang) else "T1 candidate zone",
+            "far": get_translation("t2_candidate_zone", lang) if get_translation("t2_candidate_zone", lang) else "T2 candidate zone"
+        }.get(zone_type, "")
+        
+        if c["side"] == "above":
+            base_explanation = get_translation("sell_orders_at_level", lang, c["value_usd"]) if c["value_usd"] > 0 else f"Resistance at ${c['price']:,.0f}"
+        else:
+            base_explanation = get_translation("buy_orders_at_level", lang, c["value_usd"]) if c["value_usd"] > 0 else f"Support at ${c['price']:,.0f}"
+        
+        explanation = f"{base_explanation} {zone_label}".strip()
+        
+        final_clusters.append(LiquidityCluster(
+            price=round(c["price"], 2),
+            strength=strength,
+            distance_percent=round(c["distance_pct"], 3),
+            side=c["side"],
+            estimated_value=round(c["value_usd"], 0),
+            exchanges=active_exchanges,
+            explanation=explanation,
+            magnet_strength=round(c["magnet_strength"], 2),
+            zone_type=zone_type,
+            volume_percentile=round(c["volume_percentile"], 1)
+        ))
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 5: DEDUPLICATE (merge clusters within 0.2% of each other)
+    # ═══════════════════════════════════════════════════════════════════════════
+    deduped_clusters = []
+    for c in sorted(final_clusters, key=lambda x: x.magnet_strength or 0, reverse=True):
+        is_dup = False
+        for existing in deduped_clusters:
+            if c.side == existing.side:
+                price_diff_pct = abs(c.price - existing.price) / existing.price * 100
+                if price_diff_pct < 0.2:
+                    is_dup = True
+                    break
+        if not is_dup:
+            deduped_clusters.append(c)
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STEP 6: CALCULATE LIQUIDITY DIRECTION
+    # ═══════════════════════════════════════════════════════════════════════════
+    above_clusters = [c for c in deduped_clusters if c.side == "above"]
+    below_clusters = [c for c in deduped_clusters if c.side == "below"]
+    
+    above_value = sum(c.estimated_value for c in above_clusters)
+    below_value = sum(c.estimated_value for c in below_clusters)
+    above_magnet = sum(c.magnet_strength or 0 for c in above_clusters)
+    below_magnet = sum(c.magnet_strength or 0 for c in below_clusters)
+    
+    # Use magnet strength for direction (more meaningful than raw volume)
+    if above_magnet > below_magnet * 1.3:
         direction = "UP"
-        next_target = min(c.price for c in above_clusters) if above_clusters else current_price
-        dir_explanation = get_translation("more_liquidity_above", lang, above_value, below_value)
-    elif below_value > above_value * 1.3 or len(below_clusters) > len(above_clusters) * 1.5:
+        # Find nearest mid-zone cluster above
+        mid_above = [c for c in above_clusters if c.zone_type == "mid"]
+        next_target = min(c.price for c in mid_above) if mid_above else (min(c.price for c in above_clusters) if above_clusters else current_price)
+        dir_explanation = get_translation("more_liquidity_above", lang, above_value, below_value) if get_translation("more_liquidity_above", lang, above_value, below_value) else f"More significant liquidity above (${above_value:,.0f} vs ${below_value:,.0f})"
+    elif below_magnet > above_magnet * 1.3:
         direction = "DOWN"
-        next_target = max(c.price for c in below_clusters) if below_clusters else current_price
-        dir_explanation = get_translation("more_liquidity_below", lang, below_value, above_value)
+        mid_below = [c for c in below_clusters if c.zone_type == "mid"]
+        next_target = max(c.price for c in mid_below) if mid_below else (max(c.price for c in below_clusters) if below_clusters else current_price)
+        dir_explanation = get_translation("more_liquidity_below", lang, below_value, above_value) if get_translation("more_liquidity_below", lang, below_value, above_value) else f"More significant liquidity below (${below_value:,.0f} vs ${above_value:,.0f})"
     else:
         direction = "BALANCED"
         next_target = current_price
-        dir_explanation = get_translation("balanced_liquidity_distribution", lang)
+        dir_explanation = get_translation("balanced_liquidity_distribution", lang) if get_translation("balanced_liquidity_distribution", lang) else "Balanced liquidity distribution"
     
-    imbalance_ratio = (above_value / below_value) if below_value > 0 else 1.0
+    imbalance_ratio = (above_magnet / below_magnet) if below_magnet > 0 else 1.0
     
     liq_direction = LiquidityDirection(
         direction=direction,
@@ -6119,16 +6279,15 @@ def generate_liquidity_clusters_enhanced(candles: List[dict], current_price: flo
         explanation=dir_explanation
     )
     
-    # Remove duplicates and limit results
-    seen_prices = set()
-    unique_clusters = []
-    for c in sorted(clusters, key=lambda x: abs(x.distance_percent)):
-        rounded = round(c.price, -1)
-        if rounded not in seen_prices:
-            seen_prices.add(rounded)
-            unique_clusters.append(c)
+    # Sort by magnet strength (strongest first) and limit to 12
+    sorted_clusters = sorted(deduped_clusters, key=lambda x: x.magnet_strength or 0, reverse=True)[:12]
     
-    return unique_clusters[:12], liq_direction
+    logger.info(f"[Liquidity Clusters V2] Price=${current_price:,.0f}, Raw candidates={len(raw_clusters)}, "
+                f"After percentile filter={len(filtered_clusters)}, After dedup={len(deduped_clusters)}, "
+                f"Final={len(sorted_clusters)} (above:{len([c for c in sorted_clusters if c.side == 'above'])}, "
+                f"below:{len([c for c in sorted_clusters if c.side == 'below'])}) Dir={direction}")
+    
+    return sorted_clusters, liq_direction
 
 # Keep old function for backward compatibility
 def generate_liquidity_clusters(candles: List[dict], current_price: float, orderbook: dict = None, lang: str = "it") -> tuple:
