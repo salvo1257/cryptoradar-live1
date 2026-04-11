@@ -744,6 +744,38 @@ export function TradeSignalCard({ compact = false }) {
           </div>
         )}
 
+        {/* WARNING: No valid clusters - signal not tradable */}
+        {signal.has_valid_targets === false && (
+          <div className="mb-3 flex items-center gap-2 text-[10px] text-red-400 bg-red-500/10 px-2 py-1.5 rounded border border-red-500/20">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span className="font-medium">
+              {language === 'it' 
+                ? 'Nessun target di liquidità valido – segnale non operabile' 
+                : language === 'de'
+                ? 'Keine gültigen Liquiditätsziele – Signal nicht handelbar'
+                : language === 'pl'
+                ? 'Brak prawidłowych celów płynności – sygnał nie do handlu'
+                : 'No valid liquidity targets – signal not tradable'}
+            </span>
+          </div>
+        )}
+
+        {/* WARNING: Low R:R - signal blocked */}
+        {signal.has_valid_targets !== false && signal.risk_reward_ratio < 0.5 && signal.risk_reward_ratio > 0 && (
+          <div className="mb-3 flex items-center gap-2 text-[10px] text-orange-400 bg-orange-500/10 px-2 py-1.5 rounded border border-orange-500/20">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span className="font-medium">
+              {language === 'it' 
+                ? `R:R ${signal.risk_reward_ratio?.toFixed(2)} troppo basso – segnale non operativo` 
+                : language === 'de'
+                ? `R:R ${signal.risk_reward_ratio?.toFixed(2)} zu niedrig – Signal nicht operativ`
+                : language === 'pl'
+                ? `R:R ${signal.risk_reward_ratio?.toFixed(2)} za niskie – sygnał nieoperacyjny`
+                : `R:R ${signal.risk_reward_ratio?.toFixed(2)} too low – signal non-operational`}
+            </span>
+          </div>
+        )}
+
         {/* Risk/Reward */}
         {signal.direction !== 'NO TRADE' && signal.risk_reward_ratio > 0 && (
           <div className="flex items-center justify-between py-2 px-3 bg-crypto-surface/30 rounded-sm mb-4">

@@ -565,6 +565,8 @@ class SetupEvent(BaseModel):
     target_2_cluster: Optional[Dict[str, Any]] = None
     targets_from_clusters: bool = False  # True if targets derived from real clusters
     clusters_analyzed: int = 0  # Number of clusters evaluated
+    has_valid_targets: bool = True  # V2.1: False if no valid clusters found
+    target_block_reason: Optional[str] = None  # V2.1: "NO_VALID_CLUSTERS" or "LOW_RR_X.XX"
     
     # 4H Context data
     market_regime: str  # TREND, RANGE, COMPRESSION, EXPANSION
@@ -7147,94 +7149,129 @@ def calculate_v3_targets(
     aggregated_orderbook: dict = None
 ) -> Dict[str, Any]:
     """
-    V3 Target Selection - LIQUIDITY CLUSTER BASED (v2.0)
+    V3 Target Selection - LIQUIDITY CLUSTER BASED (v2.1 STRICT)
     
-    CRITICAL CHANGE: Targets are now derived from REAL liquidity clusters,
-    not fixed percentages or local structure.
+    CRITICAL: Targets MUST come from real liquidity clusters.
+    NO FALLBACK to percentage-based targets.
     
-    Logic:
-    1. Extract all significant liquidity clusters from aggregated orderbook
-    2. Filter clusters by direction (LONG = above, SHORT = below)
-    3. Ignore clusters too close (< 0.2% distance)
-    4. Rank by volume (stronger magnet = higher priority)
-    5. Select T1 = nearest significant cluster, T2 = strongest cluster further away
+    If no valid clusters found → signal is NON-OPERATIONAL.
     
-    Returns targets with cluster metadata for UI display.
+    Strict Filters:
+    - Minimum distance: 0.5% (ignore micro-targets)
+    - Minimum volume: $500K (ignore noise)
+    - Preferred range: 0.5% - 2.5%
+    - Preferred volume: > $1M
     """
     import math
     
-    # Collect all valid liquidity targets
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STRICT FILTER CONSTANTS (v2.1)
+    # ═══════════════════════════════════════════════════════════════════════════
+    MIN_DISTANCE_PCT = 0.5      # HARD minimum - ignore anything closer
+    MAX_DISTANCE_PCT = 5.0      # Maximum reasonable distance
+    PREFERRED_MIN_DIST = 0.5    # Preferred range start
+    PREFERRED_MAX_DIST = 2.5    # Preferred range end
+    MIN_VOLUME_USD = 500000     # HARD minimum $500K
+    PREFERRED_VOLUME_USD = 1000000  # Preferred $1M+
+    
     all_targets = []
-    MIN_DISTANCE_PCT = 0.2  # Ignore clusters closer than 0.2%
-    MAX_DISTANCE_PCT = 5.0  # Extended range for meaningful moves
-    MIN_VOLUME_USD = 200000  # Minimum $200K to be considered significant
+    debug_log = {
+        "clusters_raw": 0,
+        "clusters_after_direction_filter": 0,
+        "clusters_after_distance_filter": 0,
+        "clusters_after_volume_filter": 0,
+        "clusters_final": 0,
+        "rejection_reasons": [],
+        "selected_t1": None,
+        "selected_t2": None
+    }
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 1. EXTRACT CLUSTERS FROM AGGREGATED ORDERBOOK (Primary source)
+    # 1. EXTRACT CLUSTERS FROM AGGREGATED ORDERBOOK
     # ═══════════════════════════════════════════════════════════════════════════
     if aggregated_orderbook:
         asks = aggregated_orderbook.get("asks", [])
         bids = aggregated_orderbook.get("bids", [])
         
-        # For LONG: look at asks (sell walls we need to absorb)
-        # For SHORT: look at bids (buy walls we need to absorb)
-        levels_to_analyze = asks[:100] if direction == "LONG" else bids[:100]
+        # For LONG: look at asks (resistance levels above)
+        # For SHORT: look at bids (support levels below)
+        levels_to_analyze = asks[:200] if direction == "LONG" else bids[:200]
+        debug_log["clusters_raw"] = len(levels_to_analyze)
         
-        # Calculate average volume to identify significant levels
-        if levels_to_analyze:
-            volumes = [float(l[0]) * float(l[1]) for l in levels_to_analyze[:50]]
-            avg_volume = sum(volumes) / len(volumes) if volumes else 0
+        # Group nearby levels into clusters (within 0.1% of each other)
+        clusters_grouped = []
+        for level in levels_to_analyze:
+            price = float(level[0])
+            volume_btc = float(level[1])
+            value_usd = price * volume_btc
             
-            for level in levels_to_analyze:
-                price = float(level[0])
-                volume_btc = float(level[1])
-                value_usd = price * volume_btc
-                
-                # Skip insignificant levels
-                if value_usd < MIN_VOLUME_USD:
-                    continue
-                
-                # Check direction validity
-                is_valid_direction = (
-                    (direction == "LONG" and price > entry_price) or
-                    (direction == "SHORT" and price < entry_price)
-                )
-                
-                if not is_valid_direction:
-                    continue
-                
-                # Calculate distance
-                if direction == "LONG":
-                    distance_pct = ((price - entry_price) / entry_price) * 100
-                else:
-                    distance_pct = ((entry_price - price) / entry_price) * 100
-                
-                # Filter by distance range
-                if MIN_DISTANCE_PCT <= distance_pct <= MAX_DISTANCE_PCT:
-                    # Calculate strength score (volume-weighted with distance bonus)
-                    strength = math.log10(max(1, value_usd)) * 10
-                    
-                    # Bonus for being in ideal range (0.5% - 2%)
-                    if 0.5 <= distance_pct <= 2.0:
-                        strength += 20
-                    elif 0.3 <= distance_pct <= 3.0:
-                        strength += 10
-                    
-                    # Penalty for very high volume (might indicate spoofing)
-                    if value_usd > avg_volume * 10:
-                        strength -= 5  # Slight penalty for potential spoofing
-                    
-                    all_targets.append({
-                        "price": round(price, 2),
-                        "value_usd": value_usd,
-                        "distance_pct": round(distance_pct, 3),
-                        "strength": strength,
-                        "source": "orderbook_cluster",
-                        "volume_btc": volume_btc
-                    })
+            # Check direction validity FIRST
+            is_valid_direction = (
+                (direction == "LONG" and price > entry_price) or
+                (direction == "SHORT" and price < entry_price)
+            )
+            
+            if not is_valid_direction:
+                continue
+            
+            debug_log["clusters_after_direction_filter"] += 1
+            
+            # Calculate distance
+            if direction == "LONG":
+                distance_pct = ((price - entry_price) / entry_price) * 100
+            else:
+                distance_pct = ((entry_price - price) / entry_price) * 100
+            
+            # STRICT DISTANCE FILTER
+            if distance_pct < MIN_DISTANCE_PCT:
+                debug_log["rejection_reasons"].append(f"${price:,.0f}: dist {distance_pct:.2f}% < {MIN_DISTANCE_PCT}% min")
+                continue
+            
+            if distance_pct > MAX_DISTANCE_PCT:
+                continue  # Too far, not relevant
+            
+            debug_log["clusters_after_distance_filter"] += 1
+            
+            # STRICT VOLUME FILTER
+            if value_usd < MIN_VOLUME_USD:
+                debug_log["rejection_reasons"].append(f"${price:,.0f}: vol ${value_usd:,.0f} < ${MIN_VOLUME_USD:,.0f} min")
+                continue
+            
+            debug_log["clusters_after_volume_filter"] += 1
+            
+            # Calculate strength score
+            strength = 0
+            
+            # Volume scoring (primary factor)
+            if value_usd >= PREFERRED_VOLUME_USD * 2:  # $2M+
+                strength += 50
+            elif value_usd >= PREFERRED_VOLUME_USD:  # $1M+
+                strength += 35
+            else:  # $500K - $1M
+                strength += 20
+            
+            # Distance scoring (prefer 0.5% - 2.5% range)
+            if PREFERRED_MIN_DIST <= distance_pct <= PREFERRED_MAX_DIST:
+                strength += 30  # Ideal range bonus
+            elif distance_pct <= 3.5:
+                strength += 15  # Acceptable range
+            else:
+                strength += 5   # Extended range
+            
+            # Log volume bonus
+            strength += math.log10(max(1, value_usd / 100000)) * 5
+            
+            all_targets.append({
+                "price": round(price, 2),
+                "value_usd": value_usd,
+                "distance_pct": round(distance_pct, 3),
+                "strength": round(strength, 1),
+                "source": "orderbook_cluster",
+                "volume_btc": volume_btc
+            })
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 2. ADD LIQUIDITY CLUSTERS (Pre-computed)
+    # 2. ADD PRE-COMPUTED LIQUIDITY CLUSTERS (if available)
     # ═══════════════════════════════════════════════════════════════════════════
     if liquidity_clusters:
         for cluster in liquidity_clusters:
@@ -7242,15 +7279,15 @@ def calculate_v3_targets(
             if hasattr(cluster, 'price'):
                 c_price = cluster.price
                 c_side = cluster.side
-                c_value = getattr(cluster, 'estimated_value', 100000)
+                c_value = getattr(cluster, 'estimated_value', 0)
                 c_strength_str = getattr(cluster, 'strength', 'medium')
             else:
                 c_price = cluster.get('price', 0)
                 c_side = cluster.get('side', '')
-                c_value = cluster.get('estimated_value', 100000)
+                c_value = cluster.get('estimated_value', 0)
                 c_strength_str = cluster.get('strength', 'medium')
             
-            # Check direction
+            # Direction filter
             is_valid = (
                 (direction == "LONG" and c_side == "above") or
                 (direction == "SHORT" and c_side == "below")
@@ -7265,31 +7302,41 @@ def calculate_v3_targets(
             else:
                 distance_pct = ((entry_price - c_price) / entry_price) * 100
             
-            if MIN_DISTANCE_PCT <= distance_pct <= MAX_DISTANCE_PCT:
-                # Convert strength string to score
-                strength_map = {"high": 60, "medium": 40, "low": 20}
-                strength = strength_map.get(c_strength_str, 30)
-                strength += math.log10(max(1, c_value)) * 5
-                
-                all_targets.append({
-                    "price": round(c_price, 2),
-                    "value_usd": c_value,
-                    "distance_pct": round(distance_pct, 3),
-                    "strength": strength,
-                    "source": "liquidity_cluster",
-                    "volume_btc": c_value / c_price if c_price > 0 else 0
-                })
+            # STRICT FILTERS
+            if distance_pct < MIN_DISTANCE_PCT:
+                continue
+            if distance_pct > MAX_DISTANCE_PCT:
+                continue
+            if c_value < MIN_VOLUME_USD:
+                continue
+            
+            # Strength scoring
+            strength_map = {"high": 40, "medium": 25, "low": 10}
+            strength = strength_map.get(c_strength_str, 15)
+            
+            if c_value >= PREFERRED_VOLUME_USD:
+                strength += 20
+            
+            if PREFERRED_MIN_DIST <= distance_pct <= PREFERRED_MAX_DIST:
+                strength += 15
+            
+            all_targets.append({
+                "price": round(c_price, 2),
+                "value_usd": c_value,
+                "distance_pct": round(distance_pct, 3),
+                "strength": round(strength, 1),
+                "source": "liquidity_cluster",
+                "volume_btc": c_value / c_price if c_price > 0 else 0
+            })
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 3. SORT AND SELECT TARGETS
+    # 3. DEDUPLICATE AND SORT
     # ═══════════════════════════════════════════════════════════════════════════
-    
-    # Deduplicate similar prices (within 0.1%)
     deduped = []
     for t in all_targets:
         is_dup = False
         for existing in deduped:
-            if abs(t["price"] - existing["price"]) / existing["price"] < 0.001:
+            if abs(t["price"] - existing["price"]) / existing["price"] < 0.002:  # Within 0.2%
                 # Keep the stronger one
                 if t["strength"] > existing["strength"]:
                     deduped.remove(existing)
@@ -7299,76 +7346,104 @@ def calculate_v3_targets(
         if not is_dup:
             deduped.append(t)
     
-    # Sort by distance first (for T1), then by strength for T2
+    debug_log["clusters_final"] = len(deduped)
+    
+    # Sort by distance for T1 selection, by strength for T2
     deduped_by_distance = sorted(deduped, key=lambda x: x["distance_pct"])
     deduped_by_strength = sorted(deduped, key=lambda x: x["strength"], reverse=True)
     
-    # Default fallback targets (percentage-based if no clusters found)
-    t1 = entry_price * (1.005 if direction == "LONG" else 0.995)
-    t1_type = "percentage_fallback"
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 4. TARGET SELECTION - NO FALLBACK TO PERCENTAGE
+    # ═══════════════════════════════════════════════════════════════════════════
+    t1 = None
+    t1_type = "NO_VALID_CLUSTERS"
     t1_cluster = None
     
-    t2 = entry_price * (1.012 if direction == "LONG" else 0.988)
-    t2_type = "percentage_fallback"
+    t2 = None
+    t2_type = "NO_VALID_CLUSTERS"
     t2_cluster = None
     
-    # T1: Nearest significant cluster (minimum 0.3% distance, decent volume)
-    for target in deduped_by_distance:
-        if target["distance_pct"] >= 0.3 and target["value_usd"] >= MIN_VOLUME_USD:
-            t1 = target["price"]
-            t1_type = "liquidity_cluster"
-            t1_cluster = target
-            break
+    # T1: Nearest valid cluster (must be in preferred range if possible)
+    preferred_clusters = [c for c in deduped_by_distance if c["distance_pct"] <= PREFERRED_MAX_DIST]
+    if preferred_clusters:
+        t1_cluster = preferred_clusters[0]
+        t1 = t1_cluster["price"]
+        t1_type = "liquidity_cluster"
+        debug_log["selected_t1"] = f"${t1:,.0f} (dist={t1_cluster['distance_pct']:.2f}%, vol=${t1_cluster['value_usd']:,.0f})"
+    elif deduped_by_distance:
+        # Fall back to any valid cluster
+        t1_cluster = deduped_by_distance[0]
+        t1 = t1_cluster["price"]
+        t1_type = "liquidity_cluster_extended"
+        debug_log["selected_t1"] = f"${t1:,.0f} (extended, dist={t1_cluster['distance_pct']:.2f}%)"
     
-    # T2: Strongest cluster further than T1 (at least 0.5% further)
-    t1_distance = ((t1 - entry_price) / entry_price * 100) if direction == "LONG" else ((entry_price - t1) / entry_price * 100)
+    # T2: Strongest cluster beyond T1
+    if t1 is not None:
+        t1_distance = t1_cluster["distance_pct"]
+        for target in deduped_by_strength:
+            if target["distance_pct"] > t1_distance + 0.3:  # Must be meaningfully further
+                t2_cluster = target
+                t2 = t2_cluster["price"]
+                t2_type = "liquidity_cluster"
+                debug_log["selected_t2"] = f"${t2:,.0f} (dist={t2_cluster['distance_pct']:.2f}%, strength={t2_cluster['strength']})"
+                break
+        
+        # If no T2 found, extend T1
+        if t2 is None and t1 is not None:
+            if direction == "LONG":
+                t2 = t1 * 1.01  # 1% beyond T1
+            else:
+                t2 = t1 * 0.99
+            t2_type = "extended_from_t1"
+            debug_log["selected_t2"] = f"${t2:,.0f} (extended from T1)"
     
-    for target in deduped_by_strength:
-        if target["distance_pct"] > t1_distance + 0.3:  # Must be meaningfully further
-            t2 = target["price"]
-            t2_type = "liquidity_cluster"
-            t2_cluster = target
-            break
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 5. BUILD RESULT - MARK AS NON-OPERATIONAL IF NO CLUSTERS
+    # ═══════════════════════════════════════════════════════════════════════════
+    has_valid_targets = t1 is not None and t1_type != "NO_VALID_CLUSTERS"
     
-    # Ensure T2 is beyond T1
-    if direction == "LONG":
-        if t2 <= t1:
-            t2 = t1 * 1.008  # 0.8% beyond T1
-            t2_type = "extended_fallback"
+    # Log the full debug info
+    logger.info(f"[V3 TARGETS] Direction={direction}, Entry=${entry_price:,.0f}")
+    logger.info(f"[V3 TARGETS] Raw clusters: {debug_log['clusters_raw']}, "
+               f"After filters: {debug_log['clusters_final']}, "
+               f"Valid targets: {has_valid_targets}")
+    
+    if not has_valid_targets:
+        logger.warning(f"[V3 TARGETS] NO_VALID_CLUSTERS - Signal will be non-operational")
+        if debug_log["rejection_reasons"]:
+            logger.warning(f"[V3 TARGETS] Rejection samples: {debug_log['rejection_reasons'][:5]}")
     else:
-        if t2 >= t1:
-            t2 = t1 * 0.992
-            t2_type = "extended_fallback"
+        logger.info(f"[V3 TARGETS] T1: {debug_log['selected_t1']}")
+        logger.info(f"[V3 TARGETS] T2: {debug_log['selected_t2']}")
     
-    # ═══════════════════════════════════════════════════════════════════════════
-    # 4. BUILD RESPONSE WITH CLUSTER METADATA
-    # ═══════════════════════════════════════════════════════════════════════════
     result = {
-        "target_1": round(t1, 2),
+        "target_1": round(t1, 2) if t1 else entry_price,
         "target_1_type": t1_type,
-        "target_2": round(t2, 2),
+        "target_2": round(t2, 2) if t2 else entry_price,
         "target_2_type": t2_type,
         
-        # NEW: Cluster metadata for UI
+        # Cluster metadata for UI
         "target_1_cluster": {
-            "price": t1_cluster["price"] if t1_cluster else None,
-            "value_usd": t1_cluster["value_usd"] if t1_cluster else None,
-            "distance_pct": t1_cluster["distance_pct"] if t1_cluster else None,
-            "strength": t1_cluster["strength"] if t1_cluster else None,
-            "source": t1_cluster["source"] if t1_cluster else None
+            "price": t1_cluster["price"],
+            "value_usd": t1_cluster["value_usd"],
+            "distance_pct": t1_cluster["distance_pct"],
+            "strength": t1_cluster["strength"],
+            "source": t1_cluster["source"]
         } if t1_cluster else None,
         
         "target_2_cluster": {
-            "price": t2_cluster["price"] if t2_cluster else None,
-            "value_usd": t2_cluster["value_usd"] if t2_cluster else None,
-            "distance_pct": t2_cluster["distance_pct"] if t2_cluster else None,
-            "strength": t2_cluster["strength"] if t2_cluster else None,
-            "source": t2_cluster["source"] if t2_cluster else None
+            "price": t2_cluster["price"],
+            "value_usd": t2_cluster["value_usd"],
+            "distance_pct": t2_cluster["distance_pct"],
+            "strength": t2_cluster["strength"],
+            "source": t2_cluster["source"]
         } if t2_cluster else None,
         
-        # Summary
-        "clusters_analyzed": len(deduped),
-        "targets_from_clusters": t1_type == "liquidity_cluster" or t2_type == "liquidity_cluster"
+        # Status flags
+        "clusters_analyzed": debug_log["clusters_final"],
+        "targets_from_clusters": has_valid_targets,
+        "has_valid_targets": has_valid_targets,
+        "no_clusters_reason": "NO_VALID_CLUSTERS" if not has_valid_targets else None
     }
     
     return result
@@ -9368,48 +9443,63 @@ async def create_setup_event(
     
     # Calculate R:R
     risk = abs(current_price - stop_info["stop_loss"])
-    reward = abs(target_info["target_1"] - current_price)
+    reward = abs(target_info["target_1"] - current_price) if target_info.get("has_valid_targets") else 0
     rr_ratio = reward / risk if risk > 0 else 0
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # V2.0: MINIMUM R:R FILTER
-    # If R:R < 0.5, the setup is non-operational (clusters too close or stop too wide)
+    # V2.1: STRICT VALIDATION - NO VALID CLUSTERS = NON-OPERATIONAL
     # ═══════════════════════════════════════════════════════════════════════════
     MIN_RR_THRESHOLD = 0.5
+    has_valid_targets = target_info.get("has_valid_targets", False)
     rr_blocked = rr_ratio < MIN_RR_THRESHOLD
     
-    if rr_blocked:
-        logger.warning(f"[V3 Setup] R:R {rr_ratio:.2f} below minimum {MIN_RR_THRESHOLD} - "
-                      f"Setup will be marked non-operational | "
-                      f"T1: ${target_info['target_1']:,.0f}, Stop: ${stop_info['stop_loss']:,.0f}")
+    # Signal is NON-OPERATIONAL if:
+    # 1. No valid liquidity clusters found, OR
+    # 2. R:R below minimum threshold
+    is_blocked = not has_valid_targets or rr_blocked
+    block_reason = None
     
-    # Log target source for debugging
-    t1_from_cluster = target_info.get("target_1_type") == "liquidity_cluster"
-    t2_from_cluster = target_info.get("target_2_type") == "liquidity_cluster"
-    logger.info(f"[V3 Setup] Targets: T1=${target_info['target_1']:,.0f} ({target_info.get('target_1_type', 'unknown')}), "
-               f"T2=${target_info['target_2']:,.0f} ({target_info.get('target_2_type', 'unknown')}), "
-               f"R:R={rr_ratio:.2f}, Clusters analyzed: {target_info.get('clusters_analyzed', 0)}")
+    if not has_valid_targets:
+        block_reason = "NO_VALID_CLUSTERS"
+        logger.warning(f"[V3 Setup] ❌ NO_VALID_CLUSTERS - Setup will be NON-OPERATIONAL")
+        logger.warning(f"[V3 Setup] No liquidity clusters found with: dist >= 0.5%, vol >= $500K")
+    elif rr_blocked:
+        block_reason = f"LOW_RR_{rr_ratio:.2f}"
+        logger.warning(f"[V3 Setup] ❌ R:R {rr_ratio:.2f} < {MIN_RR_THRESHOLD} - Setup will be NON-OPERATIONAL")
+        logger.warning(f"[V3 Setup] T1: ${target_info['target_1']:,.0f}, Stop: ${stop_info['stop_loss']:,.0f}")
+    else:
+        logger.info(f"[V3 Setup] ✅ Valid setup: T1=${target_info['target_1']:,.0f}, R:R={rr_ratio:.2f}")
     
-    # Calculate quality score
+    # Log target details
+    logger.info(f"[V3 Setup] Direction={direction}, Entry=${current_price:,.0f}")
+    logger.info(f"[V3 Setup] T1=${target_info['target_1']:,.0f} ({target_info.get('target_1_type', 'N/A')}), "
+               f"T2=${target_info['target_2']:,.0f} ({target_info.get('target_2_type', 'N/A')})")
+    logger.info(f"[V3 Setup] Clusters analyzed: {target_info.get('clusters_analyzed', 0)}, "
+               f"Valid targets: {has_valid_targets}, R:R: {rr_ratio:.2f}")
+    
+    # Calculate quality score - PENALIZE heavily if blocked
     quality_score = 50  # Base score
     
-    # Bonus for cluster-based targets (more reliable than percentage)
-    if target_info.get("targets_from_clusters"):
-        quality_score += 10
-    
-    if whale_direction and ((direction == "LONG" and whale_direction == "BUY") or 
-                            (direction == "SHORT" and whale_direction == "SELL")):
-        quality_score += 15
-    if market_regime in ["TREND", "EXPANSION"]:
-        quality_score += 10
-    if rr_ratio >= 1.5:
-        quality_score += 15
-    elif rr_ratio >= 1.0:
-        quality_score += 10
-    elif rr_ratio < MIN_RR_THRESHOLD:
-        quality_score -= 20  # Penalty for low R:R
-    if event.get("strength", 0) >= 70:
-        quality_score += 10
+    if is_blocked:
+        quality_score = 20  # Very low quality if blocked
+    else:
+        # Bonus for cluster-based targets
+        if target_info.get("targets_from_clusters"):
+            quality_score += 15
+        
+        if whale_direction and ((direction == "LONG" and whale_direction == "BUY") or 
+                                (direction == "SHORT" and whale_direction == "SELL")):
+            quality_score += 15
+        if market_regime in ["TREND", "EXPANSION"]:
+            quality_score += 10
+        if rr_ratio >= 1.5:
+            quality_score += 15
+        elif rr_ratio >= 1.0:
+            quality_score += 10
+        elif rr_ratio >= 0.7:
+            quality_score += 5
+        if event.get("strength", 0) >= 70:
+            quality_score += 10
     
     quality_score = max(0, min(100, quality_score))
     
@@ -9442,6 +9532,8 @@ async def create_setup_event(
         target_2_cluster=target_info.get("target_2_cluster"),
         targets_from_clusters=target_info.get("targets_from_clusters", False),
         clusters_analyzed=target_info.get("clusters_analyzed", 0),
+        has_valid_targets=target_info.get("has_valid_targets", True),
+        target_block_reason=block_reason,
         risk_reward_ratio=round(rr_ratio, 2),
         market_regime=market_regime,
         market_bias=market_bias,
