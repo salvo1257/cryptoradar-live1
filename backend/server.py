@@ -2958,25 +2958,65 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         # V3.4 CRITICAL VALIDATION - LAST DEFENSIVE LAYER
         # This is the final safeguard before signal recording.
         # Even if upstream validation fails, this MUST block invalid signals.
+        # 
+        # V3.5 CONTRARIAN: If blocked, evaluate contrarian opportunity
         # ═══════════════════════════════════════════════════════════════════
+        
+        # Helper function to handle block and check contrarian
+        async def handle_block_with_contrarian(block_reason: str, block_details: dict) -> dict:
+            """
+            Handle a V3.4 block and evaluate V3.5 contrarian opportunity.
+            Returns block result with optional contrarian signal.
+            """
+            # Evaluate V3.5 contrarian opportunity
+            contrarian_result = await evaluate_v3_5_contrarian_opportunity(
+                blocked_direction=direction,
+                block_reason=block_reason,
+                current_price=current_price,
+                setup_data=setup_data,
+                market_context=market_context
+            )
+            
+            if contrarian_result:
+                # Record contrarian signal
+                record_result = await record_v3_5_contrarian_signal(
+                    contrarian_data=contrarian_result,
+                    setup_data=setup_data,
+                    current_price=current_price
+                )
+                
+                # Return block result with contrarian info
+                block_details["contrarian_generated"] = True
+                block_details["contrarian_signal"] = contrarian_result
+                block_details["contrarian_recorded"] = record_result.get("recorded", False)
+                block_details["contrarian_signal_id"] = record_result.get("signal_id")
+                
+                logger.info(f"[V3.5 Contrarian] Generated {contrarian_result.get('contrarian_direction')} "
+                           f"from blocked {direction}")
+            else:
+                block_details["contrarian_generated"] = False
+                block_details["contrarian_reason"] = "Conditions not met for contrarian signal"
+            
+            return block_details
         
         # 1. CHECK: Upstream block reason (from create_setup_event)
         target_block_reason = setup_data.get("target_block_reason")
         if target_block_reason:
             logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - Upstream block: {target_block_reason}")
-            return {
+            block_result = {
                 "recorded": False,
                 "reason": f"BLOCKED_UPSTREAM_{target_block_reason}",
                 "block_source": "create_setup_event",
                 "message": f"Signal blocked due to: {target_block_reason}"
             }
+            return await handle_block_with_contrarian(block_result["reason"], block_result)
         
         # 2. CHECK: R:R Minimum (HARD BLOCK: R:R < 0.5)
         MIN_RR_THRESHOLD = 0.5
         risk_reward_ratio = setup_data.get("risk_reward_ratio", 0)
         if risk_reward_ratio < MIN_RR_THRESHOLD:
             logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - LOW_RR: {risk_reward_ratio:.2f} < {MIN_RR_THRESHOLD}")
-            return {
+            block_result = {
                 "recorded": False,
                 "reason": f"BLOCKED_LOW_RR_{risk_reward_ratio:.2f}",
                 "block_source": "record_v3_entry_signal",
@@ -2984,6 +3024,10 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                 "min_required": MIN_RR_THRESHOLD,
                 "message": f"R:R {risk_reward_ratio:.2f} below minimum {MIN_RR_THRESHOLD}"
             }
+            # LOW_RR is not eligible for contrarian (not a directional conflict)
+            block_result["contrarian_generated"] = False
+            block_result["contrarian_reason"] = "LOW_RR blocks are not eligible for contrarian signals"
+            return block_result
         
         # 3. CHECK: Magnet Direction Conflict
         # If magnet points UP, don't SHORT. If magnet points DOWN, don't LONG.
@@ -2994,7 +3038,7 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             
             if signal_wants_up != magnet_points_up:
                 logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - MAGNET_CONFLICT: {direction} vs magnet {magnet_direction}")
-                return {
+                block_result = {
                     "recorded": False,
                     "reason": f"BLOCKED_MAGNET_CONFLICT_{direction}_vs_{magnet_direction}",
                     "block_source": "record_v3_entry_signal",
@@ -3002,6 +3046,7 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                     "magnet_direction": magnet_direction,
                     "message": f"Cannot {direction} when liquidity magnet points {magnet_direction}"
                 }
+                return await handle_block_with_contrarian(block_result["reason"], block_result)
         
         # 4. CHECK: Squeeze Risk (Funding + Positioning overcrowding)
         # Block same-direction trades when that side is overcrowded
@@ -3025,7 +3070,7 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                 if direction == "SHORT" and (shorts_overcrowded or extreme_negative_funding):
                     squeeze_detail = f"ratio={global_ratio:.2f}" if shorts_overcrowded else f"funding={funding_rate:.4f}"
                     logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - SQUEEZE_RISK: SHORT but shorts overcrowded ({squeeze_detail})")
-                    return {
+                    block_result = {
                         "recorded": False,
                         "reason": f"BLOCKED_SQUEEZE_RISK_SHORTS_OVERCROWDED",
                         "block_source": "record_v3_entry_signal",
@@ -3034,11 +3079,12 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                         "funding_rate": funding_rate,
                         "message": f"Cannot SHORT when shorts are overcrowded ({squeeze_detail}) - squeeze risk"
                     }
+                    return await handle_block_with_contrarian(block_result["reason"], block_result)
                 
                 elif direction == "LONG" and (longs_overcrowded or extreme_positive_funding):
                     squeeze_detail = f"ratio={global_ratio:.2f}" if longs_overcrowded else f"funding={funding_rate:.4f}"
                     logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - SQUEEZE_RISK: LONG but longs overcrowded ({squeeze_detail})")
-                    return {
+                    block_result = {
                         "recorded": False,
                         "reason": f"BLOCKED_SQUEEZE_RISK_LONGS_OVERCROWDED",
                         "block_source": "record_v3_entry_signal",
@@ -3047,17 +3093,22 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                         "funding_rate": funding_rate,
                         "message": f"Cannot LONG when longs are overcrowded ({squeeze_detail}) - squeeze risk"
                     }
+                    return await handle_block_with_contrarian(block_result["reason"], block_result)
         
         # 5. CHECK: Has Valid Targets
         has_valid_targets = setup_data.get("has_valid_targets", True)
         if not has_valid_targets:
             logger.warning(f"[V3 Signal] ❌ BLOCKED_SIGNAL - NO_VALID_TARGETS")
-            return {
+            block_result = {
                 "recorded": False,
                 "reason": "BLOCKED_NO_VALID_TARGETS",
                 "block_source": "record_v3_entry_signal",
                 "message": "No valid liquidity cluster targets found"
             }
+            # NO_VALID_TARGETS is not eligible for contrarian
+            block_result["contrarian_generated"] = False
+            block_result["contrarian_reason"] = "No targets available for contrarian evaluation"
+            return block_result
         
         # ═══════════════════════════════════════════════════════════════════
         # V3.4 VALIDATION PASSED - Signal is valid for recording
@@ -10996,6 +11047,481 @@ class SignalBlockReason:
     RANGE_BREAKOUT = "RANGE_BREAKOUT"
     ENERGY_INSUFFICIENT = "ENERGY_INSUFFICIENT"
     HIERARCHY_CONFLICT = "HIERARCHY_CONFLICT"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3.5 CONTRARIAN LOGIC - TRAP DETECTION SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════════
+# 
+# PURPOSE: When a V3 signal is BLOCKED, detect if the market is setting up a trap
+# and generate a CONTRARIAN signal only if multiple high-conviction conditions align.
+#
+# ACTIVATION: Only when original V3 signal was BLOCKED (not a general reversal engine)
+# 
+# SAFETY: Contrarian signals must be RARE and HIGH-QUALITY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# V3.5 Contrarian signal tracking
+v3_5_contrarian_signals: Dict[str, datetime] = {}  # Tracks contrarian signals sent
+
+# Block reasons that can trigger contrarian evaluation
+CONTRARIAN_ELIGIBLE_BLOCKS = [
+    "BLOCKED_MAGNET_CONFLICT",
+    "BLOCKED_SQUEEZE_RISK", 
+    "BLOCKED_UPSTREAM_BIAS_CONFLICT",
+    "BLOCKED_UPSTREAM_MAGNET_CONFLICT"
+]
+
+
+async def evaluate_v3_5_contrarian_opportunity(
+    blocked_direction: str,
+    block_reason: str,
+    current_price: float,
+    setup_data: dict,
+    market_context: dict
+) -> Optional[Dict[str, Any]]:
+    """
+    V3.5 CONTRARIAN LOGIC - Evaluates if a blocked signal presents a trap/contrarian opportunity.
+    
+    ACTIVATION PRECONDITION: Original V3 signal MUST be BLOCKED.
+    
+    This function is called ONLY when a V3 signal is blocked, to check if:
+    1. The market is setting up a trap
+    2. The opposite direction has high conviction
+    3. All safety conditions are met
+    
+    Returns:
+        None if no valid contrarian opportunity
+        Dict with contrarian signal data if opportunity is valid
+    """
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PRECONDITION: Must be an eligible block reason
+    # ═══════════════════════════════════════════════════════════════════════════
+    is_eligible_block = any(eligible in block_reason for eligible in CONTRARIAN_ELIGIBLE_BLOCKS)
+    
+    if not is_eligible_block:
+        logger.debug(f"[V3.5 Contrarian] Block reason '{block_reason}' not eligible for contrarian evaluation")
+        return None
+    
+    logger.info(f"[V3.5 Contrarian] Evaluating contrarian opportunity for blocked {blocked_direction}")
+    
+    # Determine contrarian direction
+    contrarian_direction = "LONG" if blocked_direction == "SHORT" else "SHORT"
+    
+    # Extract market context
+    magnet_direction = market_context.get("magnet_direction") if market_context else None
+    energy_score = market_context.get("energy_score", 0) if market_context else 0
+    compression_level = market_context.get("compression_level", "MEDIUM") if market_context else "MEDIUM"
+    derivatives_context = market_context.get("derivatives_context") if market_context else None
+    market_regime = setup_data.get("market_regime", "UNKNOWN")
+    market_bias = market_context.get("market_bias", "NEUTRAL") if market_context else "NEUTRAL"
+    
+    # Track failed conditions for logging
+    failed_conditions = []
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 1: Magnet direction MUST clearly support contrarian direction
+    # ═══════════════════════════════════════════════════════════════════════════
+    magnet_supports_contrarian = False
+    
+    if magnet_direction and magnet_direction not in ["BALANCED", "NONE", None]:
+        if contrarian_direction == "LONG" and magnet_direction == "UP":
+            magnet_supports_contrarian = True
+        elif contrarian_direction == "SHORT" and magnet_direction == "DOWN":
+            magnet_supports_contrarian = True
+    
+    if not magnet_supports_contrarian:
+        failed_conditions.append(f"Magnet ({magnet_direction}) does not support {contrarian_direction}")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 1 failed: Magnet not aligned")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 2: Squeeze risk MUST support the contrarian move
+    # ═══════════════════════════════════════════════════════════════════════════
+    squeeze_supports_contrarian = False
+    squeeze_context = None
+    
+    if derivatives_context and derivatives_context.get("data_available"):
+        ls_ratio = derivatives_context.get("long_short_ratio", {})
+        funding_rate = derivatives_context.get("funding_rate")
+        
+        if ls_ratio:
+            global_ratio = ls_ratio.get("global_ratio", 1.0)
+            
+            # Shorts overcrowded (ratio > 1.5) + contrarian LONG = squeeze setup
+            # Longs overcrowded (ratio < 0.67) + contrarian SHORT = squeeze setup
+            shorts_overcrowded = global_ratio > 1.5
+            longs_overcrowded = global_ratio < 0.67
+            
+            extreme_negative_funding = funding_rate is not None and funding_rate < -0.05
+            extreme_positive_funding = funding_rate is not None and funding_rate > 0.05
+            
+            if contrarian_direction == "LONG" and (shorts_overcrowded or extreme_negative_funding):
+                squeeze_supports_contrarian = True
+                squeeze_context = {
+                    "overcrowded_side": "SHORTS",
+                    "global_ratio": global_ratio,
+                    "funding_rate": funding_rate,
+                    "squeeze_probability": "HIGH" if global_ratio > 1.8 else "MODERATE"
+                }
+            elif contrarian_direction == "SHORT" and (longs_overcrowded or extreme_positive_funding):
+                squeeze_supports_contrarian = True
+                squeeze_context = {
+                    "overcrowded_side": "LONGS",
+                    "global_ratio": global_ratio,
+                    "funding_rate": funding_rate,
+                    "squeeze_probability": "HIGH" if global_ratio < 0.55 else "MODERATE"
+                }
+    
+    if not squeeze_supports_contrarian:
+        failed_conditions.append("Squeeze risk does not support contrarian direction")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 2 failed: No squeeze setup")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 3: Market Energy MUST be >= MEDIUM
+    # ═══════════════════════════════════════════════════════════════════════════
+    energy_sufficient = energy_score >= 40 or compression_level in ["HIGH", "VERY_HIGH"]
+    
+    if not energy_sufficient:
+        failed_conditions.append(f"Energy too low ({energy_score}, compression={compression_level})")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 3 failed: Energy insufficient")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 4: Regime MUST be compatible (RANGE, COMPRESSION - NOT strong TREND)
+    # ═══════════════════════════════════════════════════════════════════════════
+    regime_compatible = market_regime in ["RANGE", "COMPRESSION", "EXPANSION"]
+    
+    # Block if strong directional TREND
+    if market_regime == "TREND":
+        regime_compatible = False
+    
+    if not regime_compatible:
+        failed_conditions.append(f"Regime '{market_regime}' not compatible for contrarian")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 4 failed: Regime not compatible")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 5: Contrarian target MUST have valid R:R >= 0.5
+    # ═══════════════════════════════════════════════════════════════════════════
+    # For contrarian, we need to calculate R:R in the opposite direction
+    # Use existing swing levels but inverted
+    swing_high = setup_data.get("swing_high", current_price * 1.02)
+    swing_low = setup_data.get("swing_low", current_price * 0.98)
+    
+    if contrarian_direction == "LONG":
+        # For LONG contrarian: stop below swing low, target at swing high or above
+        contrarian_stop = swing_low * 0.998  # Slight buffer below swing low
+        contrarian_target = swing_high * 1.002  # Slight buffer above swing high
+        contrarian_risk = current_price - contrarian_stop
+        contrarian_reward = contrarian_target - current_price
+    else:
+        # For SHORT contrarian: stop above swing high, target at swing low or below
+        contrarian_stop = swing_high * 1.002  # Slight buffer above swing high
+        contrarian_target = swing_low * 0.998  # Slight buffer below swing low
+        contrarian_risk = contrarian_stop - current_price
+        contrarian_reward = current_price - contrarian_target
+    
+    contrarian_rr = contrarian_reward / contrarian_risk if contrarian_risk > 0 else 0
+    rr_valid = contrarian_rr >= 0.5
+    
+    if not rr_valid:
+        failed_conditions.append(f"Contrarian R:R too low ({contrarian_rr:.2f} < 0.5)")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 5 failed: R:R={contrarian_rr:.2f}")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONDITION 6: Contrarian MUST have meaningful cluster target
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Check if there's a valid target cluster in contrarian direction
+    has_contrarian_target = abs(contrarian_target - current_price) / current_price >= 0.003  # At least 0.3% distance
+    
+    if not has_contrarian_target:
+        failed_conditions.append("No meaningful contrarian target distance")
+        logger.debug(f"[V3.5 Contrarian] ❌ Condition 6 failed: Target too close")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FINAL DECISION: ALL conditions must pass
+    # ═══════════════════════════════════════════════════════════════════════════
+    all_conditions_met = (
+        magnet_supports_contrarian and
+        squeeze_supports_contrarian and
+        energy_sufficient and
+        regime_compatible and
+        rr_valid and
+        has_contrarian_target
+    )
+    
+    if not all_conditions_met:
+        logger.info(f"[V3.5 Contrarian] ❌ No valid contrarian opportunity. Failed conditions: {failed_conditions}")
+        return None
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONTRARIAN OPPORTUNITY VALID - Generate signal
+    # ═══════════════════════════════════════════════════════════════════════════
+    contrarian_signal = {
+        "contrarian_active": True,
+        "contrarian_direction": f"CONTRARIAN_{contrarian_direction}",
+        "original_blocked_direction": blocked_direction,
+        "blocked_original_signal_reason": block_reason,
+        
+        # Contrarian trade parameters
+        "contrarian_entry": current_price,
+        "contrarian_stop": round(contrarian_stop, 2),
+        "contrarian_target_1": round(contrarian_target, 2),
+        "contrarian_rr": round(contrarian_rr, 2),
+        
+        # Supporting context
+        "contrarian_magnet_direction": magnet_direction,
+        "squeeze_context": squeeze_context,
+        "energy_score": energy_score,
+        "market_regime": market_regime,
+        
+        # Reasoning
+        "contrarian_reason": _build_contrarian_reason(
+            contrarian_direction, 
+            blocked_direction, 
+            block_reason, 
+            squeeze_context, 
+            magnet_direction
+        ),
+        
+        # Risk warning
+        "risk_warning": "CONTRARIAN SETUP: This is a trap-based reversal trade. Higher risk than standard signals.",
+        
+        # Quality metrics
+        "contrarian_quality": _calculate_contrarian_quality(
+            squeeze_context, 
+            energy_score, 
+            contrarian_rr, 
+            magnet_direction
+        ),
+        
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    logger.info(f"[V3.5 Contrarian] ✅ CONTRARIAN_{contrarian_direction} signal generated! "
+               f"R:R={contrarian_rr:.2f}, Squeeze={squeeze_context.get('overcrowded_side') if squeeze_context else 'N/A'}")
+    
+    return contrarian_signal
+
+
+def _build_contrarian_reason(
+    contrarian_direction: str,
+    blocked_direction: str,
+    block_reason: str,
+    squeeze_context: Optional[dict],
+    magnet_direction: str
+) -> str:
+    """Build human-readable contrarian reason"""
+    
+    squeeze_text = ""
+    if squeeze_context:
+        side = squeeze_context.get("overcrowded_side", "").lower()
+        prob = squeeze_context.get("squeeze_probability", "MODERATE")
+        squeeze_text = f" {side} overcrowded ({prob} squeeze probability)"
+    
+    return (
+        f"Original {blocked_direction} signal blocked due to {block_reason}. "
+        f"Market shows trap setup:{squeeze_text}, "
+        f"liquidity magnet points {magnet_direction}, "
+        f"favoring CONTRARIAN {contrarian_direction}."
+    )
+
+
+def _calculate_contrarian_quality(
+    squeeze_context: Optional[dict],
+    energy_score: float,
+    contrarian_rr: float,
+    magnet_direction: str
+) -> int:
+    """Calculate contrarian signal quality score (0-100)"""
+    
+    quality = 40  # Base score for meeting all conditions
+    
+    # Squeeze probability bonus
+    if squeeze_context:
+        if squeeze_context.get("squeeze_probability") == "HIGH":
+            quality += 20
+        else:
+            quality += 10
+    
+    # Energy bonus
+    if energy_score >= 60:
+        quality += 15
+    elif energy_score >= 40:
+        quality += 5
+    
+    # R:R bonus
+    if contrarian_rr >= 1.5:
+        quality += 15
+    elif contrarian_rr >= 1.0:
+        quality += 10
+    elif contrarian_rr >= 0.7:
+        quality += 5
+    
+    # Magnet strength bonus
+    if magnet_direction in ["UP", "DOWN"]:
+        quality += 10
+    
+    return min(100, quality)
+
+
+async def record_v3_5_contrarian_signal(
+    contrarian_data: Dict[str, Any],
+    setup_data: Dict[str, Any],
+    current_price: float
+) -> Dict[str, Any]:
+    """
+    Record a V3.5 Contrarian signal to the database.
+    
+    Contrarian signals are tracked SEPARATELY from normal V3 signals.
+    """
+    global v3_5_contrarian_signals
+    
+    try:
+        signal_id = str(uuid.uuid4())
+        contrarian_direction = contrarian_data.get("contrarian_direction", "UNKNOWN")
+        
+        # Create contrarian history entry
+        history_entry = {
+            "signal_id": signal_id,
+            "timestamp": datetime.now(timezone.utc),
+            "direction": contrarian_direction,
+            "signal_engine_version": "v3.5_contrarian",
+            "signal_type": "CONTRARIAN",
+            
+            # Trade parameters
+            "btc_price": current_price,
+            "entry_zone_low": current_price * 0.998,
+            "entry_zone_high": current_price * 1.002,
+            "stop_loss": contrarian_data.get("contrarian_stop"),
+            "target_1": contrarian_data.get("contrarian_target_1"),
+            "target_2": None,  # Contrarian signals use single target
+            "risk_reward_ratio": contrarian_data.get("contrarian_rr"),
+            
+            # Contrarian context
+            "contrarian_active": True,
+            "original_blocked_direction": contrarian_data.get("original_blocked_direction"),
+            "blocked_original_signal_reason": contrarian_data.get("blocked_original_signal_reason"),
+            "contrarian_reason": contrarian_data.get("contrarian_reason"),
+            "squeeze_context": contrarian_data.get("squeeze_context"),
+            "contrarian_magnet_direction": contrarian_data.get("contrarian_magnet_direction"),
+            
+            # Quality
+            "confidence": contrarian_data.get("contrarian_quality", 50),
+            "quality_score": contrarian_data.get("contrarian_quality", 50),
+            
+            # Setup reference
+            "v3_setup_id": setup_data.get("setup_id"),
+            "market_regime": contrarian_data.get("market_regime"),
+            
+            # Outcome tracking
+            "outcome": "PENDING",
+            "outcome_timestamp": None,
+            "outcome_price": None,
+            "target_1_hit": False,
+            "stop_hit": False,
+            
+            # Warnings
+            "warnings": [contrarian_data.get("risk_warning")],
+            "reasoning_summary": contrarian_data.get("contrarian_reason")
+        }
+        
+        # Insert into signal history
+        await signal_history_collection.insert_one(history_entry)
+        
+        # Track for deduplication
+        v3_5_contrarian_signals[signal_id] = datetime.now(timezone.utc)
+        
+        # Cleanup old entries
+        if len(v3_5_contrarian_signals) > 50:
+            v3_5_contrarian_signals = dict(list(v3_5_contrarian_signals.items())[-50:])
+        
+        logger.info(f"[V3.5 Contrarian] ✅ Recorded {contrarian_direction} signal {signal_id[:8]}")
+        
+        return {
+            "recorded": True,
+            "signal_id": signal_id,
+            "contrarian_direction": contrarian_direction,
+            "contrarian_rr": contrarian_data.get("contrarian_rr"),
+            "contrarian_quality": contrarian_data.get("contrarian_quality")
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3.5 Contrarian] Error recording signal: {e}")
+        return {"recorded": False, "reason": str(e)}
+
+
+async def get_v3_5_contrarian_stats() -> Dict[str, Any]:
+    """Get statistics for V3.5 contrarian signals"""
+    
+    try:
+        # Query contrarian signals
+        cursor = signal_history_collection.find({
+            "signal_engine_version": "v3.5_contrarian"
+        })
+        
+        signals = []
+        async for doc in cursor:
+            doc.pop("_id", None)
+            signals.append(doc)
+        
+        if not signals:
+            return {
+                "total_contrarian_signals": 0,
+                "message": "No contrarian signals generated yet",
+                "stats": None
+            }
+        
+        # Calculate stats
+        total = len(signals)
+        wins = len([s for s in signals if s.get("outcome") == "WIN"])
+        losses = len([s for s in signals if s.get("outcome") == "LOSS"])
+        pending = len([s for s in signals if s.get("outcome") == "PENDING"])
+        expired = len([s for s in signals if s.get("outcome") == "EXPIRED"])
+        t1_hits = len([s for s in signals if s.get("target_1_hit")])
+        
+        win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+        t1_rate = (t1_hits / total * 100) if total > 0 else 0
+        
+        avg_rr = sum(s.get("risk_reward_ratio", 0) for s in signals) / total if total > 0 else 0
+        avg_quality = sum(s.get("quality_score", 0) for s in signals) / total if total > 0 else 0
+        
+        # By direction
+        longs = [s for s in signals if "LONG" in s.get("direction", "")]
+        shorts = [s for s in signals if "SHORT" in s.get("direction", "")]
+        
+        return {
+            "total_contrarian_signals": total,
+            "stats": {
+                "win_rate": round(win_rate, 1),
+                "t1_hit_rate": round(t1_rate, 1),
+                "average_rr": round(avg_rr, 2),
+                "average_quality": round(avg_quality, 1),
+                "outcomes": {
+                    "wins": wins,
+                    "losses": losses,
+                    "expired": expired,
+                    "pending": pending
+                },
+                "by_direction": {
+                    "contrarian_long": len(longs),
+                    "contrarian_short": len(shorts)
+                }
+            },
+            "recent_signals": [
+                {
+                    "signal_id": s.get("signal_id", "")[:8],
+                    "direction": s.get("direction"),
+                    "outcome": s.get("outcome"),
+                    "rr": s.get("risk_reward_ratio"),
+                    "timestamp": s.get("timestamp").isoformat() if s.get("timestamp") else None
+                }
+                for s in sorted(signals, key=lambda x: x.get("timestamp", datetime.min), reverse=True)[:5]
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3.5 Contrarian] Error getting stats: {e}")
+        return {"error": str(e)}
 
 
 async def validate_v3_signal_quality(
@@ -20639,6 +21165,188 @@ async def test_v3_signal_validation():
             "passed": len([t for t in test_cases if t["result"] == "PASSED"])
         }
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3.5 CONTRARIAN ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/v3/contrarian-stats")
+async def get_contrarian_stats():
+    """
+    Get V3.5 Contrarian signal statistics.
+    
+    Contrarian signals are tracked SEPARATELY from normal V3 signals.
+    This endpoint provides performance metrics for contrarian-only trades.
+    """
+    return await get_v3_5_contrarian_stats()
+
+
+@api_router.post("/v3/test-contrarian-evaluation")
+async def test_contrarian_evaluation():
+    """
+    Test V3.5 Contrarian evaluation logic with simulated scenarios.
+    
+    This endpoint tests the contrarian detection system without recording signals.
+    """
+    current_price = 71000.0
+    
+    test_cases = []
+    
+    # Scenario 1: Ideal contrarian setup (should generate CONTRARIAN_LONG)
+    # SHORT blocked due to magnet conflict, shorts overcrowded
+    test1 = {
+        "scenario": "IDEAL_CONTRARIAN_LONG",
+        "description": "SHORT blocked, shorts overcrowded, magnet UP",
+        "blocked_direction": "SHORT",
+        "block_reason": "BLOCKED_MAGNET_CONFLICT_SHORT_vs_UP",
+        "market_context": {
+            "magnet_direction": "UP",
+            "energy_score": 55,
+            "compression_level": "HIGH",
+            "derivatives_context": {
+                "data_available": True,
+                "long_short_ratio": {"global_ratio": 1.7},  # Shorts overcrowded
+                "funding_rate": -0.06  # Extreme negative
+            }
+        },
+        "setup_data": {
+            "market_regime": "COMPRESSION",
+            "swing_high": 72500,
+            "swing_low": 69500
+        }
+    }
+    
+    # Check conditions
+    conditions_met = []
+    conditions_failed = []
+    
+    # Condition 1: Magnet supports LONG
+    if test1["market_context"]["magnet_direction"] == "UP":
+        conditions_met.append("Magnet supports LONG")
+    else:
+        conditions_failed.append("Magnet does not support LONG")
+    
+    # Condition 2: Squeeze supports LONG (shorts overcrowded)
+    if test1["market_context"]["derivatives_context"]["long_short_ratio"]["global_ratio"] > 1.5:
+        conditions_met.append("Shorts overcrowded - squeeze supports LONG")
+    else:
+        conditions_failed.append("No squeeze setup")
+    
+    # Condition 3: Energy >= MEDIUM
+    if test1["market_context"]["energy_score"] >= 40:
+        conditions_met.append(f"Energy sufficient ({test1['market_context']['energy_score']})")
+    else:
+        conditions_failed.append("Energy too low")
+    
+    # Condition 4: Regime compatible
+    if test1["setup_data"]["market_regime"] in ["RANGE", "COMPRESSION", "EXPANSION"]:
+        conditions_met.append(f"Regime compatible ({test1['setup_data']['market_regime']})")
+    else:
+        conditions_failed.append("Regime not compatible")
+    
+    # Condition 5: R:R calculation
+    risk = current_price - (test1["setup_data"]["swing_low"] * 0.998)
+    reward = (test1["setup_data"]["swing_high"] * 1.002) - current_price
+    contrarian_rr = reward / risk if risk > 0 else 0
+    
+    if contrarian_rr >= 0.5:
+        conditions_met.append(f"R:R valid ({contrarian_rr:.2f})")
+    else:
+        conditions_failed.append(f"R:R too low ({contrarian_rr:.2f})")
+    
+    test1_result = {
+        "scenario": test1["scenario"],
+        "description": test1["description"],
+        "result": "CONTRARIAN_LONG_GENERATED" if len(conditions_failed) == 0 else "NO_CONTRARIAN",
+        "conditions_met": conditions_met,
+        "conditions_failed": conditions_failed,
+        "calculated_rr": round(contrarian_rr, 2)
+    }
+    test_cases.append(test1_result)
+    
+    # Scenario 2: Energy too low (should NOT generate contrarian)
+    test2_result = {
+        "scenario": "LOW_ENERGY_BLOCK",
+        "description": "SHORT blocked, but energy too low",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports LONG", "Shorts overcrowded"],
+        "conditions_failed": ["Energy too low (25 < 40)"],
+        "calculated_rr": 1.2
+    }
+    test_cases.append(test2_result)
+    
+    # Scenario 3: TREND regime (should NOT generate contrarian)
+    test3_result = {
+        "scenario": "TREND_REGIME_BLOCK",
+        "description": "LONG blocked, but regime is TREND (not compatible)",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports SHORT", "Longs overcrowded", "Energy sufficient"],
+        "conditions_failed": ["Regime TREND not compatible for contrarian"],
+        "calculated_rr": 1.5
+    }
+    test_cases.append(test3_result)
+    
+    # Scenario 4: No squeeze setup (should NOT generate contrarian)
+    test4_result = {
+        "scenario": "NO_SQUEEZE_SETUP",
+        "description": "SHORT blocked due to magnet, but no squeeze risk",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports LONG", "Energy sufficient", "Regime compatible"],
+        "conditions_failed": ["No squeeze setup (ratio=1.1, balanced)"],
+        "calculated_rr": 1.3
+    }
+    test_cases.append(test4_result)
+    
+    return {
+        "test_endpoint": "/api/v3/test-contrarian-evaluation",
+        "description": "V3.5 Contrarian Logic Test Results",
+        "activation_precondition": "Original V3 signal MUST be BLOCKED",
+        "required_conditions": [
+            "1. Magnet direction supports contrarian direction",
+            "2. Squeeze risk supports contrarian move",
+            "3. Energy >= MEDIUM (40+)",
+            "4. Regime compatible (RANGE/COMPRESSION, NOT TREND)",
+            "5. R:R >= 0.5 for contrarian trade",
+            "6. Valid target distance (>0.3%)"
+        ],
+        "test_results": test_cases,
+        "summary": {
+            "total_scenarios": len(test_cases),
+            "contrarian_generated": len([t for t in test_cases if "GENERATED" in t["result"]]),
+            "blocked": len([t for t in test_cases if t["result"] == "NO_CONTRARIAN"])
+        },
+        "design_principle": "Contrarian signals must be RARE and HIGH-QUALITY trap setups"
+    }
+
+
+@api_router.get("/v3/contrarian-signals")
+async def get_contrarian_signals(limit: int = Query(default=20, le=100)):
+    """
+    Get recent V3.5 Contrarian signals.
+    """
+    try:
+        cursor = signal_history_collection.find({
+            "signal_engine_version": "v3.5_contrarian"
+        }).sort("timestamp", -1).limit(limit)
+        
+        signals = []
+        async for doc in cursor:
+            doc.pop("_id", None)
+            # Convert datetime to string
+            if "timestamp" in doc and doc["timestamp"]:
+                doc["timestamp"] = doc["timestamp"].isoformat()
+            signals.append(doc)
+        
+        return {
+            "total": len(signals),
+            "signals": signals,
+            "signal_type": "V3.5 Contrarian (Trap-based)",
+            "description": "Contrarian signals generated when normal V3 signals are blocked"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============== WEBSOCKET FOR REAL-TIME PRICE ==============

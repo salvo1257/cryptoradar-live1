@@ -1,5 +1,42 @@
 # CryptoRadar Changelog
 
+## v3.5.0 - 2026-04-12
+
+### V3.5 Contrarian Logic (Trap Detection System)
+
+**Purpose:** When a V3 signal is BLOCKED, detect if the market is setting up a trap and generate a CONTRARIAN signal only if multiple high-conviction conditions align.
+
+#### Activation Precondition
+- ONLY activates when original V3 signal is BLOCKED
+- Eligible blocks: MAGNET_CONFLICT, SQUEEZE_RISK, UPSTREAM_BIAS_CONFLICT
+- NOT eligible: LOW_RR, NO_VALID_TARGETS
+
+#### Required Conditions (ALL must be true)
+1. Magnet direction supports contrarian direction
+2. Squeeze risk supports contrarian move (overcrowded positioning)
+3. Market Energy >= MEDIUM
+4. Regime compatible (RANGE/COMPRESSION, NOT TREND)
+5. Contrarian R:R >= 0.5
+6. Valid target distance (>= 0.3%)
+
+#### New Functions
+- `evaluate_v3_5_contrarian_opportunity()` - Evaluates contrarian conditions
+- `record_v3_5_contrarian_signal()` - Records contrarian signals separately
+- `get_v3_5_contrarian_stats()` - Returns contrarian performance stats
+
+#### New Endpoints
+- `GET /api/v3/contrarian-stats` - Contrarian performance statistics
+- `GET /api/v3/contrarian-signals` - List contrarian signals
+- `POST /api/v3/test-contrarian-evaluation` - Test contrarian logic
+
+#### Safety
+- 6 safety filters protect contrarian activation
+- V3.4 blocking rules are NEVER weakened
+- Contrarian signals tracked SEPARATELY from normal V3
+- Designed to be RARE (< 5% of blocks should generate contrarian)
+
+---
+
 ## v3.4.0 - 2026-04-12
 
 ### V3.4 Signal Validation System (CRITICAL FIX)

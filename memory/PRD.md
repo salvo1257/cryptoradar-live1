@@ -1,10 +1,11 @@
-# CryptoRadar v3.4.0 - Product Requirements Document
+# CryptoRadar v3.5.0 - Product Requirements Document
 **Last Updated:** 2026-04-12
 
 ## QUICK STATUS
-- **Current Version:** v3.4.0
+- **Current Version:** v3.5.0
 - **Phase:** Validation Mode (monitoring signal quality)
-- **Key Fix:** V3.4 Signal Validation System (blocks low R:R and conflicting signals)
+- **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
+- **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
 ## ✅ V3.4 SIGNAL VALIDATION SYSTEM (2026-04-12)
@@ -68,6 +69,46 @@ This is the **last defensive layer** ensuring execution integrity.
 - ✅ Existing APIs
 - ✅ Frontend display
 - ✅ Outcome tracking
+
+---
+
+## ✅ V3.5 CONTRARIAN LOGIC (2026-04-12)
+**Status:** ✅ COMPLETE
+
+### Purpose
+Trap detection system that activates ONLY when a V3 signal is BLOCKED, generating contrarian signals when market conditions indicate a high-conviction squeeze opportunity.
+
+### Activation Precondition
+- Original V3 signal MUST be BLOCKED
+- Eligible blocks: `MAGNET_CONFLICT`, `SQUEEZE_RISK`, `UPSTREAM_BIAS_CONFLICT`
+- NOT eligible: `LOW_RR`, `NO_VALID_TARGETS`
+
+### Required Conditions (ALL Must Pass)
+
+| # | Condition | Check |
+|---|-----------|-------|
+| 1 | Magnet Alignment | Magnet supports contrarian direction |
+| 2 | Squeeze Setup | Overcrowded positioning supports contrarian |
+| 3 | Energy Level | Energy >= MEDIUM (40+) |
+| 4 | Regime Compatibility | RANGE/COMPRESSION (NOT TREND) |
+| 5 | R:R Valid | Contrarian R:R >= 0.5 |
+| 6 | Target Distance | >= 0.3% from current price |
+
+### Output
+- `CONTRARIAN_LONG` or `CONTRARIAN_SHORT` signal
+- Separate tracking from normal V3 signals
+- Quality score (0-100)
+- Squeeze context details
+
+### API Endpoints
+- `GET /api/v3/contrarian-stats` - Performance statistics
+- `GET /api/v3/contrarian-signals` - List signals
+- `POST /api/v3/test-contrarian-evaluation` - Test logic
+
+### Safety
+- 6 safety filters protect activation
+- V3.4 blocking rules NEVER weakened
+- Designed to be RARE (< 5% of blocks)
 
 ---
 

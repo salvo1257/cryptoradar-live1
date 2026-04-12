@@ -530,3 +530,203 @@ Tests all validation scenarios without affecting the database:
 ---
 
 ## End of Manual
+
+---
+
+## 🔵 V3.5 Contrarian Logic (Trap Detection System)
+
+### Overview
+
+V3.5 introduces a **Contrarian Logic System** that activates ONLY when a V3 signal is BLOCKED.
+This is NOT a general reversal engine - it is a highly selective trap detection mechanism.
+
+When a normal signal is blocked due to directional conflicts (magnet, squeeze), V3.5 evaluates 
+whether the opposite direction represents a high-conviction trap/squeeze opportunity.
+
+---
+
+### 🎯 Activation Precondition
+
+V3.5 Contrarian can ONLY activate if:
+
+```
+Original V3 signal was BLOCKED
+```
+
+**Eligible Block Reasons:**
+| Block Reason | Eligible | Why |
+|--------------|----------|-----|
+| `BLOCKED_MAGNET_CONFLICT` | ✅ YES | Directional conflict |
+| `BLOCKED_SQUEEZE_RISK` | ✅ YES | Positioning conflict |
+| `BLOCKED_UPSTREAM_BIAS_CONFLICT` | ✅ YES | Directional conflict |
+| `BLOCKED_LOW_RR` | ❌ NO | Not a directional conflict |
+| `BLOCKED_NO_VALID_TARGETS` | ❌ NO | No targets available |
+
+---
+
+### 🛡️ Required Conditions (ALL Must Be True)
+
+A contrarian signal is generated ONLY if ALL conditions pass:
+
+#### 1. Magnet Direction Supports Contrarian
+
+```
+Contrarian LONG  → Magnet must be UP
+Contrarian SHORT → Magnet must be DOWN
+```
+
+#### 2. Squeeze Risk Supports Contrarian
+
+```
+Contrarian LONG  → Shorts overcrowded (ratio > 1.5) OR extreme negative funding
+Contrarian SHORT → Longs overcrowded (ratio < 0.67) OR extreme positive funding
+```
+
+#### 3. Market Energy >= MEDIUM
+
+```
+energy_score >= 40 OR compression_level in [HIGH, VERY_HIGH]
+```
+
+#### 4. Regime Compatible
+
+```
+Regime must be: RANGE, COMPRESSION, or EXPANSION
+NOT: TREND (strong directional markets don't trap easily)
+```
+
+#### 5. Valid R:R >= 0.5
+
+```
+Contrarian trade must have R:R >= 0.5
+Uses swing levels inverted from blocked signal
+```
+
+#### 6. Meaningful Target Distance
+
+```
+Target must be >= 0.3% from current price
+```
+
+---
+
+### 📊 Contrarian Signal Output
+
+If all conditions pass, V3.5 generates:
+
+```json
+{
+  "contrarian_active": true,
+  "contrarian_direction": "CONTRARIAN_LONG",
+  "original_blocked_direction": "SHORT",
+  "blocked_original_signal_reason": "BLOCKED_MAGNET_CONFLICT_SHORT_vs_UP",
+  "contrarian_entry": 71000,
+  "contrarian_stop": 69400,
+  "contrarian_target_1": 72600,
+  "contrarian_rr": 1.0,
+  "contrarian_magnet_direction": "UP",
+  "squeeze_context": {
+    "overcrowded_side": "SHORTS",
+    "global_ratio": 1.7,
+    "squeeze_probability": "MODERATE"
+  },
+  "contrarian_quality": 75,
+  "risk_warning": "CONTRARIAN SETUP: This is a trap-based reversal trade."
+}
+```
+
+---
+
+### 🚫 Safety Filters (6 Total)
+
+| Filter | Condition | If Failed |
+|--------|-----------|-----------|
+| 1. Eligible Block | Block reason must be directional | No evaluation |
+| 2. Magnet Alignment | Must support contrarian direction | NO_CONTRARIAN |
+| 3. Squeeze Setup | Must have overcrowded positioning | NO_CONTRARIAN |
+| 4. Energy Level | Must be >= MEDIUM | NO_CONTRARIAN |
+| 5. Regime Compatibility | Must NOT be TREND | NO_CONTRARIAN |
+| 6. R:R Validity | Must be >= 0.5 | NO_CONTRARIAN |
+
+---
+
+### 📈 Tracking & Statistics
+
+Contrarian signals are tracked SEPARATELY from normal V3 signals:
+
+**API Endpoints:**
+- `GET /api/v3/contrarian-stats` - Performance statistics
+- `GET /api/v3/contrarian-signals` - List of contrarian signals
+- `POST /api/v3/test-contrarian-evaluation` - Test scenarios
+
+**Tracked Metrics:**
+- Total contrarian signals
+- Win rate
+- Average R:R
+- T1 hit rate
+- By direction (CONTRARIAN_LONG vs CONTRARIAN_SHORT)
+
+---
+
+### ⚠️ Important Notes
+
+1. **Rare Signals:** Contrarian is designed to be RARE (< 5% of blocks should generate contrarian)
+2. **High Risk:** Contrarian trades are trap-based and carry higher risk
+3. **Clear Labeling:** UI and Telegram must clearly identify CONTRARIAN signals
+4. **No Weakening:** V3.4 blocking rules are NEVER bypassed or weakened
+5. **Separate Tracking:** Contrarian signals do NOT mix with normal V3 statistics
+
+---
+
+### 🔄 Decision Flow
+
+```
+Normal V3 Signal Generated
+         │
+         ▼
+    V3.4 Validation
+         │
+    ┌────┴────┐
+    │         │
+  PASSED   BLOCKED
+    │         │
+    ▼         ▼
+ Record   ┌──────────────────┐
+ Signal   │ V3.5 Contrarian  │
+          │ Evaluation       │
+          └──────────────────┘
+                  │
+         ┌───────┴───────┐
+         │               │
+    ALL CONDITIONS   ANY CONDITION
+       PASS            FAILS
+         │               │
+         ▼               ▼
+    CONTRARIAN      final_action
+     SIGNAL          = ATTENDI
+    GENERATED
+```
+
+---
+
+### 🧪 Test Scenarios
+
+Use `/api/v3/test-contrarian-evaluation` to verify logic:
+
+| Scenario | Result |
+|----------|--------|
+| Ideal setup (all conditions met) | CONTRARIAN_LONG_GENERATED |
+| Energy too low | NO_CONTRARIAN |
+| TREND regime | NO_CONTRARIAN |
+| No squeeze setup | NO_CONTRARIAN |
+
+---
+
+## Summary
+
+V3.5 Contrarian Logic provides:
+1. **Trap Detection** - Identifies when blocked signals indicate opposite opportunities
+2. **6 Safety Filters** - Ensures only high-conviction contrarian signals
+3. **Separate Tracking** - Contrarian performance isolated from normal V3
+4. **Clear Labeling** - UI clearly distinguishes contrarian from normal signals
+5. **Rare Activation** - System is designed to be highly selective
