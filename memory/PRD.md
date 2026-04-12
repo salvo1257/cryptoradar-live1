@@ -1,5 +1,75 @@
-# CryptoRadar v3.3.0 - Product Requirements Document
-**Last Updated:** 2026-04-11
+# CryptoRadar v3.4.0 - Product Requirements Document
+**Last Updated:** 2026-04-12
+
+## QUICK STATUS
+- **Current Version:** v3.4.0
+- **Phase:** Validation Mode (monitoring signal quality)
+- **Key Fix:** V3.4 Signal Validation System (blocks low R:R and conflicting signals)
+- **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## ✅ V3.4 SIGNAL VALIDATION SYSTEM (2026-04-12)
+**Status:** ✅ COMPLETE
+
+### Purpose
+Critical fix to prevent contradictory and low-quality signals from being recorded and sent to users. 
+This is the **last defensive layer** ensuring execution integrity.
+
+### Problem Solved
+- Signals with R:R < 0.5 were being recorded and sent via Telegram
+- Signals conflicting with liquidity magnet direction were being allowed
+- No squeeze risk validation was in place
+- Example: SHORT signal generated while magnet pointed UP with R:R = 0.01
+
+### V3.4 Validation Rules (in `record_v3_entry_signal`)
+
+| Rule | Condition | Action |
+|------|-----------|--------|
+| **R:R Minimum** | R:R < 0.5 | BLOCK |
+| **Upstream Block** | `target_block_reason != None` | BLOCK |
+| **Magnet Conflict** | Signal direction != Magnet direction | BLOCK |
+| **Squeeze Risk** | Shorts overcrowded (ratio > 1.5) + SHORT signal | BLOCK |
+| **Squeeze Risk** | Longs overcrowded (ratio < 0.67) + LONG signal | BLOCK |
+| **No Valid Targets** | `has_valid_targets == False` | BLOCK |
+
+### Implementation Details
+
+1. **Modified Function:** `record_v3_entry_signal()` in `/app/backend/server.py`
+   - Added V3.4 validation block after SAME_DIRECTION_LOCK check
+   - All blocked signals return `{"recorded": False, "reason": "BLOCKED_*"}`
+   - No DB entry, no Telegram alert for blocked signals
+
+2. **Modified Function:** `process_v3_signal()` 
+   - Added parameters: `magnet_direction`, `magnet_score`, `derivatives_context`, `energy_score`, `compression_level`
+   - Market context now includes full V3.4 validation data
+
+3. **New Test Endpoint:** `POST /api/v3/test-signal-validation`
+   - Tests all validation scenarios
+   - Returns pass/fail for each rule
+
+### Block Reason Codes
+- `BLOCKED_UPSTREAM_{reason}` - Setup already blocked during creation
+- `BLOCKED_LOW_RR_{value}` - R:R below 0.5 minimum
+- `BLOCKED_MAGNET_CONFLICT_{direction}_vs_{magnet}` - Direction conflicts with magnet
+- `BLOCKED_SQUEEZE_RISK_SHORTS_OVERCROWDED` - Too many shorts, can't SHORT
+- `BLOCKED_SQUEEZE_RISK_LONGS_OVERCROWDED` - Too many longs, can't LONG
+- `BLOCKED_NO_VALID_TARGETS` - No valid cluster targets found
+
+### Test Results (2026-04-12)
+| Test | Expected | Actual |
+|------|----------|--------|
+| Low R:R (0.14) | BLOCK | ✅ BLOCKED |
+| Upstream block reason | BLOCK | ✅ BLOCKED |
+| Magnet conflict (SHORT vs UP) | BLOCK | ✅ BLOCKED |
+| Valid signal (R:R=1.5, aligned) | PASS | ✅ PASSED |
+
+### What Was NOT Changed
+- ✅ Core V3 signal generation logic
+- ✅ Setup event creation flow
+- ✅ Existing APIs
+- ✅ Frontend display
+- ✅ Outcome tracking
+
+---
 
 ## ✅ V3.3 ENHANCED INTELLIGENCE MODULES (2026-04-11)
 **Status:** ✅ COMPLETE

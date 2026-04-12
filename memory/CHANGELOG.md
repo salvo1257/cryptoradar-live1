@@ -1,5 +1,48 @@
 # CryptoRadar Changelog
 
+## v3.4.0 - 2026-04-12
+
+### V3.4 Signal Validation System (CRITICAL FIX)
+
+**Problem Fixed:** Contradictory signals with low R:R were being recorded and sent to users.
+
+#### Changes in `record_v3_entry_signal()`:
+
+Added **last defensive layer** validation that blocks:
+- R:R < 0.5 → BLOCKED
+- Upstream block reason present → BLOCKED  
+- Signal direction conflicts with magnet direction → BLOCKED
+- Squeeze risk (overcrowded positioning) → BLOCKED
+- No valid cluster targets → BLOCKED
+
+#### Changes in `process_v3_signal()`:
+
+New parameters added for V3.4 validation:
+- `magnet_direction` - From LiquidityMagnet.target_direction
+- `magnet_score` - Magnet strength score
+- `derivatives_context` - Full CoinGlass derivatives data
+- `energy_score` - Market energy score
+- `compression_level` - Compression state
+
+#### New Endpoint:
+- `POST /api/v3/test-signal-validation` - Test validation rules with mock data
+
+#### Block Reason Codes:
+- `BLOCKED_UPSTREAM_{reason}`
+- `BLOCKED_LOW_RR_{value}` 
+- `BLOCKED_MAGNET_CONFLICT_{direction}_vs_{magnet}`
+- `BLOCKED_SQUEEZE_RISK_SHORTS_OVERCROWDED`
+- `BLOCKED_SQUEEZE_RISK_LONGS_OVERCROWDED`
+- `BLOCKED_NO_VALID_TARGETS`
+
+#### Impact:
+- ❌ Invalid signals are NO longer recorded to database
+- ❌ Invalid signals are NO longer sent via Telegram
+- ✅ Proper logging of blocked signals
+- ✅ Execution integrity guaranteed
+
+---
+
 ## v3.3.0 - 2026-04-11
 
 ### V3 Cluster Target Validation Engine
