@@ -15573,7 +15573,10 @@ async def get_market_bias(interval: str = Query(default="4h"), lang: str = Query
     candles = await fetch_kraken_ohlc(kraken_interval)
     aggregated_orderbook = await get_aggregated_orderbook()
     
-    bias = calculate_market_bias(candles, aggregated_orderbook, lang)
+    # V3.3: Fetch derivatives context for enhanced bias analysis
+    derivatives_context = await fetch_coinglass_derivatives_context()
+    
+    bias = calculate_market_bias(candles, aggregated_orderbook, derivatives_context, lang)
     return bias
 
 @api_router.get("/support-resistance")
