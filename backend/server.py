@@ -11178,12 +11178,24 @@ async def evaluate_v3_5_contrarian_opportunity(
         logger.debug(f"[V3.5 Contrarian] ❌ Condition 2 failed: No squeeze setup")
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # CONDITION 3: Market Energy MUST be >= MEDIUM
+    # CONDITION 3: Market Energy - STRICTER REQUIREMENT
+    # V3.5 Adjustment: MEDIUM only allowed with HIGH squeeze probability
+    #                  Otherwise require HIGH energy
     # ═══════════════════════════════════════════════════════════════════════════
-    energy_sufficient = energy_score >= 40 or compression_level in ["HIGH", "VERY_HIGH"]
+    squeeze_is_strong = squeeze_context and squeeze_context.get("squeeze_probability") == "HIGH"
+    
+    # HIGH energy always sufficient
+    energy_high = energy_score >= 60 or compression_level in ["HIGH", "VERY_HIGH"]
+    # MEDIUM energy only with strong squeeze
+    energy_medium_with_squeeze = energy_score >= 40 and squeeze_is_strong
+    
+    energy_sufficient = energy_high or energy_medium_with_squeeze
     
     if not energy_sufficient:
-        failed_conditions.append(f"Energy too low ({energy_score}, compression={compression_level})")
+        if energy_score >= 40 and not squeeze_is_strong:
+            failed_conditions.append(f"Energy MEDIUM ({energy_score}) requires HIGH squeeze probability")
+        else:
+            failed_conditions.append(f"Energy too low ({energy_score}, compression={compression_level})")
         logger.debug(f"[V3.5 Contrarian] ❌ Condition 3 failed: Energy insufficient")
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -11221,20 +11233,26 @@ async def evaluate_v3_5_contrarian_opportunity(
         contrarian_reward = current_price - contrarian_target
     
     contrarian_rr = contrarian_reward / contrarian_risk if contrarian_risk > 0 else 0
-    rr_valid = contrarian_rr >= 0.5
+    
+    # V3.5 Adjustment: Stricter R:R requirement (0.7 instead of 0.5)
+    MIN_CONTRARIAN_RR = 0.7
+    rr_valid = contrarian_rr >= MIN_CONTRARIAN_RR
     
     if not rr_valid:
-        failed_conditions.append(f"Contrarian R:R too low ({contrarian_rr:.2f} < 0.5)")
+        failed_conditions.append(f"Contrarian R:R too low ({contrarian_rr:.2f} < {MIN_CONTRARIAN_RR})")
         logger.debug(f"[V3.5 Contrarian] ❌ Condition 5 failed: R:R={contrarian_rr:.2f}")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # CONDITION 6: Contrarian MUST have meaningful cluster target
+    # V3.5 Adjustment: Increased from 0.3% to 0.5% (consistent with V3 cluster logic)
     # ═══════════════════════════════════════════════════════════════════════════
     # Check if there's a valid target cluster in contrarian direction
-    has_contrarian_target = abs(contrarian_target - current_price) / current_price >= 0.003  # At least 0.3% distance
+    MIN_TARGET_DISTANCE_PCT = 0.005  # 0.5% minimum distance
+    target_distance_pct = abs(contrarian_target - current_price) / current_price
+    has_contrarian_target = target_distance_pct >= MIN_TARGET_DISTANCE_PCT
     
     if not has_contrarian_target:
-        failed_conditions.append("No meaningful contrarian target distance")
+        failed_conditions.append(f"Target distance too close ({target_distance_pct*100:.2f}% < 0.5%)")
         logger.debug(f"[V3.5 Contrarian] ❌ Condition 6 failed: Target too close")
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -21187,128 +21205,161 @@ async def test_contrarian_evaluation():
     """
     Test V3.5 Contrarian evaluation logic with simulated scenarios.
     
-    This endpoint tests the contrarian detection system without recording signals.
+    V3.5 STRICTER CONDITIONS:
+    - R:R >= 0.7 (was 0.5)
+    - Target distance >= 0.5% (was 0.3%)
+    - MEDIUM energy only with HIGH squeeze probability
+    - Target: <5% activation rate
     """
     current_price = 71000.0
     
     test_cases = []
     
-    # Scenario 1: Ideal contrarian setup (should generate CONTRARIAN_LONG)
-    # SHORT blocked due to magnet conflict, shorts overcrowded
+    # Scenario 1: IDEAL - All strict conditions met (HIGH squeeze, HIGH energy)
     test1 = {
-        "scenario": "IDEAL_CONTRARIAN_LONG",
-        "description": "SHORT blocked, shorts overcrowded, magnet UP",
+        "scenario": "IDEAL_HIGH_CONVICTION",
+        "description": "SHORT blocked, HIGH squeeze (ratio 1.9), HIGH energy (65), R:R 1.0+",
         "blocked_direction": "SHORT",
         "block_reason": "BLOCKED_MAGNET_CONFLICT_SHORT_vs_UP",
         "market_context": {
             "magnet_direction": "UP",
-            "energy_score": 55,
+            "energy_score": 65,  # HIGH energy
             "compression_level": "HIGH",
             "derivatives_context": {
                 "data_available": True,
-                "long_short_ratio": {"global_ratio": 1.7},  # Shorts overcrowded
-                "funding_rate": -0.06  # Extreme negative
+                "long_short_ratio": {"global_ratio": 1.9},  # HIGH squeeze (>1.8)
+                "funding_rate": -0.08  # Extreme negative
             }
         },
         "setup_data": {
             "market_regime": "COMPRESSION",
-            "swing_high": 72500,
-            "swing_low": 69500
+            "swing_high": 72500,  # 2.1% above
+            "swing_low": 69500   # 2.1% below
         }
     }
     
-    # Check conditions
-    conditions_met = []
-    conditions_failed = []
-    
-    # Condition 1: Magnet supports LONG
-    if test1["market_context"]["magnet_direction"] == "UP":
-        conditions_met.append("Magnet supports LONG")
-    else:
-        conditions_failed.append("Magnet does not support LONG")
-    
-    # Condition 2: Squeeze supports LONG (shorts overcrowded)
-    if test1["market_context"]["derivatives_context"]["long_short_ratio"]["global_ratio"] > 1.5:
-        conditions_met.append("Shorts overcrowded - squeeze supports LONG")
-    else:
-        conditions_failed.append("No squeeze setup")
-    
-    # Condition 3: Energy >= MEDIUM
-    if test1["market_context"]["energy_score"] >= 40:
-        conditions_met.append(f"Energy sufficient ({test1['market_context']['energy_score']})")
-    else:
-        conditions_failed.append("Energy too low")
-    
-    # Condition 4: Regime compatible
-    if test1["setup_data"]["market_regime"] in ["RANGE", "COMPRESSION", "EXPANSION"]:
-        conditions_met.append(f"Regime compatible ({test1['setup_data']['market_regime']})")
-    else:
-        conditions_failed.append("Regime not compatible")
-    
-    # Condition 5: R:R calculation
+    # Calculate with stricter thresholds
     risk = current_price - (test1["setup_data"]["swing_low"] * 0.998)
     reward = (test1["setup_data"]["swing_high"] * 1.002) - current_price
     contrarian_rr = reward / risk if risk > 0 else 0
+    target_dist = abs(test1["setup_data"]["swing_high"] * 1.002 - current_price) / current_price
     
-    if contrarian_rr >= 0.5:
-        conditions_met.append(f"R:R valid ({contrarian_rr:.2f})")
+    conditions_met_1 = []
+    conditions_failed_1 = []
+    
+    # Check all stricter conditions
+    if test1["market_context"]["magnet_direction"] == "UP":
+        conditions_met_1.append("Magnet supports LONG")
+    
+    global_ratio = test1["market_context"]["derivatives_context"]["long_short_ratio"]["global_ratio"]
+    squeeze_is_high = global_ratio > 1.8
+    if global_ratio > 1.5:
+        conditions_met_1.append(f"Shorts overcrowded (ratio={global_ratio}, squeeze={'HIGH' if squeeze_is_high else 'MODERATE'})")
+    
+    energy = test1["market_context"]["energy_score"]
+    if energy >= 60:
+        conditions_met_1.append(f"HIGH energy ({energy})")
+    elif energy >= 40 and squeeze_is_high:
+        conditions_met_1.append(f"MEDIUM energy ({energy}) with HIGH squeeze")
     else:
-        conditions_failed.append(f"R:R too low ({contrarian_rr:.2f})")
+        conditions_failed_1.append(f"Energy insufficient ({energy}, squeeze not HIGH)")
     
-    test1_result = {
+    if test1["setup_data"]["market_regime"] in ["RANGE", "COMPRESSION"]:
+        conditions_met_1.append(f"Regime compatible ({test1['setup_data']['market_regime']})")
+    
+    if contrarian_rr >= 0.7:
+        conditions_met_1.append(f"R:R >= 0.7 ({contrarian_rr:.2f})")
+    else:
+        conditions_failed_1.append(f"R:R too low ({contrarian_rr:.2f} < 0.7)")
+    
+    if target_dist >= 0.005:
+        conditions_met_1.append(f"Target distance >= 0.5% ({target_dist*100:.2f}%)")
+    else:
+        conditions_failed_1.append(f"Target too close ({target_dist*100:.2f}% < 0.5%)")
+    
+    test_cases.append({
         "scenario": test1["scenario"],
         "description": test1["description"],
-        "result": "CONTRARIAN_LONG_GENERATED" if len(conditions_failed) == 0 else "NO_CONTRARIAN",
-        "conditions_met": conditions_met,
-        "conditions_failed": conditions_failed,
-        "calculated_rr": round(contrarian_rr, 2)
-    }
-    test_cases.append(test1_result)
+        "result": "CONTRARIAN_LONG_GENERATED" if len(conditions_failed_1) == 0 else "NO_CONTRARIAN",
+        "conditions_met": conditions_met_1,
+        "conditions_failed": conditions_failed_1,
+        "calculated_rr": round(contrarian_rr, 2),
+        "target_distance_pct": round(target_dist * 100, 2)
+    })
     
-    # Scenario 2: Energy too low (should NOT generate contrarian)
-    test2_result = {
-        "scenario": "LOW_ENERGY_BLOCK",
-        "description": "SHORT blocked, but energy too low",
+    # Scenario 2: MEDIUM energy without HIGH squeeze (should FAIL now)
+    test_cases.append({
+        "scenario": "MEDIUM_ENERGY_MODERATE_SQUEEZE",
+        "description": "MEDIUM energy (50) but only MODERATE squeeze (ratio 1.6)",
         "result": "NO_CONTRARIAN",
-        "conditions_met": ["Magnet supports LONG", "Shorts overcrowded"],
+        "conditions_met": ["Magnet supports LONG", "Shorts overcrowded (MODERATE)", "R:R valid (1.0)"],
+        "conditions_failed": ["MEDIUM energy (50) requires HIGH squeeze probability, but squeeze is MODERATE"],
+        "calculated_rr": 1.0,
+        "note": "V3.5 stricter: MEDIUM energy only allowed with HIGH squeeze"
+    })
+    
+    # Scenario 3: R:R between 0.5-0.7 (would pass old, fails new)
+    test_cases.append({
+        "scenario": "RR_BETWEEN_0.5_AND_0.7",
+        "description": "R:R = 0.6 (passes old 0.5 threshold, fails new 0.7)",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports LONG", "HIGH squeeze", "HIGH energy", "Regime compatible"],
+        "conditions_failed": ["R:R too low (0.6 < 0.7)"],
+        "calculated_rr": 0.6,
+        "note": "V3.5 stricter: R:R must be >= 0.7"
+    })
+    
+    # Scenario 4: Target distance between 0.3%-0.5% (would pass old, fails new)
+    test_cases.append({
+        "scenario": "TARGET_DISTANCE_0.4_PCT",
+        "description": "Target 0.4% away (passes old 0.3%, fails new 0.5%)",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports LONG", "HIGH squeeze", "HIGH energy", "R:R valid (1.2)"],
+        "conditions_failed": ["Target too close (0.4% < 0.5%)"],
+        "calculated_rr": 1.2,
+        "target_distance_pct": 0.4,
+        "note": "V3.5 stricter: Target must be >= 0.5% away"
+    })
+    
+    # Scenario 5: LOW energy (always fails)
+    test_cases.append({
+        "scenario": "LOW_ENERGY",
+        "description": "Energy = 25 (too low regardless of squeeze)",
+        "result": "NO_CONTRARIAN",
+        "conditions_met": ["Magnet supports LONG", "HIGH squeeze"],
         "conditions_failed": ["Energy too low (25 < 40)"],
-        "calculated_rr": 1.2
-    }
-    test_cases.append(test2_result)
+        "calculated_rr": 1.5,
+        "note": "Energy must be at least MEDIUM (40+)"
+    })
     
-    # Scenario 3: TREND regime (should NOT generate contrarian)
-    test3_result = {
-        "scenario": "TREND_REGIME_BLOCK",
-        "description": "LONG blocked, but regime is TREND (not compatible)",
+    # Scenario 6: TREND regime (always fails)
+    test_cases.append({
+        "scenario": "TREND_REGIME",
+        "description": "Regime is TREND (not compatible for contrarian)",
         "result": "NO_CONTRARIAN",
-        "conditions_met": ["Magnet supports SHORT", "Longs overcrowded", "Energy sufficient"],
+        "conditions_met": ["Magnet supports SHORT", "HIGH squeeze", "HIGH energy", "R:R valid"],
         "conditions_failed": ["Regime TREND not compatible for contrarian"],
-        "calculated_rr": 1.5
-    }
-    test_cases.append(test3_result)
-    
-    # Scenario 4: No squeeze setup (should NOT generate contrarian)
-    test4_result = {
-        "scenario": "NO_SQUEEZE_SETUP",
-        "description": "SHORT blocked due to magnet, but no squeeze risk",
-        "result": "NO_CONTRARIAN",
-        "conditions_met": ["Magnet supports LONG", "Energy sufficient", "Regime compatible"],
-        "conditions_failed": ["No squeeze setup (ratio=1.1, balanced)"],
-        "calculated_rr": 1.3
-    }
-    test_cases.append(test4_result)
+        "calculated_rr": 1.5,
+        "note": "Contrarian not allowed in strong directional trends"
+    })
     
     return {
         "test_endpoint": "/api/v3/test-contrarian-evaluation",
-        "description": "V3.5 Contrarian Logic Test Results",
+        "description": "V3.5 Contrarian Logic Test Results (STRICTER CONDITIONS)",
         "activation_precondition": "Original V3 signal MUST be BLOCKED",
+        "v3_5_stricter_requirements": {
+            "r_r_minimum": "0.7 (was 0.5)",
+            "target_distance_minimum": "0.5% (was 0.3%)",
+            "energy_rule": "MEDIUM only with HIGH squeeze, otherwise need HIGH energy",
+            "target_activation_rate": "<5% of blocked signals"
+        },
         "required_conditions": [
             "1. Magnet direction supports contrarian direction",
-            "2. Squeeze risk supports contrarian move",
-            "3. Energy >= MEDIUM (40+)",
+            "2. Squeeze risk supports contrarian (HIGH probability preferred)",
+            "3. Energy: HIGH (60+) OR MEDIUM (40+) with HIGH squeeze",
             "4. Regime compatible (RANGE/COMPRESSION, NOT TREND)",
-            "5. R:R >= 0.5 for contrarian trade",
-            "6. Valid target distance (>0.3%)"
+            "5. R:R >= 0.7 (stricter than normal 0.5)",
+            "6. Target distance >= 0.5% (consistent with V3 clusters)"
         ],
         "test_results": test_cases,
         "summary": {
@@ -21316,7 +21367,7 @@ async def test_contrarian_evaluation():
             "contrarian_generated": len([t for t in test_cases if "GENERATED" in t["result"]]),
             "blocked": len([t for t in test_cases if t["result"] == "NO_CONTRARIAN"])
         },
-        "design_principle": "Contrarian signals must be RARE and HIGH-QUALITY trap setups"
+        "design_principle": "Contrarian signals must be RARE (<5%) and HIGH-QUALITY trap setups"
     }
 
 

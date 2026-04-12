@@ -588,6 +588,16 @@ Contrarian SHORT → Longs overcrowded (ratio < 0.67) OR extreme positive fundin
 energy_score >= 40 OR compression_level in [HIGH, VERY_HIGH]
 ```
 
+#### 3. Market Energy (STRICTER in v3.5.1)
+
+```
+HIGH energy (60+): Always allowed
+MEDIUM energy (40-59): Only if squeeze_probability == "HIGH"
+LOW energy (<40): Never allowed
+```
+
+**Note:** MEDIUM energy alone is NOT sufficient. Must have HIGH squeeze to activate with MEDIUM energy.
+
 #### 4. Regime Compatible
 
 ```
@@ -595,17 +605,20 @@ Regime must be: RANGE, COMPRESSION, or EXPANSION
 NOT: TREND (strong directional markets don't trap easily)
 ```
 
-#### 5. Valid R:R >= 0.5
+#### 5. Valid R:R >= 0.7 (STRICTER in v3.5.1)
 
 ```
-Contrarian trade must have R:R >= 0.5
+Contrarian trade must have R:R >= 0.7 (was 0.5)
 Uses swing levels inverted from blocked signal
 ```
 
-#### 6. Meaningful Target Distance
+**Note:** Stricter than normal V3 signals to ensure only high-quality contrarian trades.
+
+#### 6. Target Distance >= 0.5% (STRICTER in v3.5.1)
 
 ```
-Target must be >= 0.3% from current price
+Target must be >= 0.5% from current price (was 0.3%)
+Consistent with V3 cluster logic minimum distance
 ```
 
 ---

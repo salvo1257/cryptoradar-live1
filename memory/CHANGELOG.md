@@ -1,5 +1,24 @@
 # CryptoRadar Changelog
 
+## v3.5.1 - 2026-04-12
+
+### V3.5 Stricter Contrarian Conditions
+
+**Adjustments to reduce activation frequency (<5% of blocked signals):**
+
+| Condition | v3.5.0 | v3.5.1 |
+|-----------|--------|--------|
+| R:R Minimum | 0.5 | **0.7** |
+| Target Distance | 0.3% | **0.5%** |
+| Energy Rule | MEDIUM (40+) | **HIGH (60+) or MEDIUM with HIGH squeeze** |
+
+**Energy Logic Change:**
+- HIGH energy (60+): Always allowed
+- MEDIUM energy (40-59): Only allowed if squeeze_probability == "HIGH"
+- LOW energy (<40): Never allowed
+
+---
+
 ## v3.5.0 - 2026-04-12
 
 ### V3.5 Contrarian Logic (Trap Detection System)
@@ -11,13 +30,13 @@
 - Eligible blocks: MAGNET_CONFLICT, SQUEEZE_RISK, UPSTREAM_BIAS_CONFLICT
 - NOT eligible: LOW_RR, NO_VALID_TARGETS
 
-#### Required Conditions (ALL must be true)
+#### Required Conditions (ALL must be true - v3.5.1 stricter)
 1. Magnet direction supports contrarian direction
-2. Squeeze risk supports contrarian move (overcrowded positioning)
-3. Market Energy >= MEDIUM
+2. Squeeze risk supports contrarian move (HIGH probability preferred)
+3. Energy: HIGH (60+) OR MEDIUM (40+) with HIGH squeeze only
 4. Regime compatible (RANGE/COMPRESSION, NOT TREND)
-5. Contrarian R:R >= 0.5
-6. Valid target distance (>= 0.3%)
+5. Contrarian R:R >= 0.7
+6. Valid target distance >= 0.5%
 
 #### New Functions
 - `evaluate_v3_5_contrarian_opportunity()` - Evaluates contrarian conditions

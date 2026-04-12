@@ -1,11 +1,12 @@
-# CryptoRadar v3.5.0 - Product Requirements Document
+# CryptoRadar v3.5.1 - Product Requirements Document
 **Last Updated:** 2026-04-12
 
 ## QUICK STATUS
-- **Current Version:** v3.5.0
+- **Current Version:** v3.5.1
 - **Phase:** Validation Mode (monitoring signal quality)
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
+- **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
 ## ✅ V3.4 SIGNAL VALIDATION SYSTEM (2026-04-12)
@@ -73,7 +74,7 @@ This is the **last defensive layer** ensuring execution integrity.
 ---
 
 ## ✅ V3.5 CONTRARIAN LOGIC (2026-04-12)
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE (v3.5.1 stricter)
 
 ### Purpose
 Trap detection system that activates ONLY when a V3 signal is BLOCKED, generating contrarian signals when market conditions indicate a high-conviction squeeze opportunity.
@@ -83,16 +84,18 @@ Trap detection system that activates ONLY when a V3 signal is BLOCKED, generatin
 - Eligible blocks: `MAGNET_CONFLICT`, `SQUEEZE_RISK`, `UPSTREAM_BIAS_CONFLICT`
 - NOT eligible: `LOW_RR`, `NO_VALID_TARGETS`
 
-### Required Conditions (ALL Must Pass)
+### Required Conditions (v3.5.1 STRICTER)
 
-| # | Condition | Check |
-|---|-----------|-------|
-| 1 | Magnet Alignment | Magnet supports contrarian direction |
-| 2 | Squeeze Setup | Overcrowded positioning supports contrarian |
-| 3 | Energy Level | Energy >= MEDIUM (40+) |
-| 4 | Regime Compatibility | RANGE/COMPRESSION (NOT TREND) |
-| 5 | R:R Valid | Contrarian R:R >= 0.5 |
-| 6 | Target Distance | >= 0.3% from current price |
+| # | Condition | v3.5.0 | v3.5.1 |
+|---|-----------|--------|--------|
+| 1 | Magnet Alignment | Supports contrarian | Same |
+| 2 | Squeeze Setup | Overcrowded | HIGH probability preferred |
+| 3 | Energy Level | >= MEDIUM (40+) | **HIGH (60+) or MEDIUM+HIGH_squeeze** |
+| 4 | Regime | RANGE/COMPRESSION | Same |
+| 5 | R:R Valid | >= 0.5 | **>= 0.7** |
+| 6 | Target Distance | >= 0.3% | **>= 0.5%** |
+
+**Target Activation Rate:** <5% of blocked signals
 
 ### Output
 - `CONTRARIAN_LONG` or `CONTRARIAN_SHORT` signal
