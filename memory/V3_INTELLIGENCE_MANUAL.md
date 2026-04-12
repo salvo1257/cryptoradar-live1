@@ -1,13 +1,17 @@
-# CryptoRadar V3.3 Intelligence Manual
+# CryptoRadar V3.4 Intelligence Manual
 
-**Version:** 3.3.0  
-**Last Updated:** 2026-04-11
+**Version:** 3.4.0  
+**Last Updated:** 2026-04-12
 
 ---
 
 ## Overview
 
-CryptoRadar V3.3 introduces enhanced intelligence modules that integrate CoinGlass derivatives data to provide more accurate market analysis and target validation. This manual explains how each module works and how they connect together.
+CryptoRadar V3.3 introduces enhanced intelligence modules that integrate CoinGlass derivatives data to provide more accurate market analysis and target validation. 
+
+**V3.4** adds a critical **Signal Validation Layer** that acts as the final defensive gate before execution.
+
+This manual explains how each module works and how they connect together.
 
 ---
 
@@ -319,3 +323,210 @@ V3.3 Intelligence Modules provide:
 5. **Module Integration** with decision hierarchy and quality assessment
 
 All modules work together to provide more intelligent, validated targets with clear reasoning.
+
+---
+
+## 🔴 V3.4 Signal Validation Layer (Final Defensive System)
+
+### Overview
+
+V3.4 introduces a **final validation layer** inside `record_v3_entry_signal()` that acts as a **hard execution gate**.
+No signal can be recorded or sent to the user if it fails these checks.
+
+This ensures **execution integrity**, even if upstream logic fails.
+
+---
+
+### 🛑 Blocking Conditions (Hard Filters)
+
+A signal is **blocked and not executed** if any of the following conditions are met:
+
+#### 1. Low Risk/Reward
+
+```
+R:R < 0.5 → BLOCKED_LOW_RR
+```
+
+**Rationale:** Signals with R:R below 0.5 offer poor risk-adjusted returns. A minimum of 0.5 ensures at least a 1:2 risk/reward ratio is achievable.
+
+#### 2. Upstream Validation Failure
+
+```
+target_block_reason != None → BLOCKED_UPSTREAM
+```
+
+**Rationale:** If `create_setup_event()` already identified a problem (e.g., bias conflict, no clusters), the signal should not proceed.
+
+**Common Upstream Blocks:**
+- `LOW_RR_{value}` - R:R too low at setup creation
+- `NO_VALID_CLUSTERS` - No valid liquidity cluster targets found
+- `BIAS_CONFLICT_{direction}_vs_{bias}` - Signal conflicts with strong market bias
+
+#### 3. Liquidity Magnet Conflict
+
+```
+signal_direction != magnet_direction → BLOCKED_MAGNET_CONFLICT
+```
+
+**Logic:**
+| Signal | Magnet Direction | Result |
+|--------|------------------|--------|
+| LONG | UP | ✅ ALIGNED |
+| LONG | DOWN | ❌ BLOCKED |
+| SHORT | DOWN | ✅ ALIGNED |
+| SHORT | UP | ❌ BLOCKED |
+| ANY | BALANCED | ✅ ALLOWED |
+
+**Rationale:** Price is attracted toward liquidity. Going against the magnet increases the probability of the trade failing.
+
+#### 4. Squeeze Risk (Derivatives Data)
+
+```
+overcrowded positioning + same-direction signal → BLOCKED_SQUEEZE_RISK
+```
+
+**Conditions:**
+
+| Scenario | Trigger | Block |
+|----------|---------|-------|
+| Shorts Overcrowded | L/S ratio > 1.5 OR funding < -0.05% | ❌ Cannot SHORT |
+| Longs Overcrowded | L/S ratio < 0.67 OR funding > 0.05% | ❌ Cannot LONG |
+
+**Rationale:** When too many traders are on one side, the market often squeezes them. Don't join the crowded side.
+
+#### 5. No Valid Targets
+
+```
+has_valid_targets == False → BLOCKED_NO_VALID_TARGETS
+```
+
+**Rationale:** Without valid liquidity cluster targets, the signal has no meaningful exit points.
+
+---
+
+### ⚙️ Execution Behavior
+
+When a signal is blocked:
+
+| Action | Result |
+|--------|--------|
+| Database Insert | ❌ NOT saved |
+| Telegram Alert | ❌ NOT sent |
+| Signal History | ❌ NOT recorded |
+| Internal Log | ✅ Logged with reason |
+
+**Log Format:**
+```
+[V3 Signal] ❌ BLOCKED_SIGNAL - {REASON}: {details}
+```
+
+---
+
+### 🧠 Design Principle
+
+> "No signal reaches the user unless it is logically consistent across all modules."
+
+This layer ensures alignment between:
+
+| Module | Must Align |
+|--------|------------|
+| Market Bias | Signal direction |
+| Liquidity Magnet | Signal direction |
+| Market Energy | Minimum fuel available |
+| Derivatives Context | Not overcrowded |
+
+---
+
+### 🔁 Validation Hierarchy (V3.4)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SIGNAL FLOW                          │
+├─────────────────────────────────────────────────────────┤
+│  4H Event Detection                                     │
+│         ↓                                               │
+│  Setup Creation (create_setup_event)                    │
+│         ↓                                               │
+│  Upstream Validation (R:R, Clusters, Bias)              │
+│         ↓                                               │
+│  5M Confirmation                                        │
+│         ↓                                               │
+│  ┌───────────────────────────────────────────────┐      │
+│  │  V3.4 VALIDATION LAYER (FINAL GATE)           │      │
+│  │                                               │      │
+│  │  ✓ Check upstream block reason                │      │
+│  │  ✓ Check R:R >= 0.5                           │      │
+│  │  ✓ Check magnet alignment                     │      │
+│  │  ✓ Check squeeze risk                         │      │
+│  │  ✓ Check valid targets                        │      │
+│  │                                               │      │
+│  │  If ANY fails → BLOCK                         │      │
+│  └───────────────────────────────────────────────┘      │
+│         ↓                                               │
+│  Signal Recording (record_v3_entry_signal)              │
+│         ↓                                               │
+│  Telegram Alert                                         │
+│         ↓                                               │
+│  USER EXECUTION                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+The **Validation Layer is final and non-bypassable**.
+
+---
+
+### 📊 Impact
+
+| Metric | Effect |
+|--------|--------|
+| Signal Frequency | ↓ Fewer signals |
+| Signal Quality | ↑ Higher quality |
+| Win Rate (expected) | ↑ Improved |
+| User Trust | ↑ No contradictory signals |
+| Dataset Quality | ↑ Clean validation data |
+
+---
+
+### 🧪 Testing Endpoint
+
+**POST /api/v3/test-signal-validation**
+
+Tests all validation scenarios without affecting the database:
+
+```json
+{
+  "test_results": [
+    {"test": "LOW_RR", "result": "BLOCKED", "reason": "BLOCKED_LOW_RR_0.14"},
+    {"test": "UPSTREAM_BLOCK", "result": "BLOCKED", "reason": "BLOCKED_UPSTREAM_..."},
+    {"test": "MAGNET_CONFLICT", "result": "BLOCKED", "reason": "BLOCKED_MAGNET_CONFLICT_SHORT_vs_UP"},
+    {"test": "VALID_SIGNAL", "result": "PASSED"}
+  ]
+}
+```
+
+---
+
+### ⚠️ Important Notes
+
+1. **Defensive System:** This is a filter, not a signal generator
+2. **Quality Over Quantity:** System produces fewer but better signals
+3. **No Overrides:** Validation cannot be bypassed
+4. **Graceful Degradation:** If derivatives data is unavailable, squeeze risk check is skipped (not blocked)
+5. **Logging:** All blocks are logged for monitoring and debugging
+
+---
+
+### 📝 Block Reason Reference
+
+| Code | Meaning |
+|------|---------|
+| `BLOCKED_UPSTREAM_{reason}` | Setup already blocked during creation |
+| `BLOCKED_LOW_RR_{value}` | R:R below 0.5 minimum |
+| `BLOCKED_MAGNET_CONFLICT_{dir}_vs_{magnet}` | Signal conflicts with magnet |
+| `BLOCKED_SQUEEZE_RISK_SHORTS_OVERCROWDED` | Too many shorts, can't SHORT |
+| `BLOCKED_SQUEEZE_RISK_LONGS_OVERCROWDED` | Too many longs, can't LONG |
+| `BLOCKED_NO_VALID_TARGETS` | No valid cluster targets found |
+
+---
+
+## End of Manual
