@@ -21,6 +21,7 @@ export function V3MonitoringPanel({ language = 'it' }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(true);
+  const [statsView, setStatsView] = useState('all_time'); // 'all_time', 'recent_50', 'recent_100'
 
   // Translations
   const labels = {
@@ -167,8 +168,12 @@ export function V3MonitoringPanel({ language = 'it' }) {
     quality, 
     timing, 
     statistical_significance,
-    recent_signals 
+    recent_signals,
+    extended_stats 
   } = metrics;
+
+  // Get current view stats (all_time, recent_50, or recent_100)
+  const currentStats = extended_stats?.[statsView] || extended_stats?.all_time || {};
 
   // Statistical significance status colors
   const getSignificanceColor = (status) => {
@@ -238,26 +243,88 @@ export function V3MonitoringPanel({ language = 'it' }) {
 
       {expanded && (
         <div className="p-4 space-y-4">
-          {/* Statistical Significance Banner */}
+          {/* Statistical Significance Banner - Now shows total beyond 50 */}
           <div className="bg-crypto-surface/30 rounded-sm p-3 border border-purple-500/20">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-zinc-400 flex items-center gap-1">
                 <Database className="w-3 h-3" />
                 {language === 'it' ? 'Significatività Statistica' : 'Statistical Significance'}
               </span>
-              <span className="text-xs font-mono text-purple-400">
-                {statistical_significance?.current_sample_size} / {statistical_significance?.minimum_for_reliable}
-              </span>
+              <div className="flex items-center gap-2">
+                {statistical_significance?.is_reliable && (
+                  <Badge className="text-[10px] bg-bullish/20 text-bullish border-bullish/30">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    {language === 'it' ? 'Affidabile' : 'Reliable'}
+                  </Badge>
+                )}
+                <span className="text-xs font-mono text-purple-400">
+                  {statistical_significance?.current_sample_size} {language === 'it' ? 'segnali' : 'signals'}
+                </span>
+              </div>
             </div>
-            <Progress 
-              value={significanceProgress} 
-              className="h-2 bg-zinc-800"
-            />
-            <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
-              <span>0</span>
-              <span className="text-yellow-400">{statistical_significance?.minimum_for_preliminary} (prelim)</span>
-              <span className="text-bullish">{statistical_significance?.minimum_for_reliable} (reliable)</span>
-            </div>
+            
+            {/* Progress bar only shown until 50, then milestone indicator */}
+            {statistical_significance?.current_sample_size < 50 ? (
+              <>
+                <Progress 
+                  value={significanceProgress} 
+                  className="h-2 bg-zinc-800"
+                />
+                <div className="flex justify-between mt-1 text-[10px] text-zinc-500">
+                  <span>0</span>
+                  <span className="text-yellow-400">{statistical_significance?.minimum_for_preliminary} (prelim)</span>
+                  <span className="text-bullish">{statistical_significance?.minimum_for_reliable} (reliable)</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-zinc-500">
+                  {language === 'it' 
+                    ? `Milestone 50 raggiunto ✓ - Dati continuano ad accumularsi` 
+                    : `Milestone 50 reached ✓ - Data continues accumulating`}
+                </span>
+                <span className="text-bullish font-mono">
+                  +{statistical_significance?.current_sample_size - 50} {language === 'it' ? 'oltre soglia' : 'beyond threshold'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Stats View Selector */}
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant={statsView === 'all_time' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatsView('all_time')}
+              className={cn(
+                "text-xs",
+                statsView === 'all_time' ? 'bg-purple-600 hover:bg-purple-700' : 'border-purple-500/30 text-purple-400'
+              )}
+            >
+              {language === 'it' ? 'Tutto' : 'All-Time'} ({extended_stats?.all_time?.count || 0})
+            </Button>
+            <Button
+              variant={statsView === 'recent_50' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatsView('recent_50')}
+              className={cn(
+                "text-xs",
+                statsView === 'recent_50' ? 'bg-purple-600 hover:bg-purple-700' : 'border-purple-500/30 text-purple-400'
+              )}
+            >
+              {language === 'it' ? 'Ultimi 50' : 'Last 50'} ({extended_stats?.recent_50?.count || 0})
+            </Button>
+            <Button
+              variant={statsView === 'recent_100' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatsView('recent_100')}
+              className={cn(
+                "text-xs",
+                statsView === 'recent_100' ? 'bg-purple-600 hover:bg-purple-700' : 'border-purple-500/30 text-purple-400'
+              )}
+            >
+              {language === 'it' ? 'Ultimi 100' : 'Last 100'} ({extended_stats?.recent_100?.count || 0})
+            </Button>
           </div>
 
           {/* Primary Metrics Grid */}
@@ -307,29 +374,40 @@ export function V3MonitoringPanel({ language = 'it' }) {
               </div>
             </div>
 
-            {/* Win Rate */}
+            {/* Win Rate - Now uses currentStats based on view */}
             <div className="bg-crypto-surface/30 p-3 rounded-sm border border-zinc-700/50">
               <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
                 <Percent className="w-3 h-3" />
-                {language === 'it' ? 'Win Rate V3' : 'V3 Win Rate'}
+                {language === 'it' ? 'Win Rate' : 'Win Rate'}
+                <span className="text-[10px] text-purple-400 ml-1">
+                  ({statsView === 'all_time' ? (language === 'it' ? 'tutto' : 'all') : 
+                    statsView === 'recent_50' ? '50' : '100'})
+                </span>
               </div>
               <div className={cn(
                 "text-2xl font-mono font-bold",
-                rates?.win_rate >= 50 ? "text-bullish" : "text-bearish"
+                currentStats?.win_rate >= 50 ? "text-bullish" : "text-bearish"
               )}>
-                {rates?.win_rate?.toFixed(1) || 0}%
+                {currentStats?.win_rate?.toFixed(1) || 0}%
               </div>
               <Progress 
-                value={rates?.win_rate || 0} 
+                value={currentStats?.win_rate || 0} 
                 className="h-1 mt-2 bg-zinc-800"
               />
             </div>
           </div>
 
-          {/* Outcome Distribution */}
+          {/* Outcome Distribution - Uses currentStats */}
           <div className="bg-crypto-surface/30 rounded-sm p-3 border border-zinc-700/50">
-            <div className="text-xs text-zinc-500 mb-3 font-semibold uppercase tracking-wider">
-              {language === 'it' ? 'Distribuzione Outcomes V3' : 'V3 Outcome Distribution'}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">
+                {language === 'it' ? 'Distribuzione Outcomes' : 'Outcome Distribution'}
+              </span>
+              <span className="text-[10px] text-purple-400">
+                {statsView === 'all_time' ? (language === 'it' ? 'Tutto il periodo' : 'All-Time') : 
+                 statsView === 'recent_50' ? (language === 'it' ? 'Ultimi 50' : 'Last 50') : 
+                 (language === 'it' ? 'Ultimi 100' : 'Last 100')}
+              </span>
             </div>
             <div className="grid grid-cols-5 gap-2 text-center">
               <TooltipProvider>
@@ -337,12 +415,12 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <TooltipTrigger asChild>
                     <div className="bg-bullish/20 p-2 rounded-sm cursor-help">
                       <CheckCircle className="w-4 h-4 text-bullish mx-auto mb-1" />
-                      <div className="font-mono font-bold text-bullish text-lg">{signals?.wins || 0}</div>
+                      <div className="font-mono font-bold text-bullish text-lg">{currentStats?.wins || 0}</div>
                       <div className="text-[10px] text-zinc-500">WIN</div>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent className="bg-crypto-surface border-crypto-border">
-                    <span className="text-xs">{rates?.win_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
+                    <span className="text-xs">{currentStats?.win_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -352,12 +430,12 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <TooltipTrigger asChild>
                     <div className="bg-bearish/20 p-2 rounded-sm cursor-help">
                       <XCircle className="w-4 h-4 text-bearish mx-auto mb-1" />
-                      <div className="font-mono font-bold text-bearish text-lg">{signals?.losses || 0}</div>
+                      <div className="font-mono font-bold text-bearish text-lg">{currentStats?.losses || 0}</div>
                       <div className="text-[10px] text-zinc-500">LOSS</div>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent className="bg-crypto-surface border-crypto-border">
-                    <span className="text-xs">{rates?.loss_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
+                    <span className="text-xs">{currentStats?.loss_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -367,12 +445,12 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <TooltipTrigger asChild>
                     <div className="bg-yellow-500/20 p-2 rounded-sm cursor-help">
                       <Clock className="w-4 h-4 text-yellow-400 mx-auto mb-1" />
-                      <div className="font-mono font-bold text-yellow-400 text-lg">{signals?.expired || 0}</div>
+                      <div className="font-mono font-bold text-yellow-400 text-lg">{currentStats?.expired || 0}</div>
                       <div className="text-[10px] text-zinc-500">EXPIRED</div>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent className="bg-crypto-surface border-crypto-border">
-                    <span className="text-xs">{rates?.expired_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
+                    <span className="text-xs">{currentStats?.expired_rate?.toFixed(1) || 0}% {language === 'it' ? 'del totale' : 'of total'}</span>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -382,7 +460,7 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <TooltipTrigger asChild>
                     <div className="bg-blue-500/20 p-2 rounded-sm cursor-help">
                       <AlertTriangle className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-                      <div className="font-mono font-bold text-blue-400 text-lg">{signals?.pending || 0}</div>
+                      <div className="font-mono font-bold text-blue-400 text-lg">{currentStats?.pending || 0}</div>
                       <div className="text-[10px] text-zinc-500">PENDING</div>
                     </div>
                   </TooltipTrigger>
@@ -394,13 +472,13 @@ export function V3MonitoringPanel({ language = 'it' }) {
 
               <div className="bg-zinc-700/30 p-2 rounded-sm">
                 <BarChart3 className="w-4 h-4 text-zinc-400 mx-auto mb-1" />
-                <div className="font-mono font-bold text-zinc-300 text-lg">{signals?.total_entry_ready || 0}</div>
+                <div className="font-mono font-bold text-zinc-300 text-lg">{currentStats?.count || 0}</div>
                 <div className="text-[10px] text-zinc-500">TOTAL</div>
               </div>
             </div>
           </div>
 
-          {/* Direction Breakdown */}
+          {/* Direction Breakdown - Uses currentStats */}
           <div className="grid grid-cols-2 gap-3">
             {/* LONG Breakdown */}
             <div className="bg-bullish/5 border border-bullish/20 rounded-sm p-3">
@@ -410,39 +488,21 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <span className="font-mono font-bold text-bullish">LONG</span>
                 </div>
                 <Badge className="bg-bullish/20 text-bullish border-bullish/30 text-xs">
-                  {by_direction?.long?.total || 0}
+                  {currentStats?.long_count || 0}
                 </Badge>
-              </div>
-              <div className="grid grid-cols-4 gap-1 text-center text-[10px]">
-                <div>
-                  <div className="text-bullish font-mono font-bold">{by_direction?.long?.wins || 0}</div>
-                  <div className="text-zinc-500">WIN</div>
-                </div>
-                <div>
-                  <div className="text-bearish font-mono font-bold">{by_direction?.long?.losses || 0}</div>
-                  <div className="text-zinc-500">LOSS</div>
-                </div>
-                <div>
-                  <div className="text-yellow-400 font-mono font-bold">{by_direction?.long?.expired || 0}</div>
-                  <div className="text-zinc-500">EXP</div>
-                </div>
-                <div>
-                  <div className="text-blue-400 font-mono font-bold">{by_direction?.long?.pending || 0}</div>
-                  <div className="text-zinc-500">PEND</div>
-                </div>
               </div>
               <div className="mt-2 pt-2 border-t border-bullish/20">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-500">Win Rate</span>
                   <span className={cn(
                     "font-mono font-bold",
-                    by_direction?.long?.win_rate >= 50 ? "text-bullish" : "text-yellow-400"
+                    currentStats?.long_win_rate >= 50 ? "text-bullish" : "text-yellow-400"
                   )}>
-                    {by_direction?.long?.win_rate?.toFixed(1) || 0}%
+                    {currentStats?.long_win_rate?.toFixed(1) || 0}%
                   </span>
                 </div>
                 <Progress 
-                  value={by_direction?.long?.win_rate || 0} 
+                  value={currentStats?.long_win_rate || 0} 
                   className="h-1 mt-1 bg-zinc-800"
                 />
               </div>
@@ -456,46 +516,28 @@ export function V3MonitoringPanel({ language = 'it' }) {
                   <span className="font-mono font-bold text-bearish">SHORT</span>
                 </div>
                 <Badge className="bg-bearish/20 text-bearish border-bearish/30 text-xs">
-                  {by_direction?.short?.total || 0}
+                  {currentStats?.short_count || 0}
                 </Badge>
-              </div>
-              <div className="grid grid-cols-4 gap-1 text-center text-[10px]">
-                <div>
-                  <div className="text-bullish font-mono font-bold">{by_direction?.short?.wins || 0}</div>
-                  <div className="text-zinc-500">WIN</div>
-                </div>
-                <div>
-                  <div className="text-bearish font-mono font-bold">{by_direction?.short?.losses || 0}</div>
-                  <div className="text-zinc-500">LOSS</div>
-                </div>
-                <div>
-                  <div className="text-yellow-400 font-mono font-bold">{by_direction?.short?.expired || 0}</div>
-                  <div className="text-zinc-500">EXP</div>
-                </div>
-                <div>
-                  <div className="text-blue-400 font-mono font-bold">{by_direction?.short?.pending || 0}</div>
-                  <div className="text-zinc-500">PEND</div>
-                </div>
               </div>
               <div className="mt-2 pt-2 border-t border-bearish/20">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-500">Win Rate</span>
                   <span className={cn(
                     "font-mono font-bold",
-                    by_direction?.short?.win_rate >= 50 ? "text-bullish" : "text-yellow-400"
+                    currentStats?.short_win_rate >= 50 ? "text-bullish" : "text-yellow-400"
                   )}>
-                    {by_direction?.short?.win_rate?.toFixed(1) || 0}%
+                    {currentStats?.short_win_rate?.toFixed(1) || 0}%
                   </span>
                 </div>
                 <Progress 
-                  value={by_direction?.short?.win_rate || 0} 
+                  value={currentStats?.short_win_rate || 0} 
                   className="h-1 mt-1 bg-zinc-800"
                 />
               </div>
             </div>
           </div>
 
-          {/* Quality & Timing Metrics */}
+          {/* Quality & Timing Metrics - Uses currentStats */}
           <div className="grid grid-cols-3 gap-3">
             {/* Avg Confidence */}
             <div className="bg-crypto-surface/30 p-3 rounded-sm border border-zinc-700/50 text-center">
@@ -504,10 +546,10 @@ export function V3MonitoringPanel({ language = 'it' }) {
               </div>
               <div className={cn(
                 "text-xl font-mono font-bold",
-                quality?.avg_confidence >= 70 ? "text-bullish" : 
-                quality?.avg_confidence >= 50 ? "text-yellow-400" : "text-zinc-400"
+                currentStats?.avg_confidence >= 70 ? "text-bullish" : 
+                currentStats?.avg_confidence >= 50 ? "text-yellow-400" : "text-zinc-400"
               )}>
-                {quality?.avg_confidence?.toFixed(0) || 0}%
+                {currentStats?.avg_confidence?.toFixed(0) || 0}%
               </div>
             </div>
 
@@ -517,7 +559,7 @@ export function V3MonitoringPanel({ language = 'it' }) {
                 {language === 'it' ? 'R:R Medio' : 'Avg R:R'}
               </div>
               <div className="text-xl font-mono font-bold text-cyan-400">
-                {quality?.avg_risk_reward?.toFixed(2) || 0}:1
+                {currentStats?.avg_rr?.toFixed(2) || 0}:1
               </div>
             </div>
 

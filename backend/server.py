@@ -18393,13 +18393,131 @@ async def get_v3_monitoring_metrics():
                 "current_sample_size": total_v3,
                 "minimum_for_preliminary": 20,
                 "minimum_for_reliable": 50,
-                "status": "COLLECTING" if total_v3 < 20 else ("PRELIMINARY" if total_v3 < 50 else "RELIABLE")
-            }
+                "status": "COLLECTING" if total_v3 < 20 else ("PRELIMINARY" if total_v3 < 50 else "RELIABLE"),
+                "is_reliable": total_v3 >= 50
+            },
+            
+            # Extended Statistics (All-Time + Recent Window)
+            "extended_stats": await _calculate_extended_v3_stats(total_v3, v3_stats, long_breakdown, short_breakdown)
         }
         
     except Exception as e:
         logger.error(f"Error getting V3 monitoring metrics: {e}")
         return {"error": str(e)}
+
+
+async def _calculate_extended_v3_stats(
+    total_v3: int,
+    v3_stats: dict,
+    long_breakdown: dict,
+    short_breakdown: dict
+) -> dict:
+    """
+    Calculate extended V3 statistics with all-time and recent window views.
+    
+    All-time: Complete historical data (no cap)
+    Recent: Last 50 or 100 signals for rolling performance
+    """
+    
+    # Fetch recent signals for rolling window
+    recent_50_cursor = signal_history_collection.find(
+        {"signal_engine_version": "v3"},
+        {"_id": 0, "direction": 1, "outcome": 1, "confidence": 1, "risk_reward_ratio": 1}
+    ).sort("timestamp", -1).limit(50)
+    recent_50 = await recent_50_cursor.to_list(50)
+    
+    recent_100_cursor = signal_history_collection.find(
+        {"signal_engine_version": "v3"},
+        {"_id": 0, "direction": 1, "outcome": 1, "confidence": 1, "risk_reward_ratio": 1}
+    ).sort("timestamp", -1).limit(100)
+    recent_100 = await recent_100_cursor.to_list(100)
+    
+    def calc_window_stats(signals: list) -> dict:
+        """Calculate stats for a window of signals"""
+        if not signals:
+            return {
+                "count": 0,
+                "win_rate": 0,
+                "loss_rate": 0,
+                "expired_rate": 0,
+                "avg_confidence": 0,
+                "avg_rr": 0,
+                "long_win_rate": 0,
+                "short_win_rate": 0
+            }
+        
+        wins = len([s for s in signals if s.get("outcome") in ["WIN", "PARTIAL_WIN"]])
+        losses = len([s for s in signals if s.get("outcome") == "LOSS"])
+        expired = len([s for s in signals if s.get("outcome") == "EXPIRED"])
+        pending = len([s for s in signals if s.get("outcome") == "PENDING"])
+        closed = wins + losses + expired
+        
+        # Direction breakdown
+        longs = [s for s in signals if s.get("direction") == "LONG"]
+        shorts = [s for s in signals if s.get("direction") == "SHORT"]
+        
+        long_wins = len([s for s in longs if s.get("outcome") in ["WIN", "PARTIAL_WIN"]])
+        long_closed = len([s for s in longs if s.get("outcome") not in ["PENDING", None]])
+        
+        short_wins = len([s for s in shorts if s.get("outcome") in ["WIN", "PARTIAL_WIN"]])
+        short_closed = len([s for s in shorts if s.get("outcome") not in ["PENDING", None]])
+        
+        # Averages
+        confidences = [s.get("confidence", 0) for s in signals if s.get("confidence")]
+        rrs = [s.get("risk_reward_ratio", 0) for s in signals if s.get("risk_reward_ratio")]
+        
+        return {
+            "count": len(signals),
+            "closed": closed,
+            "pending": pending,
+            "wins": wins,
+            "losses": losses,
+            "expired": expired,
+            "win_rate": round((wins / closed * 100) if closed > 0 else 0, 1),
+            "loss_rate": round((losses / closed * 100) if closed > 0 else 0, 1),
+            "expired_rate": round((expired / closed * 100) if closed > 0 else 0, 1),
+            "avg_confidence": round(sum(confidences) / len(confidences) if confidences else 0, 1),
+            "avg_rr": round(sum(rrs) / len(rrs) if rrs else 0, 2),
+            "long_win_rate": round((long_wins / long_closed * 100) if long_closed > 0 else 0, 1),
+            "short_win_rate": round((short_wins / short_closed * 100) if short_closed > 0 else 0, 1),
+            "long_count": len(longs),
+            "short_count": len(shorts)
+        }
+    
+    # All-time stats (from v3_stats which has no cap)
+    all_time_wins = v3_stats.get("wins", 0) + v3_stats.get("partial_wins", 0)
+    all_time_losses = v3_stats.get("losses", 0)
+    all_time_expired = v3_stats.get("expired", 0)
+    all_time_closed = all_time_wins + all_time_losses + all_time_expired
+    
+    all_time_stats = {
+        "count": total_v3,
+        "closed": all_time_closed,
+        "pending": v3_stats.get("pending", 0),
+        "wins": all_time_wins,
+        "losses": all_time_losses,
+        "expired": all_time_expired,
+        "win_rate": round((all_time_wins / all_time_closed * 100) if all_time_closed > 0 else 0, 1),
+        "loss_rate": round((all_time_losses / all_time_closed * 100) if all_time_closed > 0 else 0, 1),
+        "expired_rate": round((all_time_expired / all_time_closed * 100) if all_time_closed > 0 else 0, 1),
+        "avg_confidence": round(v3_stats.get("avg_confidence", 0) or 0, 1),
+        "avg_rr": round(v3_stats.get("avg_rr", 0) or 0, 2),
+        "long_win_rate": long_breakdown.get("win_rate", 0),
+        "short_win_rate": short_breakdown.get("win_rate", 0),
+        "long_count": long_breakdown.get("total", 0),
+        "short_count": short_breakdown.get("total", 0)
+    }
+    
+    return {
+        "all_time": all_time_stats,
+        "recent_50": calc_window_stats(recent_50),
+        "recent_100": calc_window_stats(recent_100),
+        "view_description": {
+            "all_time": "Complete historical data (no cap)",
+            "recent_50": "Rolling window of last 50 signals",
+            "recent_100": "Rolling window of last 100 signals"
+        }
+    }
 
 
 def apply_signal_confirmation(
