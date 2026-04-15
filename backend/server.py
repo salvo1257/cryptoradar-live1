@@ -21775,6 +21775,72 @@ class BacktestConfig:
     # Expiry settings
     setup_expiry_candles_4h: int = 6  # Max 4H candles to wait for trigger
     signal_expiry_candles_5m: int = 24  # Max 5M candles after entry ready
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BACKTEST DEBUG MODES (do NOT affect production)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    # NORMAL: Use exact same 5M confirmation logic as production
+    # RELAXED: Loosen 5M trigger conditions (more signals for analysis)
+    # FORCE_ENTRY: Bypass 5M confirmation entirely (test 4H setup edge)
+    confirmation_mode: str = "NORMAL"  # NORMAL | RELAXED | FORCE_ENTRY
+    
+    # Debug logging for confirmation analysis
+    debug_confirmation: bool = False  # Log detailed 5M confirmation attempts
+
+
+class ConfirmationDebugStats:
+    """Track why 5M confirmations succeed or fail"""
+    
+    def __init__(self):
+        self.total_attempts = 0
+        self.success_count = 0
+        self.failure_reasons = {
+            "insufficient_candles": 0,
+            "not_in_zone": 0,
+            "no_rejection_candle": 0,
+            "no_stabilization": 0,
+            "no_micro_structure_break": 0,
+            "zone_too_far": 0
+        }
+        self.by_setup = {}  # setup_id -> list of attempt details
+    
+    def log_attempt(self, setup_id: str, candles_count: int, 
+                    in_zone: bool, zone_distance_pct: float,
+                    rejection_check: bool, stabilization_check: bool,
+                    micro_break_check: bool, success: bool, reason: str = None):
+        """Log a confirmation attempt with details"""
+        self.total_attempts += 1
+        
+        if success:
+            self.success_count += 1
+        elif reason:
+            if reason in self.failure_reasons:
+                self.failure_reasons[reason] += 1
+        
+        # Track per-setup
+        if setup_id not in self.by_setup:
+            self.by_setup[setup_id] = []
+        
+        self.by_setup[setup_id].append({
+            "candles": candles_count,
+            "in_zone": in_zone,
+            "zone_distance_pct": round(zone_distance_pct, 3),
+            "rejection_ok": rejection_check,
+            "stabilization_ok": stabilization_check,
+            "micro_break_ok": micro_break_check,
+            "success": success,
+            "reason": reason
+        })
+    
+    def get_summary(self) -> Dict[str, Any]:
+        return {
+            "total_attempts": self.total_attempts,
+            "success_count": self.success_count,
+            "success_rate": round(self.success_count / self.total_attempts * 100, 1) if self.total_attempts > 0 else 0,
+            "failure_reasons": self.failure_reasons,
+            "setups_analyzed": len(self.by_setup)
+        }
 
 
 @dataclass
@@ -22339,6 +22405,11 @@ class V3ReplayEngine:
     2. NO LOOK-AHEAD BIAS: Only uses data available at that exact candle
     3. CONFIG SNAPSHOT: Stores full config for version comparison
     4. EXPLICIT LIFECYCLE: Tracks all signal state transitions
+    
+    DEBUG MODES:
+    - NORMAL: Exact same 5M confirmation as production
+    - RELAXED: Looser 5M conditions (zone buffer, stabilization)
+    - FORCE_ENTRY: Bypass 5M, generate signal from 4H setup directly
     """
     
     def __init__(self, run_id: str, config: BacktestConfig):
@@ -22348,6 +22419,11 @@ class V3ReplayEngine:
         
         # Frozen config snapshot at run start
         self.config_snapshot = get_v3_config_snapshot()
+        self.config_snapshot["confirmation_mode"] = config.confirmation_mode
+        self.config_snapshot["debug_confirmation"] = config.debug_confirmation
+        
+        # Debug stats for confirmation analysis
+        self.confirmation_debug = ConfirmationDebugStats()
         
         # State
         self.current_state = SignalLifecycle.SETUP_GENERATED
@@ -22711,33 +22787,294 @@ class V3ReplayEngine:
         quality: BacktestDataQuality
     ) -> Optional[Dict]:
         """
-        Check for 5M confirmation using SAME detect_5m_confirmation() logic.
+        Check for 5M confirmation with debug modes.
+        
+        Modes:
+        - NORMAL: Use exact same detect_5m_confirmation() as production
+        - RELAXED: Loosen zone buffer and stabilization requirements
+        - FORCE_ENTRY: Bypass 5M entirely, always confirm
         
         NO LOOK-AHEAD: Only uses candles up to current index.
         """
+        setup_id = setup.get("setup_id", "unknown")[:8]
+        current_price = current_candle_5m["close"]
+        zone_high = setup["zone_high"]
+        zone_low = setup["zone_low"]
+        direction = setup["direction"]
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # FORCE_ENTRY MODE: Bypass 5M confirmation entirely
+        # ═══════════════════════════════════════════════════════════════════
+        if self.config.confirmation_mode == "FORCE_ENTRY":
+            if self.config.debug_confirmation:
+                logger.info(f"[Backtest Debug] Setup {setup_id}: FORCE_ENTRY mode - bypassing 5M confirmation")
+            
+            self.confirmation_debug.log_attempt(
+                setup_id=setup_id,
+                candles_count=len(history_5m),
+                in_zone=True,
+                zone_distance_pct=0,
+                rejection_check=True,
+                stabilization_check=True,
+                micro_break_check=True,
+                success=True,
+                reason="force_entry"
+            )
+            
+            return {
+                "type": "force_entry",
+                "strength": 50,
+                "price": current_price,
+                "details": {"mode": "FORCE_ENTRY", "bypassed_5m": True},
+                "signal": f"FORCE_ENTRY mode - signal from 4H setup at ${current_price:,.0f}"
+            }
+        
+        # Minimum candles check
         if len(history_5m) < 5:
+            if self.config.debug_confirmation:
+                self.confirmation_debug.log_attempt(
+                    setup_id=setup_id,
+                    candles_count=len(history_5m),
+                    in_zone=False,
+                    zone_distance_pct=0,
+                    rejection_check=False,
+                    stabilization_check=False,
+                    micro_break_check=False,
+                    success=False,
+                    reason="insufficient_candles"
+                )
             return None
         
-        current_price = current_candle_5m["close"]
+        # Calculate zone distance
+        zone_center = (zone_high + zone_low) / 2
+        if direction == "LONG":
+            zone_distance_pct = ((current_price - zone_low) / zone_low) * 100
+        else:
+            zone_distance_pct = ((zone_high - current_price) / zone_high) * 100
         
-        # Create a minimal SetupEvent-like object for the confirmation function
-        # We need to match the interface expected by detect_5m_confirmation
-        class SetupProxy:
-            pass
+        # Zone check parameters based on mode
+        if self.config.confirmation_mode == "RELAXED":
+            zone_buffer = 0.01  # 1% buffer (vs 0.2% in production)
+            min_stabilization = 1  # 1 candle (vs 2 in production)
+        else:  # NORMAL
+            zone_buffer = 0.002  # 0.2% buffer
+            min_stabilization = 2
         
-        setup_proxy = SetupProxy()
-        setup_proxy.zone_high = setup["zone_high"]
-        setup_proxy.zone_low = setup["zone_low"]
-        setup_proxy.direction = setup["direction"]
+        # Check if price is in or near zone
+        in_zone = zone_low * (1 - zone_buffer) <= current_price <= zone_high * (1 + zone_buffer)
         
-        # Call SAME confirmation logic as production
-        confirmation = detect_5m_confirmation(
-            candles_5m=history_5m,
-            setup=setup_proxy,
-            current_price=current_price
+        if not in_zone and abs(zone_distance_pct) > (zone_buffer * 100 * 2):
+            if self.config.debug_confirmation:
+                self.confirmation_debug.log_attempt(
+                    setup_id=setup_id,
+                    candles_count=len(history_5m),
+                    in_zone=False,
+                    zone_distance_pct=zone_distance_pct,
+                    rejection_check=False,
+                    stabilization_check=False,
+                    micro_break_check=False,
+                    success=False,
+                    reason="zone_too_far"
+                )
+                logger.debug(f"[Backtest Debug] Setup {setup_id}: Zone too far ({zone_distance_pct:.2f}%)")
+            return None
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # NORMAL/RELAXED: Use production logic with optional relaxation
+        # ═══════════════════════════════════════════════════════════════════
+        
+        # Get recent 5M candles
+        recent_5m = history_5m[-10:]
+        last_candle = recent_5m[-1]
+        
+        # 1. REJECTION CANDLE CHECK
+        body = abs(last_candle["close"] - last_candle["open"])
+        upper_wick = last_candle["high"] - max(last_candle["close"], last_candle["open"])
+        lower_wick = min(last_candle["close"], last_candle["open"]) - last_candle["low"]
+        
+        rejection_check = False
+        rejection_confirmation = None
+        
+        if direction == "LONG":
+            # Relaxed: wick > body (vs wick > body + other_wick in production)
+            if self.config.confirmation_mode == "RELAXED":
+                if lower_wick > body and lower_wick > 0:
+                    rejection_check = True
+                    rejection_confirmation = {
+                        "type": "rejection_candle_relaxed",
+                        "strength": min(100, (lower_wick / (body + 0.01)) * 50),
+                        "price": current_price,
+                        "details": {"lower_wick": lower_wick, "body": body},
+                        "signal": f"Relaxed rejection candle at ${current_price:,.0f}"
+                    }
+            else:
+                if lower_wick > body + upper_wick and lower_wick > 0:
+                    rejection_check = True
+                    rejection_confirmation = {
+                        "type": "rejection_candle",
+                        "strength": min(100, (lower_wick / (body + upper_wick + 0.01)) * 100),
+                        "price": current_price,
+                        "details": {"lower_wick": lower_wick, "body": body, "upper_wick": upper_wick},
+                        "signal": f"Rejection candle LONG at ${current_price:,.0f}"
+                    }
+        else:  # SHORT
+            if self.config.confirmation_mode == "RELAXED":
+                if upper_wick > body and upper_wick > 0:
+                    rejection_check = True
+                    rejection_confirmation = {
+                        "type": "rejection_candle_relaxed",
+                        "strength": min(100, (upper_wick / (body + 0.01)) * 50),
+                        "price": current_price,
+                        "details": {"upper_wick": upper_wick, "body": body},
+                        "signal": f"Relaxed rejection candle at ${current_price:,.0f}"
+                    }
+            else:
+                if upper_wick > body + lower_wick and upper_wick > 0:
+                    rejection_check = True
+                    rejection_confirmation = {
+                        "type": "rejection_candle",
+                        "strength": min(100, (upper_wick / (body + lower_wick + 0.01)) * 100),
+                        "price": current_price,
+                        "details": {"upper_wick": upper_wick, "body": body, "lower_wick": lower_wick},
+                        "signal": f"Rejection candle SHORT at ${current_price:,.0f}"
+                    }
+        
+        if rejection_check:
+            self.confirmation_debug.log_attempt(
+                setup_id=setup_id,
+                candles_count=len(history_5m),
+                in_zone=in_zone,
+                zone_distance_pct=zone_distance_pct,
+                rejection_check=True,
+                stabilization_check=False,
+                micro_break_check=False,
+                success=True,
+                reason="rejection_candle"
+            )
+            if self.config.debug_confirmation:
+                logger.info(f"[Backtest Debug] Setup {setup_id}: ✅ Rejection candle confirmed")
+            return rejection_confirmation
+        
+        # 2. STABILIZATION CHECK
+        candles_in_zone = []
+        for c in recent_5m[-5:]:
+            candle_mid = (c["high"] + c["low"]) / 2
+            zone_low_buffered = zone_low * (1 - zone_buffer)
+            zone_high_buffered = zone_high * (1 + zone_buffer)
+            if zone_low_buffered <= candle_mid <= zone_high_buffered:
+                candles_in_zone.append(c)
+        
+        stabilization_check = len(candles_in_zone) >= min_stabilization
+        stabilization_confirmation = None
+        
+        if stabilization_check:
+            ranges = [c["high"] - c["low"] for c in candles_in_zone]
+            is_compressing = len(ranges) >= 2 and ranges[-1] < ranges[0]
+            
+            if is_compressing or self.config.confirmation_mode == "RELAXED":
+                stabilization_confirmation = {
+                    "type": "stabilization" if is_compressing else "stabilization_relaxed",
+                    "strength": min(100, len(candles_in_zone) * 30),
+                    "price": current_price,
+                    "details": {
+                        "candles_in_zone": len(candles_in_zone),
+                        "compressing": is_compressing
+                    },
+                    "signal": f"Stabilization in zone ({len(candles_in_zone)} candles)"
+                }
+                
+                self.confirmation_debug.log_attempt(
+                    setup_id=setup_id,
+                    candles_count=len(history_5m),
+                    in_zone=in_zone,
+                    zone_distance_pct=zone_distance_pct,
+                    rejection_check=rejection_check,
+                    stabilization_check=True,
+                    micro_break_check=False,
+                    success=True,
+                    reason="stabilization"
+                )
+                if self.config.debug_confirmation:
+                    logger.info(f"[Backtest Debug] Setup {setup_id}: ✅ Stabilization confirmed ({len(candles_in_zone)} candles)")
+                return stabilization_confirmation
+        
+        # 3. MICRO-STRUCTURE BREAK CHECK
+        micro_swing_high = max(c["high"] for c in recent_5m[-5:])
+        micro_swing_low = min(c["low"] for c in recent_5m[-5:])
+        
+        micro_break_check = False
+        micro_confirmation = None
+        
+        if direction == "LONG":
+            if last_candle["close"] > micro_swing_high:
+                micro_break_check = True
+                micro_confirmation = {
+                    "type": "micro_structure_break",
+                    "strength": 70,
+                    "price": current_price,
+                    "details": {
+                        "micro_high": micro_swing_high,
+                        "break_level": last_candle["close"]
+                    },
+                    "signal": f"Micro structure break above ${micro_swing_high:,.0f}"
+                }
+        else:
+            if last_candle["close"] < micro_swing_low:
+                micro_break_check = True
+                micro_confirmation = {
+                    "type": "micro_structure_break",
+                    "strength": 70,
+                    "price": current_price,
+                    "details": {
+                        "micro_low": micro_swing_low,
+                        "break_level": last_candle["close"]
+                    },
+                    "signal": f"Micro structure break below ${micro_swing_low:,.0f}"
+                }
+        
+        if micro_break_check:
+            self.confirmation_debug.log_attempt(
+                setup_id=setup_id,
+                candles_count=len(history_5m),
+                in_zone=in_zone,
+                zone_distance_pct=zone_distance_pct,
+                rejection_check=rejection_check,
+                stabilization_check=stabilization_check,
+                micro_break_check=True,
+                success=True,
+                reason="micro_structure_break"
+            )
+            if self.config.debug_confirmation:
+                logger.info(f"[Backtest Debug] Setup {setup_id}: ✅ Micro structure break confirmed")
+            return micro_confirmation
+        
+        # NO CONFIRMATION FOUND
+        # Determine primary failure reason
+        if not in_zone and abs(zone_distance_pct) > 0.5:
+            reason = "not_in_zone"
+        elif not rejection_check and not stabilization_check and not micro_break_check:
+            reason = "no_rejection_candle"  # Most common
+        else:
+            reason = "no_stabilization"
+        
+        self.confirmation_debug.log_attempt(
+            setup_id=setup_id,
+            candles_count=len(history_5m),
+            in_zone=in_zone,
+            zone_distance_pct=zone_distance_pct,
+            rejection_check=rejection_check,
+            stabilization_check=stabilization_check,
+            micro_break_check=micro_break_check,
+            success=False,
+            reason=reason
         )
         
-        return confirmation
+        if self.config.debug_confirmation:
+            logger.debug(f"[Backtest Debug] Setup {setup_id}: ❌ No confirmation. "
+                        f"in_zone={in_zone}, distance={zone_distance_pct:.2f}%, "
+                        f"rejection={rejection_check}, stab={stabilization_check}, micro={micro_break_check}")
+        
+        return None
     
     async def _expire_stale_setups(self, candle_4h: Dict):
         """Remove setups that have expired (V3_SETUP_VALIDITY_HOURS)"""
@@ -23128,7 +23465,11 @@ class V3ReplayEngine:
                     if signals else 0, 1
                 ),
                 "degraded_count": len([s for s in signals if s.get("data_quality", {}).get("degraded_mode")])
-            }
+            },
+            
+            # Debug stats for confirmation analysis
+            "confirmation_debug": self.confirmation_debug.get_summary() if self.config.debug_confirmation else None,
+            "confirmation_mode": self.config.confirmation_mode
         }
         
         return summary
@@ -23142,14 +23483,26 @@ async def launch_backtest(
     date_from: str = Query(..., description="Start date ISO format"),
     date_to: str = Query(..., description="End date ISO format"),
     v34_enabled: bool = Query(default=True),
-    v35_enabled: bool = Query(default=True)
+    v35_enabled: bool = Query(default=True),
+    confirmation_mode: str = Query(default="NORMAL", description="NORMAL | RELAXED | FORCE_ENTRY"),
+    debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging")
 ):
     """
     Launch a new V3 backtest run.
     
+    Confirmation Modes (for debugging only, do NOT affect production):
+    - NORMAL: Exact same 5M confirmation logic as production
+    - RELAXED: Loosen zone buffer (1% vs 0.2%) and stabilization (1 vs 2 candles)
+    - FORCE_ENTRY: Bypass 5M confirmation entirely, test 4H setup edge
+    
     This is an async operation - returns run_id immediately.
     Use /backtest/run/{run_id} to check progress.
     """
+    # Validate confirmation_mode
+    valid_modes = ["NORMAL", "RELAXED", "FORCE_ENTRY"]
+    if confirmation_mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"confirmation_mode must be one of {valid_modes}")
+    
     run_id = str(uuid.uuid4())
     
     config = BacktestConfig(
@@ -23158,7 +23511,9 @@ async def launch_backtest(
         date_to=date_to,
         engine_version="v3.5.1",
         v34_validation_enabled=v34_enabled,
-        v35_contrarian_enabled=v35_enabled
+        v35_contrarian_enabled=v35_enabled,
+        confirmation_mode=confirmation_mode,
+        debug_confirmation=debug_confirmation
     )
     
     # Create run record
@@ -23213,7 +23568,9 @@ async def launch_backtest(
     return {
         "run_id": run_id,
         "status": "launched",
-        "message": "Backtest started. Use /backtest/run/{run_id} to check progress.",
+        "confirmation_mode": confirmation_mode,
+        "debug_confirmation": debug_confirmation,
+        "message": f"Backtest started ({confirmation_mode} mode). Use /backtest/run/{run_id} to check progress.",
         "config": asdict(config)
     }
 
@@ -23378,6 +23735,118 @@ async def get_backtest_breakdowns(run_id: str):
         "total_signals_analyzed": len(signals),
         "breakdowns": breakdowns
     }
+
+
+@api_router.post("/backtest/compare")
+async def compare_backtest_modes(
+    date_from: str = Query(..., description="Start date ISO format"),
+    date_to: str = Query(..., description="End date ISO format")
+):
+    """
+    Run backtests in all three modes and compare results.
+    
+    Returns comparison of:
+    - NORMAL: Production 5M confirmation logic
+    - RELAXED: Looser 5M conditions
+    - FORCE_ENTRY: No 5M confirmation (pure 4H setup edge)
+    
+    WARNING: This is a long-running operation. Use for short periods only.
+    """
+    results = {}
+    modes = ["NORMAL", "RELAXED", "FORCE_ENTRY"]
+    
+    for mode in modes:
+        run_id = str(uuid.uuid4())
+        
+        config = BacktestConfig(
+            symbol="BTCUSD",
+            date_from=date_from,
+            date_to=date_to,
+            engine_version="v3.5.1",
+            v34_validation_enabled=True,
+            v35_contrarian_enabled=True,
+            confirmation_mode=mode,
+            debug_confirmation=True
+        )
+        
+        try:
+            engine = V3ReplayEngine(run_id, config)
+            summary = await engine.run()
+            
+            results[mode] = {
+                "run_id": run_id,
+                "status": "completed",
+                "setups_detected": summary["setups"]["detected"],
+                "setups_expired": summary["setups"]["expired"],
+                "signals_generated": summary["signals"]["total"],
+                "signals_executable": summary["signals"]["executable"],
+                "signals_blocked": summary["signals"]["blocked"],
+                "signals_contrarian": summary["signals"]["contrarian"],
+                "block_reasons": summary.get("block_reasons", {}),
+                "confirmation_debug": summary.get("confirmation_debug"),
+                "win_rate": summary["rates"]["win_rate"],
+                "t1_hit_rate": summary["rates"]["t1_hit_rate"],
+                "avg_rr": summary["averages"]["avg_rr"],
+                "avg_mfe": summary["averages"]["avg_mfe"],
+                "avg_mae": summary["averages"]["avg_mae"]
+            }
+        except Exception as e:
+            results[mode] = {
+                "run_id": run_id,
+                "status": "failed",
+                "error": str(e)
+            }
+    
+    # Generate comparison summary
+    comparison = {
+        "period": f"{date_from} to {date_to}",
+        "modes": results,
+        "analysis": {}
+    }
+    
+    # Calculate mode effectiveness
+    if all(r.get("status") == "completed" for r in results.values()):
+        normal = results["NORMAL"]
+        relaxed = results["RELAXED"]
+        force = results["FORCE_ENTRY"]
+        
+        comparison["analysis"] = {
+            "trigger_filter_impact": {
+                "normal_vs_force_signals": f"{normal['signals_generated']} vs {force['signals_generated']}",
+                "signals_lost_to_trigger": force['signals_generated'] - normal['signals_generated'],
+                "trigger_confirmation_rate": round(
+                    normal['signals_generated'] / force['signals_generated'] * 100, 1
+                ) if force['signals_generated'] > 0 else 0
+            },
+            "relaxed_vs_normal": {
+                "additional_signals": relaxed['signals_generated'] - normal['signals_generated'],
+                "improvement_factor": round(
+                    relaxed['signals_generated'] / normal['signals_generated'], 2
+                ) if normal['signals_generated'] > 0 else "N/A"
+            },
+            "setup_confirmation_rates": {
+                "NORMAL": round(
+                    (normal['setups_detected'] - normal['setups_expired']) / normal['setups_detected'] * 100, 1
+                ) if normal['setups_detected'] > 0 else 0,
+                "RELAXED": round(
+                    (relaxed['setups_detected'] - relaxed['setups_expired']) / relaxed['setups_detected'] * 100, 1
+                ) if relaxed['setups_detected'] > 0 else 0,
+                "FORCE_ENTRY": 100.0  # All setups become signals
+            },
+            "recommendation": ""
+        }
+        
+        # Generate recommendation
+        if force['signals_generated'] == 0:
+            comparison["analysis"]["recommendation"] = "No 4H setups detected. Check setup detection logic."
+        elif normal['signals_generated'] == 0 and force['signals_generated'] > 0:
+            comparison["analysis"]["recommendation"] = "5M trigger is too strict. Consider using RELAXED mode or reviewing zone buffer."
+        elif relaxed['signals_generated'] > normal['signals_generated'] * 2:
+            comparison["analysis"]["recommendation"] = "5M trigger is very strict. RELAXED mode produces significantly more signals."
+        else:
+            comparison["analysis"]["recommendation"] = "5M trigger is working as expected."
+    
+    return comparison
 
 
 # ============== WEBSOCKET FOR REAL-TIME PRICE ==============
