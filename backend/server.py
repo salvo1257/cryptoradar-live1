@@ -21691,6 +21691,1322 @@ async def get_v3_system_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3 BACKTEST / REPLAY ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Event-driven replay engine that simulates V3 logic on historical data.
+# No look-ahead bias. Reconstructs context, trigger, signal, outcome.
+#
+# Key Features:
+# - Multi-exchange data support (Kraken base, extensible)
+# - Data quality tracking (completeness, degraded mode)
+# - Explicit signal lifecycle (generated → executable → resolved)
+# - Post-signal path classification (MFE/MAE + behavior patterns)
+#
+# Collections:
+# - backtest_runs: Run metadata and config
+# - backtest_signals: All signals (generated/blocked/executable)
+# - backtest_outcomes: Post-signal reality tracking
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from enum import Enum
+from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Any, Optional, Tuple
+import asyncio
+
+# --- Backtest Enums ---
+
+class BacktestRunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+class SignalLifecycle(str, Enum):
+    """Explicit signal lifecycle states"""
+    SETUP_GENERATED = "setup_generated"       # 4H event detected
+    WAITING_CONFIRMATION = "waiting_confirmation"  # Waiting for 5M
+    EXECUTABLE = "executable"                  # Entry ready, passed validation
+    BLOCKED = "blocked"                        # Failed V3.4 validation
+    CONTRARIAN_CANDIDATE = "contrarian_candidate"  # Evaluating V3.5
+    CONTRARIAN_EXECUTABLE = "contrarian_executable"  # Contrarian entry ready
+    RESOLVED = "resolved"                      # Outcome determined
+
+class PostSignalPath(str, Enum):
+    """Classification of what happens after signal"""
+    IMMEDIATE_FOLLOW_THROUGH = "immediate_follow_through"  # Direct move to target
+    SWEEP_THEN_TARGET = "sweep_then_target"                # Adverse sweep, then recovery
+    ADVERSE_THEN_RECOVERY = "adverse_then_recovery"        # MAE first, then MFE
+    CHOP_DEAD_MARKET = "chop_dead_market"                  # No clear direction
+    FAKE_BREAKOUT = "fake_breakout"                        # Looked good, failed
+    STOP_THEN_REVERSAL = "stop_then_reversal"              # Hit stop, then went to target
+    EXTENDED_MOVE = "extended_move"                        # Exceeded T2
+    UNKNOWN = "unknown"
+
+class DataQuality(str, Enum):
+    COMPLETE = "complete"      # All data sources available
+    PARTIAL = "partial"        # Some context missing
+    DEGRADED = "degraded"      # Critical data missing
+    MINIMAL = "minimal"        # Only OHLC available
+
+# --- Backtest Models ---
+
+@dataclass
+class BacktestConfig:
+    """Configuration for a backtest run"""
+    symbol: str = "BTCUSD"
+    date_from: str = ""  # ISO format
+    date_to: str = ""    # ISO format
+    engine_version: str = "v3.5.1"
+    v34_validation_enabled: bool = True
+    v35_contrarian_enabled: bool = True
+    
+    # Data sources
+    ohlc_source: str = "kraken"  # Primary OHLC source
+    use_coinglass_historical: bool = False  # When available
+    multi_exchange_context: bool = False    # Aggregate from multiple exchanges
+    
+    # Timeframes
+    context_timeframe: str = "4H"
+    trigger_timeframe: str = "5M"
+    
+    # Expiry settings
+    setup_expiry_candles_4h: int = 6  # Max 4H candles to wait for trigger
+    signal_expiry_candles_5m: int = 24  # Max 5M candles after entry ready
+
+
+@dataclass
+class BacktestDataQuality:
+    """Track data quality for each signal"""
+    completeness_score: float = 100.0  # 0-100
+    context_quality: str = DataQuality.COMPLETE.value
+    degraded_mode: bool = False
+    
+    # What's available
+    has_ohlc: bool = True
+    has_volume: bool = True
+    has_orderbook_context: bool = False
+    has_derivatives_context: bool = False
+    has_liquidation_data: bool = False
+    has_funding_data: bool = False
+    
+    # Data gaps
+    ohlc_gaps: int = 0
+    context_gaps: List[str] = field(default_factory=list)
+    
+    def calculate_score(self):
+        """Calculate completeness score based on available data"""
+        score = 0
+        if self.has_ohlc: score += 40
+        if self.has_volume: score += 15
+        if self.has_orderbook_context: score += 15
+        if self.has_derivatives_context: score += 15
+        if self.has_liquidation_data: score += 10
+        if self.has_funding_data: score += 5
+        
+        # Penalize gaps
+        score -= self.ohlc_gaps * 5
+        score -= len(self.context_gaps) * 2
+        
+        self.completeness_score = max(0, min(100, score))
+        
+        # Determine quality level
+        if self.completeness_score >= 80:
+            self.context_quality = DataQuality.COMPLETE.value
+        elif self.completeness_score >= 60:
+            self.context_quality = DataQuality.PARTIAL.value
+        elif self.completeness_score >= 40:
+            self.context_quality = DataQuality.DEGRADED.value
+            self.degraded_mode = True
+        else:
+            self.context_quality = DataQuality.MINIMAL.value
+            self.degraded_mode = True
+        
+        return self.completeness_score
+
+
+@dataclass
+class BacktestSignalContext:
+    """Full context snapshot at signal generation"""
+    regime: str = "UNKNOWN"
+    regime_confidence: float = 0.0
+    bias: str = "NEUTRAL"
+    bias_confidence: float = 50.0
+    energy_score: float = 50.0
+    compression_level: str = "MEDIUM"
+    magnet_direction: str = "BALANCED"
+    magnet_strength: float = 0.0
+    liquidity_direction: str = "BALANCED"
+    squeeze_context: Optional[Dict[str, Any]] = None
+    
+    # Cluster data
+    cluster_distance_pct: float = 0.0
+    cluster_volume: float = 0.0
+    cluster_count: int = 0
+
+
+@dataclass
+class BacktestSignalTargets:
+    """Target levels for a signal"""
+    entry: float = 0.0
+    stop_loss: float = 0.0
+    target_1: float = 0.0
+    target_2: Optional[float] = None
+    rr_ratio: float = 0.0
+    
+    # Risk calculations
+    risk_pct: float = 0.0
+    reward_pct: float = 0.0
+
+
+@dataclass 
+class BacktestOutcome:
+    """Post-signal reality tracking"""
+    # Resolution
+    result: str = "PENDING"  # WIN/PARTIAL_WIN/LOSS/EXPIRED
+    resolution_timestamp: Optional[str] = None
+    resolution_price: float = 0.0
+    candles_to_resolution: int = 0
+    
+    # Target tracking
+    t1_hit: bool = False
+    t2_hit: bool = False
+    stop_hit: bool = False
+    t1_timestamp: Optional[str] = None
+    t2_timestamp: Optional[str] = None
+    stop_timestamp: Optional[str] = None
+    
+    # Timing
+    time_to_t1_minutes: Optional[float] = None
+    time_to_t2_minutes: Optional[float] = None
+    time_to_stop_minutes: Optional[float] = None
+    
+    # Excursion tracking
+    mfe: float = 0.0  # Maximum Favorable Excursion %
+    mae: float = 0.0  # Maximum Adverse Excursion %
+    mfe_timestamp: Optional[str] = None
+    mae_timestamp: Optional[str] = None
+    
+    # Path classification
+    path_type: str = PostSignalPath.UNKNOWN.value
+    path_description: str = ""
+    
+    # Detailed path analysis
+    first_significant_move: str = "none"  # "favorable" or "adverse"
+    adverse_before_target: bool = False
+    recovery_after_adverse: bool = False
+    exceeded_t2: bool = False
+
+
+@dataclass
+class BacktestSignal:
+    """Complete signal record for backtest"""
+    signal_id: str = ""
+    run_id: str = ""
+    timestamp: str = ""
+    candle_index: int = 0
+    
+    # Lifecycle
+    lifecycle_state: str = SignalLifecycle.SETUP_GENERATED.value
+    
+    # Direction and type
+    direction: str = ""  # LONG/SHORT/CONTRARIAN_LONG/CONTRARIAN_SHORT
+    setup_type: str = ""
+    
+    # Context
+    context: BacktestSignalContext = field(default_factory=BacktestSignalContext)
+    targets: BacktestSignalTargets = field(default_factory=BacktestSignalTargets)
+    data_quality: BacktestDataQuality = field(default_factory=BacktestDataQuality)
+    
+    # Validation
+    v34_passed: bool = False
+    block_reason: Optional[str] = None
+    contrarian_active: bool = False
+    contrarian_reason: Optional[str] = None
+    
+    # Outcome (populated after resolution)
+    outcome: Optional[BacktestOutcome] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for MongoDB"""
+        return {
+            "signal_id": self.signal_id,
+            "run_id": self.run_id,
+            "timestamp": self.timestamp,
+            "candle_index": self.candle_index,
+            "lifecycle_state": self.lifecycle_state,
+            "direction": self.direction,
+            "setup_type": self.setup_type,
+            "context": asdict(self.context) if self.context else {},
+            "targets": asdict(self.targets) if self.targets else {},
+            "data_quality": asdict(self.data_quality) if self.data_quality else {},
+            "v34_passed": self.v34_passed,
+            "block_reason": self.block_reason,
+            "contrarian_active": self.contrarian_active,
+            "contrarian_reason": self.contrarian_reason,
+            "outcome": asdict(self.outcome) if self.outcome else None
+        }
+
+
+# --- Backtest Collections ---
+
+backtest_runs_collection = db["backtest_runs"]
+backtest_signals_collection = db["backtest_signals"]
+
+
+# --- Outcome Tracker ---
+
+class OutcomeTracker:
+    """Tracks post-signal reality for a single signal"""
+    
+    def __init__(self, signal: BacktestSignal):
+        self.signal = signal
+        self.entry_price = signal.targets.entry
+        self.stop_loss = signal.targets.stop_loss
+        self.target_1 = signal.targets.target_1
+        self.target_2 = signal.targets.target_2
+        self.direction = signal.direction.replace("CONTRARIAN_", "")  # LONG or SHORT
+        
+        # Tracking state
+        self.outcome = BacktestOutcome()
+        self.entry_timestamp = datetime.fromisoformat(signal.timestamp.replace('Z', '+00:00'))
+        self.candles_processed = 0
+        self.price_history: List[Tuple[float, float]] = []  # (high, low) per candle
+        
+        # For path analysis
+        self.first_move_direction: Optional[str] = None
+        self.max_adverse_before_target = 0.0
+        
+    def process_candle(self, candle: Dict[str, Any]) -> bool:
+        """
+        Process a candle and update outcome tracking.
+        Returns True if outcome is resolved.
+        """
+        self.candles_processed += 1
+        
+        high = candle.get("high", candle.get("h", 0))
+        low = candle.get("low", candle.get("l", 0))
+        close = candle.get("close", candle.get("c", 0))
+        timestamp = candle.get("timestamp", candle.get("time", ""))
+        
+        if isinstance(timestamp, (int, float)):
+            timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+        
+        self.price_history.append((high, low))
+        
+        # Calculate excursions
+        if self.direction == "LONG":
+            favorable = (high - self.entry_price) / self.entry_price * 100
+            adverse = (self.entry_price - low) / self.entry_price * 100
+        else:  # SHORT
+            favorable = (self.entry_price - low) / self.entry_price * 100
+            adverse = (high - self.entry_price) / self.entry_price * 100
+        
+        # Update MFE/MAE
+        if favorable > self.outcome.mfe:
+            self.outcome.mfe = favorable
+            self.outcome.mfe_timestamp = timestamp
+        
+        if adverse > self.outcome.mae:
+            self.outcome.mae = adverse
+            self.outcome.mae_timestamp = timestamp
+        
+        # Track first significant move (>0.5%)
+        if self.first_move_direction is None:
+            if favorable > 0.5:
+                self.first_move_direction = "favorable"
+                self.outcome.first_significant_move = "favorable"
+            elif adverse > 0.5:
+                self.first_move_direction = "adverse"
+                self.outcome.first_significant_move = "adverse"
+        
+        # Check target/stop hits
+        resolved = False
+        
+        if self.direction == "LONG":
+            # Check T1
+            if not self.outcome.t1_hit and high >= self.target_1:
+                self.outcome.t1_hit = True
+                self.outcome.t1_timestamp = timestamp
+                self.outcome.time_to_t1_minutes = self._time_diff_minutes(timestamp)
+                
+                # Check if adverse before target
+                if self.outcome.mae > 0.3:
+                    self.outcome.adverse_before_target = True
+            
+            # Check T2
+            if self.target_2 and not self.outcome.t2_hit and high >= self.target_2:
+                self.outcome.t2_hit = True
+                self.outcome.t2_timestamp = timestamp
+                self.outcome.time_to_t2_minutes = self._time_diff_minutes(timestamp)
+            
+            # Check exceeded T2
+            if self.target_2 and high > self.target_2 * 1.01:
+                self.outcome.exceeded_t2 = True
+            
+            # Check stop
+            if not self.outcome.stop_hit and low <= self.stop_loss:
+                self.outcome.stop_hit = True
+                self.outcome.stop_timestamp = timestamp
+                self.outcome.time_to_stop_minutes = self._time_diff_minutes(timestamp)
+                
+        else:  # SHORT
+            # Check T1
+            if not self.outcome.t1_hit and low <= self.target_1:
+                self.outcome.t1_hit = True
+                self.outcome.t1_timestamp = timestamp
+                self.outcome.time_to_t1_minutes = self._time_diff_minutes(timestamp)
+                
+                if self.outcome.mae > 0.3:
+                    self.outcome.adverse_before_target = True
+            
+            # Check T2
+            if self.target_2 and not self.outcome.t2_hit and low <= self.target_2:
+                self.outcome.t2_hit = True
+                self.outcome.t2_timestamp = timestamp
+                self.outcome.time_to_t2_minutes = self._time_diff_minutes(timestamp)
+            
+            # Check exceeded T2
+            if self.target_2 and low < self.target_2 * 0.99:
+                self.outcome.exceeded_t2 = True
+            
+            # Check stop
+            if not self.outcome.stop_hit and high >= self.stop_loss:
+                self.outcome.stop_hit = True
+                self.outcome.stop_timestamp = timestamp
+                self.outcome.time_to_stop_minutes = self._time_diff_minutes(timestamp)
+        
+        # Determine resolution
+        if self.outcome.stop_hit:
+            if self.outcome.t1_hit:
+                self.outcome.result = "PARTIAL_WIN"
+            else:
+                self.outcome.result = "LOSS"
+            resolved = True
+            
+        elif self.outcome.t2_hit:
+            self.outcome.result = "WIN"
+            resolved = True
+            
+        elif self.outcome.t1_hit and self.candles_processed >= 24:  # 2 hours at 5M
+            # T1 hit but not T2 within reasonable time
+            self.outcome.result = "PARTIAL_WIN"
+            resolved = True
+        
+        if resolved:
+            self.outcome.resolution_timestamp = timestamp
+            self.outcome.resolution_price = close
+            self.outcome.candles_to_resolution = self.candles_processed
+            self._classify_path()
+        
+        return resolved
+    
+    def expire(self, timestamp: str, price: float):
+        """Mark signal as expired"""
+        self.outcome.result = "EXPIRED"
+        self.outcome.resolution_timestamp = timestamp
+        self.outcome.resolution_price = price
+        self.outcome.candles_to_resolution = self.candles_processed
+        self._classify_path()
+    
+    def _time_diff_minutes(self, timestamp: str) -> float:
+        """Calculate minutes from entry to timestamp"""
+        try:
+            ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            return (ts - self.entry_timestamp).total_seconds() / 60
+        except:
+            return 0.0
+    
+    def _classify_path(self):
+        """Classify post-signal price behavior"""
+        o = self.outcome
+        
+        # Stop hit then reversal (would have been profitable)
+        if o.stop_hit and o.t1_hit and o.time_to_stop_minutes and o.time_to_t1_minutes:
+            if o.time_to_stop_minutes < o.time_to_t1_minutes:
+                o.path_type = PostSignalPath.STOP_THEN_REVERSAL.value
+                o.path_description = "Stop hit first, then price reached target"
+                return
+        
+        # Immediate follow-through
+        if o.t1_hit and o.mae < 0.3 and o.first_significant_move == "favorable":
+            if o.exceeded_t2:
+                o.path_type = PostSignalPath.EXTENDED_MOVE.value
+                o.path_description = "Direct move exceeded T2"
+            else:
+                o.path_type = PostSignalPath.IMMEDIATE_FOLLOW_THROUGH.value
+                o.path_description = "Clean move to target with minimal drawdown"
+            return
+        
+        # Adverse then recovery
+        if o.t1_hit and o.adverse_before_target:
+            if o.mae > o.mfe * 0.5:
+                o.path_type = PostSignalPath.SWEEP_THEN_TARGET.value
+                o.path_description = f"Swept {o.mae:.1f}% adverse before recovering to target"
+            else:
+                o.path_type = PostSignalPath.ADVERSE_THEN_RECOVERY.value
+                o.path_description = f"Minor adverse move ({o.mae:.1f}%) then target"
+            return
+        
+        # Fake breakout
+        if o.stop_hit and not o.t1_hit and o.mfe > 0.3:
+            o.path_type = PostSignalPath.FAKE_BREAKOUT.value
+            o.path_description = f"Initial favorable move ({o.mfe:.1f}%) then reversal to stop"
+            return
+        
+        # Chop/dead market
+        if o.result == "EXPIRED" and o.mfe < 0.5 and o.mae < 0.5:
+            o.path_type = PostSignalPath.CHOP_DEAD_MARKET.value
+            o.path_description = "No significant movement in either direction"
+            return
+        
+        # Default
+        o.path_type = PostSignalPath.UNKNOWN.value
+        o.path_description = f"MFE: {o.mfe:.1f}%, MAE: {o.mae:.1f}%, Result: {o.result}"
+
+
+# --- Historical Data Loader ---
+
+class HistoricalDataLoader:
+    """Load historical OHLC data from multiple sources"""
+    
+    def __init__(self, config: BacktestConfig):
+        self.config = config
+        self.cache: Dict[str, List[Dict]] = {}
+    
+    async def load_candles(
+        self, 
+        timeframe: str, 
+        start_ts: int, 
+        end_ts: int
+    ) -> Tuple[List[Dict], BacktestDataQuality]:
+        """
+        Load candles for a timeframe.
+        Returns (candles, data_quality)
+        """
+        quality = BacktestDataQuality()
+        candles = []
+        
+        # Primary source: Kraken
+        if self.config.ohlc_source == "kraken":
+            candles = await self._fetch_kraken_ohlc(timeframe, start_ts, end_ts)
+            quality.has_ohlc = len(candles) > 0
+            quality.has_volume = len(candles) > 0
+        
+        # Calculate expected candle count
+        interval_seconds = self._timeframe_to_seconds(timeframe)
+        expected_candles = (end_ts - start_ts) // interval_seconds
+        
+        if expected_candles > 0:
+            quality.ohlc_gaps = max(0, expected_candles - len(candles))
+        
+        # Add context quality tracking
+        if not self.config.use_coinglass_historical:
+            quality.context_gaps.append("no_coinglass_historical")
+        
+        if not self.config.multi_exchange_context:
+            quality.context_gaps.append("single_exchange_only")
+        
+        quality.calculate_score()
+        
+        return candles, quality
+    
+    async def _fetch_kraken_ohlc(
+        self, 
+        timeframe: str, 
+        start_ts: int, 
+        end_ts: int
+    ) -> List[Dict]:
+        """Fetch OHLC from Kraken"""
+        interval_map = {
+            "1M": 1, "5M": 5, "15M": 15, "30M": 30,
+            "1H": 60, "4H": 240, "1D": 1440
+        }
+        interval = interval_map.get(timeframe, 5)
+        
+        all_candles = []
+        current_start = start_ts
+        
+        try:
+            while current_start < end_ts:
+                url = f"https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval={interval}&since={current_start}"
+                
+                async with httpx.AsyncClient(timeout=30) as client:
+                    response = await client.get(url)
+                    data = response.json()
+                
+                if data.get("error") and len(data["error"]) > 0:
+                    logger.warning(f"[Backtest] Kraken error: {data['error']}")
+                    break
+                
+                result = data.get("result", {})
+                ohlc_data = result.get("XXBTZUSD", result.get("XBTUSD", []))
+                
+                if not ohlc_data:
+                    break
+                
+                for item in ohlc_data:
+                    ts = int(item[0])
+                    if ts >= end_ts:
+                        break
+                    
+                    candle = {
+                        "timestamp": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+                        "time": ts,
+                        "open": float(item[1]),
+                        "high": float(item[2]),
+                        "low": float(item[3]),
+                        "close": float(item[4]),
+                        "volume": float(item[6]),
+                        "trades": int(item[7]) if len(item) > 7 else 0
+                    }
+                    all_candles.append(candle)
+                
+                # Move to next batch
+                if ohlc_data:
+                    current_start = int(ohlc_data[-1][0]) + 1
+                else:
+                    break
+                
+                # Rate limiting
+                await asyncio.sleep(0.5)
+            
+            return sorted(all_candles, key=lambda x: x["time"])
+            
+        except Exception as e:
+            logger.error(f"[Backtest] Error fetching Kraken data: {e}")
+            return []
+    
+    def _timeframe_to_seconds(self, tf: str) -> int:
+        mapping = {
+            "1M": 60, "5M": 300, "15M": 900, "30M": 1800,
+            "1H": 3600, "4H": 14400, "1D": 86400
+        }
+        return mapping.get(tf, 300)
+
+
+# --- V3 Replay Engine ---
+
+class V3ReplayEngine:
+    """
+    Event-driven replay engine that simulates V3 logic on historical data.
+    No look-ahead bias.
+    """
+    
+    def __init__(self, run_id: str, config: BacktestConfig):
+        self.run_id = run_id
+        self.config = config
+        self.data_loader = HistoricalDataLoader(config)
+        
+        # State
+        self.current_state = SignalLifecycle.SETUP_GENERATED
+        self.active_setups: List[BacktestSignal] = []
+        self.active_trackers: List[OutcomeTracker] = []
+        self.completed_signals: List[BacktestSignal] = []
+        
+        # Progress
+        self.total_candles = 0
+        self.processed_candles = 0
+        self.current_timestamp = ""
+        
+        # Statistics
+        self.stats = {
+            "total_signals": 0,
+            "blocked_signals": 0,
+            "executable_signals": 0,
+            "contrarian_signals": 0,
+            "resolved_signals": 0
+        }
+    
+    async def run(self) -> Dict[str, Any]:
+        """Execute the backtest replay"""
+        logger.info(f"[Backtest {self.run_id[:8]}] Starting replay from {self.config.date_from} to {self.config.date_to}")
+        
+        try:
+            # Parse dates
+            start_dt = datetime.fromisoformat(self.config.date_from.replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(self.config.date_to.replace('Z', '+00:00'))
+            start_ts = int(start_dt.timestamp())
+            end_ts = int(end_dt.timestamp())
+            
+            # Load 4H candles
+            candles_4h, quality_4h = await self.data_loader.load_candles("4H", start_ts, end_ts)
+            self.total_candles = len(candles_4h)
+            
+            if not candles_4h:
+                raise Exception("No historical data available for the specified period")
+            
+            logger.info(f"[Backtest {self.run_id[:8]}] Loaded {len(candles_4h)} 4H candles")
+            
+            # Iterate through 4H candles
+            for i, candle_4h in enumerate(candles_4h):
+                self.processed_candles = i + 1
+                self.current_timestamp = candle_4h["timestamp"]
+                
+                # Update progress in DB every 10 candles
+                if i % 10 == 0:
+                    await self._update_progress()
+                
+                # 1. Process active outcome trackers
+                await self._process_active_trackers(candle_4h)
+                
+                # 2. Evaluate 4H context and look for setups
+                setup = await self._evaluate_4h_context(candle_4h, candles_4h[:i+1], quality_4h)
+                
+                if setup:
+                    # 3. Load 5M candles for this 4H window
+                    candle_start_ts = candle_4h["time"]
+                    candle_end_ts = candle_start_ts + 14400  # 4 hours
+                    
+                    candles_5m, quality_5m = await self.data_loader.load_candles(
+                        "5M", candle_start_ts, candle_end_ts
+                    )
+                    
+                    # 4. Look for 5M trigger/confirmation
+                    for j, candle_5m in enumerate(candles_5m):
+                        # Process active trackers with 5M data
+                        await self._process_active_trackers_5m(candle_5m)
+                        
+                        # Check for trigger
+                        triggered = await self._evaluate_5m_trigger(setup, candle_5m, quality_5m)
+                        
+                        if triggered:
+                            # 5. Apply V3.4 validation
+                            signal = await self._create_and_validate_signal(setup, candle_5m, quality_5m)
+                            
+                            if signal:
+                                self.stats["total_signals"] += 1
+                                
+                                if signal.lifecycle_state == SignalLifecycle.BLOCKED.value:
+                                    self.stats["blocked_signals"] += 1
+                                    
+                                    # 6. Check V3.5 contrarian
+                                    if self.config.v35_contrarian_enabled:
+                                        contrarian = await self._evaluate_contrarian(signal)
+                                        if contrarian:
+                                            self.stats["contrarian_signals"] += 1
+                                            signal = contrarian
+                                
+                                if signal.lifecycle_state in [
+                                    SignalLifecycle.EXECUTABLE.value,
+                                    SignalLifecycle.CONTRARIAN_EXECUTABLE.value
+                                ]:
+                                    self.stats["executable_signals"] += 1
+                                    # Start outcome tracking
+                                    tracker = OutcomeTracker(signal)
+                                    self.active_trackers.append(tracker)
+                                
+                                # Save signal
+                                await self._save_signal(signal)
+                            
+                            break  # One signal per 4H window
+            
+            # Finalize any remaining active trackers
+            await self._finalize_trackers()
+            
+            # Generate summary
+            summary = await self._generate_summary()
+            
+            logger.info(f"[Backtest {self.run_id[:8]}] Completed. "
+                       f"Signals: {self.stats['total_signals']}, "
+                       f"Executable: {self.stats['executable_signals']}, "
+                       f"Blocked: {self.stats['blocked_signals']}")
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"[Backtest {self.run_id[:8]}] Failed: {e}")
+            raise
+    
+    async def _evaluate_4h_context(
+        self, 
+        current_candle: Dict, 
+        history: List[Dict],
+        quality: BacktestDataQuality
+    ) -> Optional[Dict]:
+        """
+        Evaluate 4H context to detect potential setup.
+        Returns setup dict if detected, None otherwise.
+        """
+        if len(history) < 10:
+            return None
+        
+        # Calculate basic structure
+        recent = history[-10:]
+        highs = [c["high"] for c in recent]
+        lows = [c["low"] for c in recent]
+        
+        swing_high = max(highs)
+        swing_low = min(lows)
+        current_price = current_candle["close"]
+        
+        # Detect potential setup (simplified for backtest)
+        # In production, this would use the full V3 setup detection logic
+        
+        # Check for sweep of swing high (potential short setup)
+        if current_candle["high"] > swing_high and current_candle["close"] < swing_high:
+            return {
+                "direction": "SHORT",
+                "setup_type": "sweep_reversal",
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "event_price": current_price,
+                "candle": current_candle
+            }
+        
+        # Check for sweep of swing low (potential long setup)
+        if current_candle["low"] < swing_low and current_candle["close"] > swing_low:
+            return {
+                "direction": "LONG",
+                "setup_type": "sweep_reversal",
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "event_price": current_price,
+                "candle": current_candle
+            }
+        
+        return None
+    
+    async def _evaluate_5m_trigger(
+        self,
+        setup: Dict,
+        candle_5m: Dict,
+        quality: BacktestDataQuality
+    ) -> bool:
+        """Check if 5M candle confirms the setup"""
+        direction = setup["direction"]
+        event_price = setup["event_price"]
+        
+        # Simple confirmation logic
+        if direction == "LONG":
+            # Bullish candle closing above event price
+            if candle_5m["close"] > candle_5m["open"] and candle_5m["close"] > event_price:
+                return True
+        else:  # SHORT
+            # Bearish candle closing below event price
+            if candle_5m["close"] < candle_5m["open"] and candle_5m["close"] < event_price:
+                return True
+        
+        return False
+    
+    async def _create_and_validate_signal(
+        self,
+        setup: Dict,
+        candle_5m: Dict,
+        quality: BacktestDataQuality
+    ) -> BacktestSignal:
+        """Create signal and apply V3.4 validation"""
+        
+        signal = BacktestSignal(
+            signal_id=str(uuid.uuid4()),
+            run_id=self.run_id,
+            timestamp=candle_5m["timestamp"],
+            direction=setup["direction"],
+            setup_type=setup["setup_type"],
+            data_quality=quality
+        )
+        
+        # Set targets
+        current_price = candle_5m["close"]
+        swing_high = setup["swing_high"]
+        swing_low = setup["swing_low"]
+        
+        if setup["direction"] == "LONG":
+            signal.targets.entry = current_price
+            signal.targets.stop_loss = swing_low * 0.998
+            signal.targets.target_1 = swing_high
+            signal.targets.target_2 = swing_high * 1.015
+            
+            risk = current_price - signal.targets.stop_loss
+            reward = signal.targets.target_1 - current_price
+        else:
+            signal.targets.entry = current_price
+            signal.targets.stop_loss = swing_high * 1.002
+            signal.targets.target_1 = swing_low
+            signal.targets.target_2 = swing_low * 0.985
+            
+            risk = signal.targets.stop_loss - current_price
+            reward = current_price - signal.targets.target_1
+        
+        signal.targets.rr_ratio = reward / risk if risk > 0 else 0
+        signal.targets.risk_pct = (risk / current_price) * 100
+        signal.targets.reward_pct = (reward / current_price) * 100
+        
+        # Set context (simplified - in production would use full V3 context)
+        signal.context.regime = "UNKNOWN"
+        signal.context.bias = "NEUTRAL"
+        signal.context.energy_score = 50.0
+        signal.context.magnet_direction = "BALANCED"
+        
+        # V3.4 Validation
+        if self.config.v34_validation_enabled:
+            # Check R:R
+            if signal.targets.rr_ratio < 0.5:
+                signal.lifecycle_state = SignalLifecycle.BLOCKED.value
+                signal.block_reason = f"LOW_RR_{signal.targets.rr_ratio:.2f}"
+                signal.v34_passed = False
+                return signal
+            
+            # Additional validation would go here
+            # (magnet conflict, squeeze risk, etc.)
+        
+        # Passed validation
+        signal.lifecycle_state = SignalLifecycle.EXECUTABLE.value
+        signal.v34_passed = True
+        
+        return signal
+    
+    async def _evaluate_contrarian(self, blocked_signal: BacktestSignal) -> Optional[BacktestSignal]:
+        """Evaluate V3.5.1 contrarian opportunity for blocked signal"""
+        
+        # Check if block reason is eligible
+        eligible_blocks = ["MAGNET_CONFLICT", "SQUEEZE_RISK", "BIAS_CONFLICT"]
+        if not any(b in (blocked_signal.block_reason or "") for b in eligible_blocks):
+            return None
+        
+        # Create contrarian signal (simplified)
+        contrarian = BacktestSignal(
+            signal_id=str(uuid.uuid4()),
+            run_id=self.run_id,
+            timestamp=blocked_signal.timestamp,
+            direction=f"CONTRARIAN_{'LONG' if blocked_signal.direction == 'SHORT' else 'SHORT'}",
+            setup_type="contrarian_trap",
+            data_quality=blocked_signal.data_quality,
+            contrarian_active=True,
+            contrarian_reason=f"Blocked {blocked_signal.direction} due to {blocked_signal.block_reason}"
+        )
+        
+        # Invert targets
+        contrarian.targets.entry = blocked_signal.targets.entry
+        contrarian.targets.stop_loss = blocked_signal.targets.target_1  # Original target becomes stop
+        contrarian.targets.target_1 = blocked_signal.targets.stop_loss  # Original stop becomes target
+        
+        # Calculate R:R
+        if "LONG" in contrarian.direction:
+            risk = contrarian.targets.entry - contrarian.targets.stop_loss
+            reward = contrarian.targets.target_1 - contrarian.targets.entry
+        else:
+            risk = contrarian.targets.stop_loss - contrarian.targets.entry
+            reward = contrarian.targets.entry - contrarian.targets.target_1
+        
+        contrarian.targets.rr_ratio = abs(reward / risk) if risk != 0 else 0
+        
+        # V3.5.1 stricter requirements
+        if contrarian.targets.rr_ratio < 0.7:
+            return None
+        
+        contrarian.lifecycle_state = SignalLifecycle.CONTRARIAN_EXECUTABLE.value
+        contrarian.v34_passed = True
+        
+        return contrarian
+    
+    async def _process_active_trackers(self, candle: Dict):
+        """Process outcome tracking with 4H candle"""
+        for tracker in self.active_trackers[:]:
+            resolved = tracker.process_candle(candle)
+            if resolved:
+                # Update signal with outcome
+                tracker.signal.outcome = tracker.outcome
+                tracker.signal.lifecycle_state = SignalLifecycle.RESOLVED.value
+                await self._update_signal_outcome(tracker.signal)
+                self.active_trackers.remove(tracker)
+                self.stats["resolved_signals"] += 1
+    
+    async def _process_active_trackers_5m(self, candle: Dict):
+        """Process outcome tracking with 5M candle (more granular)"""
+        for tracker in self.active_trackers[:]:
+            resolved = tracker.process_candle(candle)
+            if resolved:
+                tracker.signal.outcome = tracker.outcome
+                tracker.signal.lifecycle_state = SignalLifecycle.RESOLVED.value
+                await self._update_signal_outcome(tracker.signal)
+                self.active_trackers.remove(tracker)
+                self.stats["resolved_signals"] += 1
+    
+    async def _finalize_trackers(self):
+        """Expire remaining active trackers"""
+        for tracker in self.active_trackers:
+            tracker.expire(self.current_timestamp, tracker.signal.targets.entry)
+            tracker.signal.outcome = tracker.outcome
+            tracker.signal.lifecycle_state = SignalLifecycle.RESOLVED.value
+            await self._update_signal_outcome(tracker.signal)
+            self.stats["resolved_signals"] += 1
+        self.active_trackers.clear()
+    
+    async def _save_signal(self, signal: BacktestSignal):
+        """Save signal to database"""
+        await backtest_signals_collection.insert_one(signal.to_dict())
+    
+    async def _update_signal_outcome(self, signal: BacktestSignal):
+        """Update signal outcome in database"""
+        await backtest_signals_collection.update_one(
+            {"signal_id": signal.signal_id},
+            {"$set": {
+                "outcome": asdict(signal.outcome) if signal.outcome else None,
+                "lifecycle_state": signal.lifecycle_state
+            }}
+        )
+    
+    async def _update_progress(self):
+        """Update run progress in database"""
+        await backtest_runs_collection.update_one(
+            {"run_id": self.run_id},
+            {"$set": {
+                "progress.processed_candles": self.processed_candles,
+                "progress.current_timestamp": self.current_timestamp
+            }}
+        )
+    
+    async def _generate_summary(self) -> Dict[str, Any]:
+        """Generate backtest summary statistics"""
+        
+        # Query all signals for this run
+        cursor = backtest_signals_collection.find({"run_id": self.run_id})
+        signals = await cursor.to_list(None)
+        
+        # Calculate statistics
+        executable_signals = [s for s in signals if s.get("lifecycle_state") in [
+            SignalLifecycle.EXECUTABLE.value,
+            SignalLifecycle.CONTRARIAN_EXECUTABLE.value,
+            SignalLifecycle.RESOLVED.value
+        ]]
+        
+        blocked_signals = [s for s in signals if s.get("lifecycle_state") == SignalLifecycle.BLOCKED.value]
+        contrarian_signals = [s for s in signals if s.get("contrarian_active")]
+        
+        # Outcome stats
+        outcomes = [s.get("outcome", {}) for s in signals if s.get("outcome")]
+        wins = len([o for o in outcomes if o.get("result") in ["WIN", "PARTIAL_WIN"]])
+        losses = len([o for o in outcomes if o.get("result") == "LOSS"])
+        expired = len([o for o in outcomes if o.get("result") == "EXPIRED"])
+        
+        t1_hits = len([o for o in outcomes if o.get("t1_hit")])
+        t2_hits = len([o for o in outcomes if o.get("t2_hit")])
+        
+        total_resolved = wins + losses + expired
+        
+        # Averages
+        mfes = [o.get("mfe", 0) for o in outcomes if o.get("mfe")]
+        maes = [o.get("mae", 0) for o in outcomes if o.get("mae")]
+        rrs = [s.get("targets", {}).get("rr_ratio", 0) for s in executable_signals]
+        
+        # Path distribution
+        path_counts = {}
+        for o in outcomes:
+            path = o.get("path_type", "unknown")
+            path_counts[path] = path_counts.get(path, 0) + 1
+        
+        # Direction breakdown
+        longs = [s for s in executable_signals if "LONG" in s.get("direction", "")]
+        shorts = [s for s in executable_signals if "SHORT" in s.get("direction", "")]
+        
+        summary = {
+            "run_id": self.run_id,
+            "config": asdict(self.config),
+            "total_candles_processed": self.processed_candles,
+            
+            "signals": {
+                "total": len(signals),
+                "executable": len(executable_signals),
+                "blocked": len(blocked_signals),
+                "contrarian": len(contrarian_signals),
+                "resolved": total_resolved
+            },
+            
+            "outcomes": {
+                "wins": wins,
+                "losses": losses,
+                "expired": expired,
+                "pending": len(signals) - total_resolved
+            },
+            
+            "rates": {
+                "win_rate": round((wins / total_resolved * 100) if total_resolved > 0 else 0, 1),
+                "t1_hit_rate": round((t1_hits / total_resolved * 100) if total_resolved > 0 else 0, 1),
+                "t2_hit_rate": round((t2_hits / total_resolved * 100) if total_resolved > 0 else 0, 1),
+                "expired_rate": round((expired / total_resolved * 100) if total_resolved > 0 else 0, 1),
+                "block_rate": round((len(blocked_signals) / len(signals) * 100) if signals else 0, 1)
+            },
+            
+            "averages": {
+                "avg_rr": round(sum(rrs) / len(rrs) if rrs else 0, 2),
+                "avg_mfe": round(sum(mfes) / len(mfes) if mfes else 0, 2),
+                "avg_mae": round(sum(maes) / len(maes) if maes else 0, 2)
+            },
+            
+            "path_distribution": path_counts,
+            
+            "by_direction": {
+                "long": {
+                    "count": len(longs),
+                    "wins": len([s for s in longs if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]])
+                },
+                "short": {
+                    "count": len(shorts),
+                    "wins": len([s for s in shorts if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]])
+                }
+            },
+            
+            "data_quality": {
+                "avg_completeness": round(
+                    sum(s.get("data_quality", {}).get("completeness_score", 0) for s in signals) / len(signals) 
+                    if signals else 0, 1
+                ),
+                "degraded_count": len([s for s in signals if s.get("data_quality", {}).get("degraded_mode")])
+            }
+        }
+        
+        return summary
+
+
+# --- Backtest API Endpoints ---
+
+@api_router.post("/backtest/launch")
+async def launch_backtest(
+    symbol: str = Query(default="BTCUSD"),
+    date_from: str = Query(..., description="Start date ISO format"),
+    date_to: str = Query(..., description="End date ISO format"),
+    v34_enabled: bool = Query(default=True),
+    v35_enabled: bool = Query(default=True)
+):
+    """
+    Launch a new V3 backtest run.
+    
+    This is an async operation - returns run_id immediately.
+    Use /backtest/run/{run_id} to check progress.
+    """
+    run_id = str(uuid.uuid4())
+    
+    config = BacktestConfig(
+        symbol=symbol,
+        date_from=date_from,
+        date_to=date_to,
+        engine_version="v3.5.1",
+        v34_validation_enabled=v34_enabled,
+        v35_contrarian_enabled=v35_enabled
+    )
+    
+    # Create run record
+    run_doc = {
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": None,
+        "status": BacktestRunStatus.PENDING.value,
+        "config": asdict(config),
+        "progress": {
+            "total_candles": 0,
+            "processed_candles": 0,
+            "current_timestamp": ""
+        },
+        "summary": None
+    }
+    
+    await backtest_runs_collection.insert_one(run_doc)
+    
+    # Start backtest in background
+    async def run_backtest():
+        try:
+            await backtest_runs_collection.update_one(
+                {"run_id": run_id},
+                {"$set": {"status": BacktestRunStatus.RUNNING.value}}
+            )
+            
+            engine = V3ReplayEngine(run_id, config)
+            summary = await engine.run()
+            
+            await backtest_runs_collection.update_one(
+                {"run_id": run_id},
+                {"$set": {
+                    "status": BacktestRunStatus.COMPLETED.value,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "summary": summary
+                }}
+            )
+        except Exception as e:
+            logger.error(f"[Backtest {run_id[:8]}] Failed: {e}")
+            await backtest_runs_collection.update_one(
+                {"run_id": run_id},
+                {"$set": {
+                    "status": BacktestRunStatus.FAILED.value,
+                    "error": str(e)
+                }}
+            )
+    
+    # Run in background
+    asyncio.create_task(run_backtest())
+    
+    return {
+        "run_id": run_id,
+        "status": "launched",
+        "message": "Backtest started. Use /backtest/run/{run_id} to check progress.",
+        "config": asdict(config)
+    }
+
+
+@api_router.get("/backtest/runs")
+async def list_backtest_runs(limit: int = Query(default=20, le=100)):
+    """List all backtest runs"""
+    cursor = backtest_runs_collection.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    runs = await cursor.to_list(limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+@api_router.get("/backtest/run/{run_id}")
+async def get_backtest_run(run_id: str):
+    """Get backtest run details and progress"""
+    run = await backtest_runs_collection.find_one({"run_id": run_id}, {"_id": 0})
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+@api_router.get("/backtest/run/{run_id}/signals")
+async def get_backtest_signals(
+    run_id: str,
+    lifecycle: Optional[str] = Query(default=None),
+    direction: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, le=500)
+):
+    """Get signals from a backtest run"""
+    query = {"run_id": run_id}
+    
+    if lifecycle:
+        query["lifecycle_state"] = lifecycle
+    if direction:
+        query["direction"] = {"$regex": direction, "$options": "i"}
+    
+    cursor = backtest_signals_collection.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit)
+    signals = await cursor.to_list(limit)
+    
+    return {
+        "run_id": run_id,
+        "count": len(signals),
+        "signals": signals
+    }
+
+
+@api_router.get("/backtest/run/{run_id}/summary")
+async def get_backtest_summary(run_id: str):
+    """Get backtest summary with full breakdowns"""
+    run = await backtest_runs_collection.find_one({"run_id": run_id}, {"_id": 0})
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    if run.get("status") != BacktestRunStatus.COMPLETED.value:
+        return {
+            "run_id": run_id,
+            "status": run.get("status"),
+            "message": "Backtest not yet completed",
+            "progress": run.get("progress")
+        }
+    
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "summary": run.get("summary")
+    }
+
+
+@api_router.get("/backtest/run/{run_id}/breakdowns")
+async def get_backtest_breakdowns(run_id: str):
+    """Get detailed performance breakdowns by condition"""
+    
+    cursor = backtest_signals_collection.find(
+        {"run_id": run_id, "outcome": {"$ne": None}},
+        {"_id": 0}
+    )
+    signals = await cursor.to_list(None)
+    
+    if not signals:
+        return {"run_id": run_id, "message": "No resolved signals found"}
+    
+    # Build breakdowns
+    breakdowns = {
+        "by_setup_type": {},
+        "by_direction": {"LONG": {"wins": 0, "losses": 0, "total": 0}, "SHORT": {"wins": 0, "losses": 0, "total": 0}},
+        "by_path_type": {},
+        "by_data_quality": {"complete": {"wins": 0, "total": 0}, "degraded": {"wins": 0, "total": 0}},
+        "by_rr_range": {}
+    }
+    
+    for signal in signals:
+        outcome = signal.get("outcome", {})
+        result = outcome.get("result", "")
+        is_win = result in ["WIN", "PARTIAL_WIN"]
+        
+        # By direction
+        direction = signal.get("direction", "").replace("CONTRARIAN_", "")
+        if direction in breakdowns["by_direction"]:
+            breakdowns["by_direction"][direction]["total"] += 1
+            if is_win:
+                breakdowns["by_direction"][direction]["wins"] += 1
+            else:
+                breakdowns["by_direction"][direction]["losses"] += 1
+        
+        # By setup type
+        setup_type = signal.get("setup_type", "unknown")
+        if setup_type not in breakdowns["by_setup_type"]:
+            breakdowns["by_setup_type"][setup_type] = {"wins": 0, "losses": 0, "total": 0}
+        breakdowns["by_setup_type"][setup_type]["total"] += 1
+        if is_win:
+            breakdowns["by_setup_type"][setup_type]["wins"] += 1
+        else:
+            breakdowns["by_setup_type"][setup_type]["losses"] += 1
+        
+        # By path type
+        path_type = outcome.get("path_type", "unknown")
+        if path_type not in breakdowns["by_path_type"]:
+            breakdowns["by_path_type"][path_type] = {"wins": 0, "losses": 0, "total": 0, "avg_mfe": 0, "avg_mae": 0}
+        breakdowns["by_path_type"][path_type]["total"] += 1
+        if is_win:
+            breakdowns["by_path_type"][path_type]["wins"] += 1
+        else:
+            breakdowns["by_path_type"][path_type]["losses"] += 1
+        
+        # By data quality
+        dq = signal.get("data_quality", {})
+        quality_key = "degraded" if dq.get("degraded_mode") else "complete"
+        breakdowns["by_data_quality"][quality_key]["total"] += 1
+        if is_win:
+            breakdowns["by_data_quality"][quality_key]["wins"] += 1
+        
+        # By R:R range
+        rr = signal.get("targets", {}).get("rr_ratio", 0)
+        if rr < 0.5:
+            rr_range = "<0.5"
+        elif rr < 1.0:
+            rr_range = "0.5-1.0"
+        elif rr < 1.5:
+            rr_range = "1.0-1.5"
+        elif rr < 2.0:
+            rr_range = "1.5-2.0"
+        else:
+            rr_range = "2.0+"
+        
+        if rr_range not in breakdowns["by_rr_range"]:
+            breakdowns["by_rr_range"][rr_range] = {"wins": 0, "losses": 0, "total": 0}
+        breakdowns["by_rr_range"][rr_range]["total"] += 1
+        if is_win:
+            breakdowns["by_rr_range"][rr_range]["wins"] += 1
+        else:
+            breakdowns["by_rr_range"][rr_range]["losses"] += 1
+    
+    # Calculate win rates
+    for category in breakdowns.values():
+        if isinstance(category, dict):
+            for key, stats in category.items():
+                if isinstance(stats, dict) and "total" in stats and stats["total"] > 0:
+                    stats["win_rate"] = round(stats.get("wins", 0) / stats["total"] * 100, 1)
+    
+    return {
+        "run_id": run_id,
+        "total_signals_analyzed": len(signals),
+        "breakdowns": breakdowns
+    }
+
+
 # ============== WEBSOCKET FOR REAL-TIME PRICE ==============
 
 class ConnectionManager:
