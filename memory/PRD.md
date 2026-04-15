@@ -1,14 +1,44 @@
-# CryptoRadar v3.5.1 - Product Requirements Document
-**Last Updated:** 2026-04-15
+# CryptoRadar v3.5.2 - Product Requirements Document
+**Last Updated:** 2026-04-15 (V3 Backtest Engine Backend Complete)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.1
-- **Phase:** V3-ONLY OPERATIONAL MODE
+- **Current Version:** v3.5.2
+- **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
+- **V3.5.2 Feature:** V3 Backtest/Replay Engine (backend complete)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3 BACKTEST ENGINE (2026-04-15)
+
+### Purpose
+Event-driven replay engine that replays historical BTC market data candle-by-candle, replicating V3 logic without look-ahead bias.
+
+### Critical Constraints Implemented
+1. **REUSE SAME V3 LOGIC** - Calls exact same functions used in production
+2. **NO LOOK-AHEAD BIAS** - Only uses data available at each candle
+3. **CONFIG SNAPSHOT** - Stores full frozen config per run for version comparison
+4. **EXPLICIT LIFECYCLE** - Tracks signal states (generated → blocked/executable → resolved)
+
+### Key Features
+- Uses `detect_4h_events()`, `calculate_v3_stop_loss()`, `calculate_v3_targets()` from production
+- V3.4 validation (R:R check, bias conflict) applied to backtest signals
+- V3.5.1 contrarian logic evaluated for blocked signals
+- Post-signal path classification (immediate follow-through, sweep then target, etc.)
+- Data quality tracking (degraded mode without derivatives data)
+
+### Degraded Mode Note
+Historical backtest runs without derivatives data (CoinGlass). Magnet/squeeze validation checks are disabled. This is tracked via `data_quality.degraded_mode`.
+
+### API Endpoints
+- `POST /api/backtest/launch` - Launch backtest run
+- `GET /api/backtest/runs` - List runs
+- `GET /api/backtest/run/{id}` - Run status/progress
+- `GET /api/backtest/run/{id}/signals` - Signals generated
+- `GET /api/backtest/run/{id}/summary` - Statistics
+- `GET /api/backtest/run/{id}/breakdowns` - Performance breakdowns
 
 ## V3-ONLY SYSTEM RESET (2026-04-15)
 

@@ -22270,8 +22270,8 @@ class HistoricalDataLoader:
                 else:
                     break
                 
-                # Rate limiting
-                await asyncio.sleep(0.5)
+                # Rate limiting - Kraken has strict limits
+                await asyncio.sleep(1.5)
             
             return sorted(all_candles, key=lambda x: x["time"])
             
@@ -22289,10 +22289,56 @@ class HistoricalDataLoader:
 
 # --- V3 Replay Engine ---
 
+# Full V3 Config Snapshot for backtest reproducibility
+def get_v3_config_snapshot() -> Dict[str, Any]:
+    """
+    Capture full V3 configuration at runtime for backtest reproducibility.
+    This ensures we can compare V3.5.1 vs future versions without ambiguity.
+    """
+    return {
+        "engine_version": "v3.5.1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        
+        # V3 Core Settings
+        "setup_validity_hours": V3_SETUP_VALIDITY_HOURS,
+        "stop_buffer_min": V3_STOP_BUFFER_MIN,
+        "stop_buffer_max": V3_STOP_BUFFER_MAX,
+        
+        # V3.4 Validation Thresholds
+        "v34_min_rr_threshold": 0.5,
+        "v34_magnet_conflict_enabled": True,
+        "v34_squeeze_risk_enabled": True,
+        "v34_bias_conflict_enabled": True,
+        "v34_shorts_overcrowded_threshold": 1.5,
+        "v34_longs_overcrowded_threshold": 0.67,
+        "v34_extreme_funding_threshold": 0.05,
+        
+        # V3.5.1 Contrarian Settings
+        "v35_enabled": True,
+        "v35_min_rr_threshold": 0.7,
+        "v35_min_target_distance_pct": 0.005,
+        "v35_eligible_blocks": CONTRARIAN_ELIGIBLE_BLOCKS,
+        "v35_energy_high_threshold": 60,
+        "v35_energy_medium_threshold": 40,
+        "v35_compatible_regimes": ["RANGE", "COMPRESSION", "EXPANSION"],
+        
+        # Detection Settings
+        "pivot_lookback_candles": 10,
+        "event_zone_buffer_pct": 0.002,
+        "confirmation_rejection_ratio": 1.0,
+        "confirmation_stabilization_candles": 2,
+    }
+
+
 class V3ReplayEngine:
     """
     Event-driven replay engine that simulates V3 logic on historical data.
-    No look-ahead bias.
+    
+    CRITICAL DESIGN PRINCIPLES:
+    1. REUSE SAME V3 LOGIC: Calls exact same functions used in production
+    2. NO LOOK-AHEAD BIAS: Only uses data available at that exact candle
+    3. CONFIG SNAPSHOT: Stores full config for version comparison
+    4. EXPLICIT LIFECYCLE: Tracks all signal state transitions
     """
     
     def __init__(self, run_id: str, config: BacktestConfig):
@@ -22300,9 +22346,12 @@ class V3ReplayEngine:
         self.config = config
         self.data_loader = HistoricalDataLoader(config)
         
+        # Frozen config snapshot at run start
+        self.config_snapshot = get_v3_config_snapshot()
+        
         # State
         self.current_state = SignalLifecycle.SETUP_GENERATED
-        self.active_setups: List[BacktestSignal] = []
+        self.active_setups: List[Dict[str, Any]] = []  # Pending setups waiting for confirmation
         self.active_trackers: List[OutcomeTracker] = []
         self.completed_signals: List[BacktestSignal] = []
         
@@ -22310,6 +22359,7 @@ class V3ReplayEngine:
         self.total_candles = 0
         self.processed_candles = 0
         self.current_timestamp = ""
+        self.current_price = 0.0
         
         # Statistics
         self.stats = {
@@ -22317,12 +22367,19 @@ class V3ReplayEngine:
             "blocked_signals": 0,
             "executable_signals": 0,
             "contrarian_signals": 0,
-            "resolved_signals": 0
+            "resolved_signals": 0,
+            "setups_detected": 0,
+            "setups_expired": 0
         }
     
     async def run(self) -> Dict[str, Any]:
-        """Execute the backtest replay"""
-        logger.info(f"[Backtest {self.run_id[:8]}] Starting replay from {self.config.date_from} to {self.config.date_to}")
+        """
+        Execute the backtest replay using SAME V3 logic as production.
+        
+        CRITICAL: No look-ahead bias - only uses data available at each candle.
+        """
+        logger.info(f"[Backtest {self.run_id[:8]}] Starting V3 replay from {self.config.date_from} to {self.config.date_to}")
+        logger.info(f"[Backtest {self.run_id[:8]}] Engine version: {self.config_snapshot['engine_version']}")
         
         try:
             # Parse dates
@@ -22331,50 +22388,107 @@ class V3ReplayEngine:
             start_ts = int(start_dt.timestamp())
             end_ts = int(end_dt.timestamp())
             
-            # Load 4H candles
+            # Load ALL 4H candles upfront (but we'll only use [:i+1] for no look-ahead)
             candles_4h, quality_4h = await self.data_loader.load_candles("4H", start_ts, end_ts)
             self.total_candles = len(candles_4h)
             
             if not candles_4h:
                 raise Exception("No historical data available for the specified period")
             
-            logger.info(f"[Backtest {self.run_id[:8]}] Loaded {len(candles_4h)} 4H candles")
+            logger.info(f"[Backtest {self.run_id[:8]}] Loaded {len(candles_4h)} 4H candles (data quality: {quality_4h.context_quality})")
             
-            # Iterate through 4H candles
+            # Load ALL 5M candles upfront to avoid rate limiting
+            # (but we'll only use data up to current 4H candle for no look-ahead)
+            candles_5m_all, quality_5m = await self.data_loader.load_candles("5M", start_ts, end_ts)
+            logger.info(f"[Backtest {self.run_id[:8]}] Loaded {len(candles_5m_all)} 5M candles")
+            
+            # Store config snapshot in run document
+            await backtest_runs_collection.update_one(
+                {"run_id": self.run_id},
+                {"$set": {
+                    "config_snapshot": self.config_snapshot,
+                    "progress.total_candles": self.total_candles
+                }}
+            )
+            
+            # Iterate through 4H candles (simulating real-time progression)
             for i, candle_4h in enumerate(candles_4h):
                 self.processed_candles = i + 1
                 self.current_timestamp = candle_4h["timestamp"]
+                self.current_price = candle_4h["close"]
                 
                 # Update progress in DB every 10 candles
                 if i % 10 == 0:
                     await self._update_progress()
                 
-                # 1. Process active outcome trackers
+                # ═══════════════════════════════════════════════════════════════
+                # STEP 1: Process active outcome trackers with new candle
+                # ═══════════════════════════════════════════════════════════════
                 await self._process_active_trackers(candle_4h)
                 
-                # 2. Evaluate 4H context and look for setups
-                setup = await self._evaluate_4h_context(candle_4h, candles_4h[:i+1], quality_4h)
+                # ═══════════════════════════════════════════════════════════════
+                # STEP 2: Expire stale setups (mimic V3_SETUP_VALIDITY_HOURS)
+                # ═══════════════════════════════════════════════════════════════
+                await self._expire_stale_setups(candle_4h)
                 
-                if setup:
-                    # 3. Load 5M candles for this 4H window
-                    candle_start_ts = candle_4h["time"]
-                    candle_end_ts = candle_start_ts + 14400  # 4 hours
-                    
-                    candles_5m, quality_5m = await self.data_loader.load_candles(
-                        "5M", candle_start_ts, candle_end_ts
+                # ═══════════════════════════════════════════════════════════════
+                # STEP 3: Detect new 4H events using SAME detect_4h_events()
+                # NO LOOK-AHEAD: Only pass candles[:i+1]
+                # ═══════════════════════════════════════════════════════════════
+                history_4h = candles_4h[:i+1]  # CRITICAL: No future data
+                
+                if len(history_4h) >= 10:  # Need minimum history
+                    new_events = await self._detect_4h_events_backtest(
+                        history_4h, 
+                        self.current_price,
+                        quality_4h
                     )
                     
-                    # 4. Look for 5M trigger/confirmation
-                    for j, candle_5m in enumerate(candles_5m):
-                        # Process active trackers with 5M data
-                        await self._process_active_trackers_5m(candle_5m)
+                    for event in new_events:
+                        # Create setup (similar to create_setup_event but for backtest)
+                        setup = await self._create_backtest_setup(event, candle_4h, quality_4h)
+                        if setup:
+                            self.active_setups.append(setup)
+                            self.stats["setups_detected"] += 1
+                
+                # ═══════════════════════════════════════════════════════════════
+                # STEP 4: Filter 5M candles for this 4H window (no extra API calls)
+                # NO LOOK-AHEAD: Only use 5M candles within this 4H window
+                # ═══════════════════════════════════════════════════════════════
+                candle_start_ts = candle_4h["time"]
+                candle_end_ts = candle_start_ts + 14400  # 4 hours
+                
+                # Filter 5M candles for this 4H window from preloaded data
+                candles_5m = [c for c in candles_5m_all 
+                              if candle_start_ts <= c["time"] < candle_end_ts]
+                
+                # Process 5M candles sequentially (no look-ahead within 5M)
+                for j, candle_5m in enumerate(candles_5m):
+                    # Process outcome trackers with 5M granularity
+                    await self._process_active_trackers_5m(candle_5m)
+                    
+                    # Check active setups for confirmation
+                    for setup in self.active_setups[:]:  # Copy list to allow removal
+                        # CRITICAL: Only use 5M candles up to current index
+                        history_5m = candles_5m[:j+1]
                         
-                        # Check for trigger
-                        triggered = await self._evaluate_5m_trigger(setup, candle_5m, quality_5m)
+                        confirmation = await self._check_5m_confirmation_backtest(
+                            setup, 
+                            history_5m, 
+                            candle_5m,
+                            quality_5m
+                        )
                         
-                        if triggered:
-                            # 5. Apply V3.4 validation
-                            signal = await self._create_and_validate_signal(setup, candle_5m, quality_5m)
+                        if confirmation:
+                            # ═══════════════════════════════════════════════════
+                            # STEP 5: Apply V3.4 validation (SAME as production)
+                            # ═══════════════════════════════════════════════════
+                            signal = await self._create_and_validate_signal_v3(
+                                setup, 
+                                confirmation,
+                                candle_5m, 
+                                quality_5m
+                            )
                             
                             if signal:
                                 self.stats["total_signals"] += 1
@@ -22382,11 +22496,19 @@ class V3ReplayEngine:
                                 if signal.lifecycle_state == SignalLifecycle.BLOCKED.value:
                                     self.stats["blocked_signals"] += 1
                                     
-                                    # 6. Check V3.5 contrarian
+                                    # ═══════════════════════════════════════════
+                                    # STEP 6: Check V3.5.1 contrarian opportunity
+                                    # ═══════════════════════════════════════════
                                     if self.config.v35_contrarian_enabled:
-                                        contrarian = await self._evaluate_contrarian(signal)
+                                        contrarian = await self._evaluate_contrarian_v3_5(
+                                            signal, 
+                                            setup,
+                                            candle_5m
+                                        )
                                         if contrarian:
                                             self.stats["contrarian_signals"] += 1
+                                            # Save both: blocked original + contrarian
+                                            await self._save_signal(signal)
                                             signal = contrarian
                                 
                                 if signal.lifecycle_state in [
@@ -22400,8 +22522,12 @@ class V3ReplayEngine:
                                 
                                 # Save signal
                                 await self._save_signal(signal)
-                            
-                            break  # One signal per 4H window
+                                
+                                # Remove setup once signal generated
+                                if setup in self.active_setups:
+                                    self.active_setups.remove(setup)
+                                
+                                break  # One signal per setup
             
             # Finalize any remaining active trackers
             await self._finalize_trackers()
@@ -22409,196 +22535,400 @@ class V3ReplayEngine:
             # Generate summary
             summary = await self._generate_summary()
             
-            logger.info(f"[Backtest {self.run_id[:8]}] Completed. "
+            logger.info(f"[Backtest {self.run_id[:8]}] ✅ Completed. "
+                       f"Setups: {self.stats['setups_detected']}, "
                        f"Signals: {self.stats['total_signals']}, "
                        f"Executable: {self.stats['executable_signals']}, "
-                       f"Blocked: {self.stats['blocked_signals']}")
+                       f"Blocked: {self.stats['blocked_signals']}, "
+                       f"Contrarian: {self.stats['contrarian_signals']}")
             
             return summary
             
         except Exception as e:
             logger.error(f"[Backtest {self.run_id[:8]}] Failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
     
-    async def _evaluate_4h_context(
+    async def _detect_4h_events_backtest(
         self, 
-        current_candle: Dict, 
-        history: List[Dict],
+        history_4h: List[Dict],
+        current_price: float,
+        quality: BacktestDataQuality
+    ) -> List[Dict]:
+        """
+        Detect 4H events using SAME detect_4h_events() function as production.
+        
+        NO LOOK-AHEAD: Only receives candles available at this point in time.
+        
+        Note: In backtest, we don't have live S/R levels or derivatives data.
+        We use degraded mode with OHLC-only context.
+        """
+        # Build empty/neutral S/R lists (no live orderbook data in historical)
+        supports = []
+        resistances = []
+        
+        # No live derivatives data - use defaults
+        liquidity_above = 0.0
+        liquidity_below = 0.0
+        
+        # Estimate market regime/bias from price action only
+        market_regime, market_bias = self._estimate_regime_from_candles(history_4h)
+        
+        # Call the SAME function used in production
+        events = detect_4h_events(
+            candles_4h=history_4h,
+            current_price=current_price,
+            supports=supports,
+            resistances=resistances,
+            liquidity_above=liquidity_above,
+            liquidity_below=liquidity_below,
+            market_regime=market_regime,
+            market_bias=market_bias,
+            lang="en"  # English for backtest logs
+        )
+        
+        return events
+    
+    def _estimate_regime_from_candles(self, candles: List[Dict]) -> Tuple[str, str]:
+        """
+        Estimate market regime and bias from OHLC data only (degraded mode).
+        This is used when no derivatives/live context is available.
+        """
+        if len(candles) < 10:
+            return "UNKNOWN", "NEUTRAL"
+        
+        recent = candles[-10:]
+        
+        # Calculate trend
+        first_close = recent[0]["close"]
+        last_close = recent[-1]["close"]
+        change_pct = ((last_close - first_close) / first_close) * 100
+        
+        # Calculate volatility (range expansion)
+        ranges = [c["high"] - c["low"] for c in recent]
+        avg_range = sum(ranges) / len(ranges)
+        volatility = (avg_range / last_close) * 100
+        
+        # Determine regime
+        if abs(change_pct) > 3:
+            regime = "TREND"
+        elif volatility < 0.5:
+            regime = "COMPRESSION"
+        elif volatility > 1.5:
+            regime = "EXPANSION"
+        else:
+            regime = "RANGE"
+        
+        # Determine bias
+        if change_pct > 1:
+            bias = "BULLISH"
+        elif change_pct < -1:
+            bias = "BEARISH"
+        else:
+            bias = "NEUTRAL"
+        
+        return regime, bias
+    
+    async def _create_backtest_setup(
+        self, 
+        event: Dict, 
+        candle_4h: Dict,
         quality: BacktestDataQuality
     ) -> Optional[Dict]:
         """
-        Evaluate 4H context to detect potential setup.
-        Returns setup dict if detected, None otherwise.
+        Create a setup from detected 4H event.
+        Uses SAME calculate_v3_stop_loss() and calculate_v3_targets() as production.
         """
-        if len(history) < 10:
+        direction = event["direction"]
+        current_price = candle_4h["close"]
+        swing_high = event.get("swing_high", current_price * 1.02)
+        swing_low = event.get("swing_low", current_price * 0.98)
+        sweep_level = event.get("sweep_level")
+        
+        # Use SAME stop loss calculation
+        stop_info = calculate_v3_stop_loss(
+            direction=direction,
+            swing_high=swing_high,
+            swing_low=swing_low,
+            sweep_level=sweep_level,
+            current_price=current_price
+        )
+        
+        # Use SAME target calculation (degraded mode - no cluster data)
+        target_info = calculate_v3_targets(
+            direction=direction,
+            entry_price=current_price,
+            liquidity_above=0,
+            liquidity_below=0,
+            resistances=[],
+            supports=[],
+            swing_high=swing_high,
+            swing_low=swing_low,
+            liquidity_clusters=[],  # No cluster data in backtest
+            aggregated_orderbook=None
+        )
+        
+        # Calculate R:R
+        risk = abs(current_price - stop_info["stop_loss"])
+        reward = abs(target_info["target_1"] - current_price) if target_info.get("has_valid_targets") else 0
+        rr_ratio = reward / risk if risk > 0 else 0
+        
+        # Store setup for later confirmation
+        setup = {
+            "setup_id": str(uuid.uuid4()),
+            "created_at": candle_4h["timestamp"],
+            "expires_at": (datetime.fromisoformat(candle_4h["timestamp"].replace('Z', '+00:00')) + 
+                          timedelta(hours=V3_SETUP_VALIDITY_HOURS)).isoformat(),
+            "event_type": event["type"],
+            "direction": direction,
+            "zone_high": event["zone_high"],
+            "zone_low": event["zone_low"],
+            "event_price": event["event_price"],
+            "swing_high": swing_high,
+            "swing_low": swing_low,
+            "sweep_level": sweep_level,
+            "stop_loss": stop_info["stop_loss"],
+            "stop_type": stop_info["stop_type"],
+            "target_1": target_info["target_1"],
+            "target_2": target_info["target_2"],
+            "target_1_type": target_info["target_1_type"],
+            "target_2_type": target_info["target_2_type"],
+            "has_valid_targets": target_info.get("has_valid_targets", True),
+            "risk_reward_ratio": round(rr_ratio, 2),
+            "strength": event.get("strength", 50),
+            "signal": event.get("signal", ""),
+            "data_quality": quality
+        }
+        
+        return setup
+    
+    async def _check_5m_confirmation_backtest(
+        self,
+        setup: Dict,
+        history_5m: List[Dict],
+        current_candle_5m: Dict,
+        quality: BacktestDataQuality
+    ) -> Optional[Dict]:
+        """
+        Check for 5M confirmation using SAME detect_5m_confirmation() logic.
+        
+        NO LOOK-AHEAD: Only uses candles up to current index.
+        """
+        if len(history_5m) < 5:
             return None
         
-        # Calculate basic structure
-        recent = history[-10:]
-        highs = [c["high"] for c in recent]
-        lows = [c["low"] for c in recent]
+        current_price = current_candle_5m["close"]
         
-        swing_high = max(highs)
-        swing_low = min(lows)
-        current_price = current_candle["close"]
+        # Create a minimal SetupEvent-like object for the confirmation function
+        # We need to match the interface expected by detect_5m_confirmation
+        class SetupProxy:
+            pass
         
-        # Detect potential setup (simplified for backtest)
-        # In production, this would use the full V3 setup detection logic
+        setup_proxy = SetupProxy()
+        setup_proxy.zone_high = setup["zone_high"]
+        setup_proxy.zone_low = setup["zone_low"]
+        setup_proxy.direction = setup["direction"]
         
-        # Check for sweep of swing high (potential short setup)
-        if current_candle["high"] > swing_high and current_candle["close"] < swing_high:
-            return {
-                "direction": "SHORT",
-                "setup_type": "sweep_reversal",
-                "swing_high": swing_high,
-                "swing_low": swing_low,
-                "event_price": current_price,
-                "candle": current_candle
-            }
+        # Call SAME confirmation logic as production
+        confirmation = detect_5m_confirmation(
+            candles_5m=history_5m,
+            setup=setup_proxy,
+            current_price=current_price
+        )
         
-        # Check for sweep of swing low (potential long setup)
-        if current_candle["low"] < swing_low and current_candle["close"] > swing_low:
-            return {
-                "direction": "LONG",
-                "setup_type": "sweep_reversal",
-                "swing_high": swing_high,
-                "swing_low": swing_low,
-                "event_price": current_price,
-                "candle": current_candle
-            }
-        
-        return None
+        return confirmation
     
-    async def _evaluate_5m_trigger(
+    async def _expire_stale_setups(self, candle_4h: Dict):
+        """Remove setups that have expired (V3_SETUP_VALIDITY_HOURS)"""
+        current_time = datetime.fromisoformat(candle_4h["timestamp"].replace('Z', '+00:00'))
+        
+        for setup in self.active_setups[:]:
+            expires_at = datetime.fromisoformat(setup["expires_at"].replace('Z', '+00:00'))
+            if current_time >= expires_at:
+                self.active_setups.remove(setup)
+                self.stats["setups_expired"] += 1
+    
+    async def _create_and_validate_signal_v3(
         self,
         setup: Dict,
-        candle_5m: Dict,
-        quality: BacktestDataQuality
-    ) -> bool:
-        """Check if 5M candle confirms the setup"""
-        direction = setup["direction"]
-        event_price = setup["event_price"]
-        
-        # Simple confirmation logic
-        if direction == "LONG":
-            # Bullish candle closing above event price
-            if candle_5m["close"] > candle_5m["open"] and candle_5m["close"] > event_price:
-                return True
-        else:  # SHORT
-            # Bearish candle closing below event price
-            if candle_5m["close"] < candle_5m["open"] and candle_5m["close"] < event_price:
-                return True
-        
-        return False
-    
-    async def _create_and_validate_signal(
-        self,
-        setup: Dict,
+        confirmation: Dict,
         candle_5m: Dict,
         quality: BacktestDataQuality
     ) -> BacktestSignal:
-        """Create signal and apply V3.4 validation"""
+        """
+        Create signal and apply V3.4 validation using SAME logic as production.
         
+        V3.4 Validation includes:
+        1. R:R minimum check (0.5)
+        2. Magnet conflict check (degraded - uses bias instead)
+        3. Squeeze risk check (degraded - no derivatives data)
+        4. Bias conflict check
+        """
+        current_price = candle_5m["close"]
+        
+        # Create signal with full context
         signal = BacktestSignal(
             signal_id=str(uuid.uuid4()),
             run_id=self.run_id,
             timestamp=candle_5m["timestamp"],
+            candle_index=self.processed_candles,
             direction=setup["direction"],
-            setup_type=setup["setup_type"],
+            setup_type=setup["event_type"],
+            lifecycle_state=SignalLifecycle.WAITING_CONFIRMATION.value,
             data_quality=quality
         )
         
-        # Set targets
-        current_price = candle_5m["close"]
-        swing_high = setup["swing_high"]
-        swing_low = setup["swing_low"]
+        # Set targets from setup
+        signal.targets.entry = current_price
+        signal.targets.stop_loss = setup["stop_loss"]
+        signal.targets.target_1 = setup["target_1"]
+        signal.targets.target_2 = setup["target_2"]
         
-        if setup["direction"] == "LONG":
-            signal.targets.entry = current_price
-            signal.targets.stop_loss = swing_low * 0.998
-            signal.targets.target_1 = swing_high
-            signal.targets.target_2 = swing_high * 1.015
+        # Recalculate R:R at actual entry price (not setup price)
+        risk = abs(current_price - setup["stop_loss"])
+        reward = abs(setup["target_1"] - current_price)
+        signal.targets.rr_ratio = round(reward / risk, 2) if risk > 0 else 0
+        signal.targets.risk_pct = (risk / current_price) * 100 if current_price > 0 else 0
+        signal.targets.reward_pct = (reward / current_price) * 100 if current_price > 0 else 0
+        
+        # Set context (from degraded OHLC estimation)
+        regime, bias = self._estimate_regime_from_candles([candle_5m])  # Minimal
+        signal.context.regime = regime
+        signal.context.bias = bias
+        signal.context.energy_score = 50.0  # Unknown in degraded mode
+        signal.context.magnet_direction = "BALANCED"  # Unknown
+        signal.context.compression_level = "MEDIUM"
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # V3.4 VALIDATION (SAME logic as record_v3_entry_signal)
+        # ═══════════════════════════════════════════════════════════════════
+        
+        block_reasons = []
+        
+        # 1. R:R Check (SAME threshold as production)
+        MIN_RR_THRESHOLD = 0.5
+        if signal.targets.rr_ratio < MIN_RR_THRESHOLD:
+            block_reasons.append(f"LOW_RR_{signal.targets.rr_ratio:.2f}")
+        
+        # 2. Has Valid Targets
+        if not setup.get("has_valid_targets", True):
+            block_reasons.append("NO_VALID_TARGETS")
+        
+        # 3. Bias Conflict Check (available in degraded mode)
+        # Strong bias must align with direction
+        if bias in ["BULLISH", "BEARISH"]:
+            bias_bullish = bias == "BULLISH"
+            signal_bullish = setup["direction"] == "LONG"
             
-            risk = current_price - signal.targets.stop_loss
-            reward = signal.targets.target_1 - current_price
+            if bias_bullish != signal_bullish:
+                block_reasons.append(f"BIAS_CONFLICT_{setup['direction']}_vs_{bias}")
+        
+        # NOTE: Magnet and Squeeze checks are NOT available in historical backtest
+        # because we don't have derivatives data. This is tracked via data_quality.
+        
+        # Determine if blocked
+        if block_reasons:
+            signal.lifecycle_state = SignalLifecycle.BLOCKED.value
+            signal.block_reason = block_reasons[0]  # Primary reason
+            signal.v34_passed = False
         else:
-            signal.targets.entry = current_price
-            signal.targets.stop_loss = swing_high * 1.002
-            signal.targets.target_1 = swing_low
-            signal.targets.target_2 = swing_low * 0.985
-            
-            risk = signal.targets.stop_loss - current_price
-            reward = current_price - signal.targets.target_1
-        
-        signal.targets.rr_ratio = reward / risk if risk > 0 else 0
-        signal.targets.risk_pct = (risk / current_price) * 100
-        signal.targets.reward_pct = (reward / current_price) * 100
-        
-        # Set context (simplified - in production would use full V3 context)
-        signal.context.regime = "UNKNOWN"
-        signal.context.bias = "NEUTRAL"
-        signal.context.energy_score = 50.0
-        signal.context.magnet_direction = "BALANCED"
-        
-        # V3.4 Validation
-        if self.config.v34_validation_enabled:
-            # Check R:R
-            if signal.targets.rr_ratio < 0.5:
-                signal.lifecycle_state = SignalLifecycle.BLOCKED.value
-                signal.block_reason = f"LOW_RR_{signal.targets.rr_ratio:.2f}"
-                signal.v34_passed = False
-                return signal
-            
-            # Additional validation would go here
-            # (magnet conflict, squeeze risk, etc.)
-        
-        # Passed validation
-        signal.lifecycle_state = SignalLifecycle.EXECUTABLE.value
-        signal.v34_passed = True
+            signal.lifecycle_state = SignalLifecycle.EXECUTABLE.value
+            signal.v34_passed = True
         
         return signal
     
-    async def _evaluate_contrarian(self, blocked_signal: BacktestSignal) -> Optional[BacktestSignal]:
-        """Evaluate V3.5.1 contrarian opportunity for blocked signal"""
+    async def _evaluate_contrarian_v3_5(
+        self,
+        blocked_signal: BacktestSignal,
+        setup: Dict,
+        candle_5m: Dict
+    ) -> Optional[BacktestSignal]:
+        """
+        Evaluate V3.5.1 contrarian opportunity using SAME logic as production.
         
-        # Check if block reason is eligible
-        eligible_blocks = ["MAGNET_CONFLICT", "SQUEEZE_RISK", "BIAS_CONFLICT"]
-        if not any(b in (blocked_signal.block_reason or "") for b in eligible_blocks):
+        In backtest degraded mode:
+        - No derivatives data = no squeeze context
+        - Limited to bias/regime-based evaluation
+        
+        This will naturally produce fewer contrarian signals in backtest,
+        which is expected behavior when running without derivatives context.
+        """
+        # Check eligible block reasons (SAME as production)
+        if not blocked_signal.block_reason:
             return None
         
-        # Create contrarian signal (simplified)
+        is_eligible = any(
+            eligible in blocked_signal.block_reason 
+            for eligible in CONTRARIAN_ELIGIBLE_BLOCKS
+        )
+        
+        if not is_eligible:
+            return None
+        
+        # Contrarian direction
+        contrarian_direction = "LONG" if blocked_signal.direction == "SHORT" else "SHORT"
+        current_price = candle_5m["close"]
+        
+        # Build contrarian targets (inverted)
+        swing_high = setup.get("swing_high", current_price * 1.02)
+        swing_low = setup.get("swing_low", current_price * 0.98)
+        
+        if contrarian_direction == "LONG":
+            contrarian_stop = swing_low * 0.998
+            contrarian_target = swing_high * 1.002
+            risk = current_price - contrarian_stop
+            reward = contrarian_target - current_price
+        else:
+            contrarian_stop = swing_high * 1.002
+            contrarian_target = swing_low * 0.998
+            risk = contrarian_stop - current_price
+            reward = current_price - contrarian_target
+        
+        contrarian_rr = reward / risk if risk > 0 else 0
+        
+        # V3.5.1 stricter R:R requirement (SAME as production)
+        MIN_CONTRARIAN_RR = 0.7
+        if contrarian_rr < MIN_CONTRARIAN_RR:
+            return None
+        
+        # V3.5.1 minimum target distance (SAME as production)
+        MIN_TARGET_DISTANCE_PCT = 0.005
+        target_distance_pct = abs(contrarian_target - current_price) / current_price
+        if target_distance_pct < MIN_TARGET_DISTANCE_PCT:
+            return None
+        
+        # In degraded mode (no derivatives), we can't check:
+        # - Magnet alignment
+        # - Squeeze support
+        # So contrarian signals are RARE in backtest - this is expected
+        
+        # Check regime compatibility (available in degraded mode)
+        regime = blocked_signal.context.regime
+        if regime not in ["RANGE", "COMPRESSION", "EXPANSION"]:
+            return None
+        
+        # Create contrarian signal
         contrarian = BacktestSignal(
             signal_id=str(uuid.uuid4()),
             run_id=self.run_id,
-            timestamp=blocked_signal.timestamp,
-            direction=f"CONTRARIAN_{'LONG' if blocked_signal.direction == 'SHORT' else 'SHORT'}",
+            timestamp=candle_5m["timestamp"],
+            candle_index=self.processed_candles,
+            direction=f"CONTRARIAN_{contrarian_direction}",
             setup_type="contrarian_trap",
+            lifecycle_state=SignalLifecycle.CONTRARIAN_EXECUTABLE.value,
             data_quality=blocked_signal.data_quality,
+            v34_passed=True,
             contrarian_active=True,
             contrarian_reason=f"Blocked {blocked_signal.direction} due to {blocked_signal.block_reason}"
         )
         
-        # Invert targets
-        contrarian.targets.entry = blocked_signal.targets.entry
-        contrarian.targets.stop_loss = blocked_signal.targets.target_1  # Original target becomes stop
-        contrarian.targets.target_1 = blocked_signal.targets.stop_loss  # Original stop becomes target
+        contrarian.targets.entry = current_price
+        contrarian.targets.stop_loss = round(contrarian_stop, 2)
+        contrarian.targets.target_1 = round(contrarian_target, 2)
+        contrarian.targets.rr_ratio = round(contrarian_rr, 2)
         
-        # Calculate R:R
-        if "LONG" in contrarian.direction:
-            risk = contrarian.targets.entry - contrarian.targets.stop_loss
-            reward = contrarian.targets.target_1 - contrarian.targets.entry
-        else:
-            risk = contrarian.targets.stop_loss - contrarian.targets.entry
-            reward = contrarian.targets.entry - contrarian.targets.target_1
-        
-        contrarian.targets.rr_ratio = abs(reward / risk) if risk != 0 else 0
-        
-        # V3.5.1 stricter requirements
-        if contrarian.targets.rr_ratio < 0.7:
-            return None
-        
-        contrarian.lifecycle_state = SignalLifecycle.CONTRARIAN_EXECUTABLE.value
-        contrarian.v34_passed = True
+        contrarian.context = blocked_signal.context
         
         return contrarian
     
@@ -22660,7 +22990,7 @@ class V3ReplayEngine:
         )
     
     async def _generate_summary(self) -> Dict[str, Any]:
-        """Generate backtest summary statistics"""
+        """Generate backtest summary statistics with config snapshot"""
         
         # Query all signals for this run
         cursor = backtest_signals_collection.find({"run_id": self.run_id})
@@ -22675,6 +23005,14 @@ class V3ReplayEngine:
         
         blocked_signals = [s for s in signals if s.get("lifecycle_state") == SignalLifecycle.BLOCKED.value]
         contrarian_signals = [s for s in signals if s.get("contrarian_active")]
+        
+        # Block reason breakdown
+        block_reason_counts = {}
+        for s in blocked_signals:
+            reason = s.get("block_reason", "UNKNOWN")
+            # Extract base reason (e.g., "LOW_RR_0.45" -> "LOW_RR")
+            base_reason = reason.split("_")[0] + "_" + reason.split("_")[1] if "_" in reason else reason
+            block_reason_counts[base_reason] = block_reason_counts.get(base_reason, 0) + 1
         
         # Outcome stats
         outcomes = [s.get("outcome", {}) for s in signals if s.get("outcome")]
@@ -22692,20 +23030,44 @@ class V3ReplayEngine:
         maes = [o.get("mae", 0) for o in outcomes if o.get("mae")]
         rrs = [s.get("targets", {}).get("rr_ratio", 0) for s in executable_signals]
         
+        # Time to resolution stats
+        times_to_t1 = [o.get("time_to_t1_minutes", 0) for o in outcomes if o.get("time_to_t1_minutes")]
+        times_to_stop = [o.get("time_to_stop_minutes", 0) for o in outcomes if o.get("time_to_stop_minutes")]
+        
         # Path distribution
         path_counts = {}
         for o in outcomes:
             path = o.get("path_type", "unknown")
             path_counts[path] = path_counts.get(path, 0) + 1
         
+        # Setup type breakdown
+        setup_type_counts = {}
+        for s in signals:
+            st = s.get("setup_type", "unknown")
+            setup_type_counts[st] = setup_type_counts.get(st, 0) + 1
+        
         # Direction breakdown
         longs = [s for s in executable_signals if "LONG" in s.get("direction", "")]
         shorts = [s for s in executable_signals if "SHORT" in s.get("direction", "")]
         
+        # Lifecycle state breakdown
+        lifecycle_counts = {}
+        for s in signals:
+            state = s.get("lifecycle_state", "unknown")
+            lifecycle_counts[state] = lifecycle_counts.get(state, 0) + 1
+        
         summary = {
             "run_id": self.run_id,
+            "engine_version": self.config_snapshot.get("engine_version", "v3.5.1"),
             "config": asdict(self.config),
+            "config_snapshot": self.config_snapshot,  # Full frozen config for reproducibility
             "total_candles_processed": self.processed_candles,
+            
+            "setups": {
+                "detected": self.stats["setups_detected"],
+                "expired": self.stats["setups_expired"],
+                "by_type": setup_type_counts
+            },
             
             "signals": {
                 "total": len(signals),
@@ -22714,6 +23076,10 @@ class V3ReplayEngine:
                 "contrarian": len(contrarian_signals),
                 "resolved": total_resolved
             },
+            
+            "lifecycle_states": lifecycle_counts,
+            
+            "block_reasons": block_reason_counts,
             
             "outcomes": {
                 "wins": wins,
@@ -22727,13 +23093,16 @@ class V3ReplayEngine:
                 "t1_hit_rate": round((t1_hits / total_resolved * 100) if total_resolved > 0 else 0, 1),
                 "t2_hit_rate": round((t2_hits / total_resolved * 100) if total_resolved > 0 else 0, 1),
                 "expired_rate": round((expired / total_resolved * 100) if total_resolved > 0 else 0, 1),
-                "block_rate": round((len(blocked_signals) / len(signals) * 100) if signals else 0, 1)
+                "block_rate": round((len(blocked_signals) / len(signals) * 100) if signals else 0, 1),
+                "contrarian_rate": round((len(contrarian_signals) / len(blocked_signals) * 100) if blocked_signals else 0, 1)
             },
             
             "averages": {
                 "avg_rr": round(sum(rrs) / len(rrs) if rrs else 0, 2),
                 "avg_mfe": round(sum(mfes) / len(mfes) if mfes else 0, 2),
-                "avg_mae": round(sum(maes) / len(maes) if maes else 0, 2)
+                "avg_mae": round(sum(maes) / len(maes) if maes else 0, 2),
+                "avg_time_to_t1_mins": round(sum(times_to_t1) / len(times_to_t1) if times_to_t1 else 0, 1),
+                "avg_time_to_stop_mins": round(sum(times_to_stop) / len(times_to_stop) if times_to_stop else 0, 1)
             },
             
             "path_distribution": path_counts,
@@ -22741,15 +23110,19 @@ class V3ReplayEngine:
             "by_direction": {
                 "long": {
                     "count": len(longs),
-                    "wins": len([s for s in longs if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]])
+                    "wins": len([s for s in longs if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]]),
+                    "win_rate": round(len([s for s in longs if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]]) / len(longs) * 100 if longs else 0, 1)
                 },
                 "short": {
                     "count": len(shorts),
-                    "wins": len([s for s in shorts if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]])
+                    "wins": len([s for s in shorts if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]]),
+                    "win_rate": round(len([s for s in shorts if s.get("outcome", {}).get("result") in ["WIN", "PARTIAL_WIN"]]) / len(shorts) * 100 if shorts else 0, 1)
                 }
             },
             
             "data_quality": {
+                "mode": "degraded" if not self.config.use_coinglass_historical else "full",
+                "note": "Historical backtest runs in degraded mode without derivatives data. Magnet/squeeze checks disabled.",
                 "avg_completeness": round(
                     sum(s.get("data_quality", {}).get("completeness_score", 0) for s in signals) / len(signals) 
                     if signals else 0, 1

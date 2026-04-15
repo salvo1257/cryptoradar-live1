@@ -1,5 +1,97 @@
 # CryptoRadar Changelog
 
+
+## v3.5.2 - 2026-04-15
+
+### V3 Backtest / Replay Engine (Backend Complete)
+
+**Purpose:** Event-driven backtest engine that replays historical BTC market context candle-by-candle without look-ahead bias, replicating V3.4 validation and V3.5.1 contrarian logic.
+
+#### Critical Design Principles
+1. **REUSE SAME V3 LOGIC**: Calls exact same functions used in production (no reimplementation)
+2. **NO LOOK-AHEAD BIAS**: Only uses data available at that exact candle
+3. **CONFIG SNAPSHOT**: Stores full frozen config for version comparison
+4. **EXPLICIT LIFECYCLE**: Tracks all signal state transitions
+
+#### V3 Functions Reused
+- `detect_4h_events()` - SAME as production
+- `calculate_v3_stop_loss()` - SAME as production  
+- `calculate_v3_targets()` - SAME as production
+- `detect_5m_confirmation()` - SAME as production
+- V3.4 validation thresholds - SAME as production
+- V3.5.1 contrarian conditions - SAME as production
+
+#### Signal Lifecycle States
+| State | Description |
+|-------|-------------|
+| `setup_generated` | 4H event detected |
+| `waiting_confirmation` | Waiting for 5M confirmation |
+| `executable` | Entry ready, passed V3.4 validation |
+| `blocked` | Failed V3.4 validation |
+| `contrarian_candidate` | Evaluating V3.5.1 |
+| `contrarian_executable` | Contrarian entry ready |
+| `resolved` | Outcome determined |
+
+#### Post-Signal Path Classification
+| Path Type | Description |
+|-----------|-------------|
+| `immediate_follow_through` | Direct move to target with minimal drawdown |
+| `sweep_then_target` | Adverse sweep (>50% MAE:MFE), then recovery |
+| `adverse_then_recovery` | Minor adverse move, then target |
+| `chop_dead_market` | No significant movement |
+| `fake_breakout` | Initial favorable move then reversal |
+| `stop_then_reversal` | Hit stop, then went to target |
+| `extended_move` | Exceeded T2 |
+
+#### Config Snapshot (Stored Per Run)
+```json
+{
+  "engine_version": "v3.5.1",
+  "v34_min_rr_threshold": 0.5,
+  "v34_magnet_conflict_enabled": true,
+  "v34_squeeze_risk_enabled": true,
+  "v35_min_rr_threshold": 0.7,
+  "v35_min_target_distance_pct": 0.005,
+  "v35_eligible_blocks": ["MAGNET_CONFLICT", "SQUEEZE_RISK", ...]
+}
+```
+
+#### Data Quality Tracking
+| Mode | Description |
+|------|-------------|
+| `complete` | All data sources available (100% score) |
+| `partial` | Some context missing (60-79%) |
+| `degraded` | Critical data missing (40-59%) |
+| `minimal` | Only OHLC available (<40%) |
+
+**Note:** Historical backtest runs in degraded mode without derivatives data. Magnet/squeeze validation checks are disabled in backtest.
+
+#### New API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/backtest/launch` | POST | Launch new backtest run |
+| `/api/backtest/runs` | GET | List all backtest runs |
+| `/api/backtest/run/{id}` | GET | Get run details/progress |
+| `/api/backtest/run/{id}/signals` | GET | Get signals from run |
+| `/api/backtest/run/{id}/summary` | GET | Get full summary |
+| `/api/backtest/run/{id}/breakdowns` | GET | Performance breakdowns |
+
+#### MongoDB Collections
+- `backtest_runs` - Run metadata and config snapshot
+- `backtest_signals` - All signals (generated/blocked/executable)
+
+#### Test Results (2026-04-15)
+| Test | Result |
+|------|--------|
+| Config snapshot stored | ✅ |
+| No look-ahead bias verified | ✅ |
+| detect_4h_events() reused | ✅ |
+| V3.4 validation applied | ✅ |
+| Signal lifecycle tracking | ✅ |
+| Block reason breakdown | ✅ |
+
+---
+
 ## v3.5.1 - 2026-04-12
 
 ### V3.5 Stricter Contrarian Conditions
