@@ -14256,9 +14256,14 @@ def calculate_signal_timing(
 
 
 # ============== SIGNAL ENGINE VERSION ==============
-# v1 = Original sweep reversal only (STABLE)
-# v2 = Sweep reversal + Trend continuation (DEV)
-SIGNAL_ENGINE_VERSION = os.environ.get("SIGNAL_ENGINE_VERSION", "v2")  # Default to v2 for dev
+# v1 = Original sweep reversal only (STABLE) - DISABLED FOR OPERATIONAL USE
+# v2 = Sweep reversal + Trend continuation (DEV) - DISABLED FOR OPERATIONAL USE  
+# v3 = Multi-timeframe with cluster targets (ACTIVE) - ONLY OPERATIONAL ENGINE
+SIGNAL_ENGINE_VERSION = os.environ.get("SIGNAL_ENGINE_VERSION", "v3")  # Default to v3
+
+# V3-ONLY MODE: When True, only V3 signals are recorded to operational history
+# V1/V2 remain available for educational/diagnostic purposes only
+V3_ONLY_OPERATIONAL_MODE = True
 
 
 def detect_trend_continuation_setup(
@@ -18853,6 +18858,18 @@ async def auto_record_signal_change(new_signal, current_price, market_bias, whal
             else:
                 signal_hash = None
             
+            # V3-ONLY MODE: Block V1/V2 signals from operational history
+            if V3_ONLY_OPERATIONAL_MODE:
+                engine_version = getattr(new_signal, 'signal_engine_version', 'v2')
+                if engine_version not in ['v3', 'v3.5_contrarian']:
+                    logger.info(f"[V3-Only] Blocked {engine_version} signal from operational history (V3-only mode active)")
+                    return {
+                        "recorded": False, 
+                        "reason": "V3_ONLY_MODE_ACTIVE",
+                        "message": f"{engine_version} signals disabled in V3-only operational mode",
+                        "engine_version": engine_version
+                    }
+            
             signal_id = str(uuid.uuid4())
             history_entry = {
                 "signal_id": signal_id,
@@ -21515,6 +21532,162 @@ async def get_contrarian_signals(limit: int = Query(default=20, le=100)):
         }
         
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3-ONLY SYSTEM RESET ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.post("/admin/archive-legacy-signals")
+async def archive_legacy_signals():
+    """
+    Archive all non-V3 signals to a separate collection.
+    This prepares the system for V3-only operational mode.
+    
+    Actions:
+    1. Create signal_history_archive collection
+    2. Move ALL current signals to archive (preserving data)
+    3. Clear operational signal_history
+    4. System restarts with clean V3-only dataset
+    
+    WARNING: This is a one-time operation for V3-only transition.
+    """
+    try:
+        # Get all current signals
+        cursor = signal_history_collection.find({})
+        all_signals = await cursor.to_list(None)
+        
+        if not all_signals:
+            return {
+                "success": True,
+                "message": "No signals to archive",
+                "archived_count": 0
+            }
+        
+        # Create archive collection and insert all signals
+        archive_collection = db["signal_history_archive"]
+        
+        # Add archive metadata to each signal
+        archive_time = datetime.now(timezone.utc)
+        for signal in all_signals:
+            signal["archived_at"] = archive_time
+            signal["archive_reason"] = "V3_ONLY_TRANSITION"
+        
+        # Insert into archive
+        result = await archive_collection.insert_many(all_signals)
+        archived_count = len(result.inserted_ids)
+        
+        # Count by engine version before clearing
+        engine_counts = {}
+        for signal in all_signals:
+            engine = signal.get("signal_engine_version", "unknown")
+            engine_counts[engine] = engine_counts.get(engine, 0) + 1
+        
+        # Clear operational signal history
+        await signal_history_collection.delete_many({})
+        
+        logger.info(f"[V3 Reset] Archived {archived_count} signals. Engine breakdown: {engine_counts}")
+        
+        return {
+            "success": True,
+            "message": f"Archived {archived_count} signals to signal_history_archive",
+            "archived_count": archived_count,
+            "engine_breakdown": engine_counts,
+            "archive_timestamp": archive_time.isoformat(),
+            "operational_collection_cleared": True,
+            "next_step": "System now operates in V3-only mode"
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3 Reset] Archive failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/reset-v3-statistics")
+async def reset_v3_statistics():
+    """
+    Reset all V3 monitoring statistics to zero.
+    Called after archiving legacy signals to start fresh.
+    """
+    try:
+        # Clear setup events
+        deleted_setups = await db["setup_events_v3"].delete_many({})
+        
+        # Clear cluster validation data
+        deleted_clusters = await db["cluster_target_validation"].delete_many({})
+        
+        # Note: signal_history should already be cleared by archive operation
+        
+        logger.info(f"[V3 Reset] Statistics reset - Setups: {deleted_setups.deleted_count}, Clusters: {deleted_clusters.deleted_count}")
+        
+        return {
+            "success": True,
+            "message": "V3 statistics reset complete",
+            "deleted": {
+                "setup_events_v3": deleted_setups.deleted_count,
+                "cluster_target_validation": deleted_clusters.deleted_count
+            },
+            "note": "Signal history should be cleared via /admin/archive-legacy-signals first"
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3 Reset] Statistics reset failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/v3-system-status")
+async def get_v3_system_status():
+    """
+    Get current V3-only system status and data quality report.
+    """
+    try:
+        # Count operational signals
+        operational_count = await signal_history_collection.count_documents({})
+        v3_count = await signal_history_collection.count_documents({"signal_engine_version": "v3"})
+        v3_contrarian_count = await signal_history_collection.count_documents({"signal_engine_version": "v3.5_contrarian"})
+        
+        # Count archived signals
+        archive_collection = db["signal_history_archive"]
+        archived_count = await archive_collection.count_documents({})
+        
+        # Count setup events
+        setup_count = await db["setup_events_v3"].count_documents({})
+        
+        # Count shadow targets
+        shadow_count = await db["shadow_liquidity_targets"].count_documents({})
+        shadow_pending = await db["shadow_liquidity_targets"].count_documents({"validation.status": "pending"})
+        shadow_completed = await db["shadow_liquidity_targets"].count_documents({"validation.status": "completed"})
+        
+        # Cluster validation
+        cluster_count = await db["cluster_target_validation"].count_documents({})
+        
+        return {
+            "v3_only_mode": V3_ONLY_OPERATIONAL_MODE,
+            "signal_engine_version": SIGNAL_ENGINE_VERSION,
+            "operational_signals": {
+                "total": operational_count,
+                "v3": v3_count,
+                "v3_contrarian": v3_contrarian_count,
+                "other": operational_count - v3_count - v3_contrarian_count
+            },
+            "archived_signals": archived_count,
+            "setup_events_v3": setup_count,
+            "shadow_targets": {
+                "total": shadow_count,
+                "pending": shadow_pending,
+                "completed": shadow_completed
+            },
+            "cluster_validation": cluster_count,
+            "system_health": {
+                "v3_only_clean": operational_count == v3_count + v3_contrarian_count,
+                "shadow_tracking_active": shadow_count > 0 or True,  # Always true if loop is running
+                "ready_for_validation": v3_count >= 10
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3 Status] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

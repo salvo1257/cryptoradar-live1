@@ -1,13 +1,47 @@
 # CryptoRadar v3.5.1 - Product Requirements Document
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-15
 
 ## QUICK STATUS
 - **Current Version:** v3.5.1
-- **Phase:** Validation Mode (monitoring signal quality)
+- **Phase:** V3-ONLY OPERATIONAL MODE
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
+- **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3-ONLY SYSTEM RESET (2026-04-15)
+
+### What Was Done
+1. **V1/V2 Operational Shutdown**
+   - `V3_ONLY_OPERATIONAL_MODE = True`
+   - V1/V2 signals blocked from operational history
+   - V1/V2 remain as educational/diagnostic modules
+
+2. **Signal History Reset**
+   - 340 signals archived to `signal_history_archive` collection
+   - Operational `signal_history` cleared to zero
+   - Fresh start for V3-only data collection
+
+3. **Statistics Reset**
+   - All metrics reset to zero
+   - Win rate, R:R, conversion tracking restarted
+   - V3 Monitoring Panel shows clean slate
+
+4. **Shadow Target Activation**
+   - Shadow Target Inspector functional
+   - 10 targets tracked (7 pending validation)
+   - Collecting real validation data
+
+5. **UI Cleanup**
+   - Removed V2 vs V3 comparison panel (obsolete)
+   - Added V3-Only Mode banner
+   - Reordered: V3 Monitoring → Shadow Target → Liquidity Zone
+
+### Admin Endpoints
+- `POST /api/admin/archive-legacy-signals` - Archive all signals
+- `POST /api/admin/reset-v3-statistics` - Reset V3 stats
+- `GET /api/admin/v3-system-status` - Check V3 system health
 
 ## ✅ V3.4 SIGNAL VALIDATION SYSTEM (2026-04-12)
 **Status:** ✅ COMPLETE
