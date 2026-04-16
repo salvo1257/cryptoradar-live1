@@ -21810,29 +21810,49 @@ class BacktestConfig:
     mae_safety_buffer: float = 0.1  # Additional buffer on top of MAE percentile
 
 
-# MAE percentile data (calibrated from backtest analysis 2026-04-16)
+# MAE percentile data (calibrated from 90-day backtest analysis 2026-04-16)
+# Based on 99 signals from Jan 15 - Apr 15 2026
 # Structure: {direction: {regime: {setup_type: {percentile: value}}}}
 MAE_PERCENTILE_DATA = {
     "LONG": {
         "default": {
             "default": {
-                "50": 0.20,   # 50th percentile MAE for LONG (from real data)
-                "75": 0.20,   # 75th percentile
-                "90": 0.20,   # 90th percentile
-                "95": 0.20    # 95th percentile
+                "50": 0.27,   # 50th percentile MAE for LONG
+                "75": 0.95,   # 75th percentile
+                "90": 1.61,   # 90th percentile (interpolated)
+                "95": 1.88    # 95th percentile
             }
         }
     },
     "SHORT": {
         "default": {
             "default": {
-                "50": 0.20,
-                "75": 0.20,
-                "90": 0.20,
-                "95": 0.20
+                "50": 0.56,   # 50th percentile MAE for SHORT
+                "75": 1.03,   # 75th percentile
+                "90": 2.20,   # 90th percentile (interpolated)
+                "95": 2.59    # 95th percentile
+            }
+        }
+    },
+    # Overall (for when direction is unknown)
+    "default": {
+        "default": {
+            "default": {
+                "50": 0.48,
+                "75": 0.95,
+                "90": 1.61,
+                "95": 2.59
             }
         }
     }
+}
+
+# Updated stop model presets based on real data
+# Old values were too aggressive (based on 14 signals)
+STOP_MODEL_PRESETS = {
+    "MAE_CONSERVATIVE": {"percentile": 95, "buffer": 0.20},  # 95th + 0.20% = ~2.8% (safe)
+    "MAE_BALANCED": {"percentile": 75, "buffer": 0.15},      # 75th + 0.15% = ~1.1% (balanced)
+    "MAE_AGGRESSIVE": {"percentile": 50, "buffer": 0.10}     # 50th + 0.10% = ~0.6% (risky)
 }
 
 
@@ -21842,30 +21862,30 @@ def get_mae_based_stop(
     regime: str = "default",
     setup_type: str = "default",
     percentile: float = 75.0,
-    safety_buffer: float = 0.1
+    safety_buffer: float = 0.15
 ) -> Dict[str, Any]:
     """
     Calculate stop loss based on historical MAE distribution.
     
-    CALIBRATED DATA (2026-04-16):
-    - Overall MAE: min=0.03%, p50=0.20%, p75=0.20%, p90=0.20%, max=0.20%
-    - Current swing-based stop: ~5.3% (44x wider than needed!)
+    CALIBRATED DATA (90-day backtest, 99 signals, 2026-04-16):
     
-    Recommended stops based on real data:
-    - Aggressive (P50): 0.20% + 0.05% = 0.25%
-    - Balanced (P75):   0.20% + 0.10% = 0.30%
-    - Conservative (P95): 0.20% + 0.15% = 0.35%
+    Overall MAE Distribution:
+    - P50: 0.48%  (50% of trades have MAE ≤ this)
+    - P75: 0.95%  (75% of trades have MAE ≤ this)
+    - P90: 1.61%  (90% of trades have MAE ≤ this)
+    - P95: 2.59%  (95% of trades have MAE ≤ this)
+    - Max: 6.44%  (worst case, LONG direction)
     
-    Args:
-        direction: LONG or SHORT
-        entry_price: Current entry price
-        regime: Market regime (TREND, COMPRESSION, RANGE, etc.)
-        setup_type: Type of setup (sweep_reversal, rejection, etc.)
-        percentile: Which MAE percentile to use (50, 75, 90, 95)
-        safety_buffer: Additional % buffer on top of percentile
+    By Direction:
+    - LONG: P50=0.27%, P75=0.95%, P95=1.88%, Max=6.44%
+    - SHORT: P50=0.56%, P75=1.03%, P95=2.59%, Max=2.76%
     
-    Returns:
-        Stop loss details with price and methodology
+    Recommended stops (with safety buffer):
+    - Conservative (P95): 2.59% + 0.20% = 2.79% (5% stop hit rate)
+    - Balanced (P75): 0.95% + 0.15% = 1.10% (25% stop hit rate)
+    - Aggressive (P50): 0.48% + 0.10% = 0.58% (50% stop hit rate)
+    
+    Note: LONG positions have higher tail risk (max 6.44% MAE)
     """
     # Get base direction
     dir_key = direction.replace("CONTRARIAN_", "")
@@ -22640,8 +22660,40 @@ class V3ReplayEngine:
                         # Create setup (similar to create_setup_event but for backtest)
                         setup = await self._create_backtest_setup(event, candle_4h, quality_4h)
                         if setup:
-                            self.active_setups.append(setup)
                             self.stats["setups_detected"] += 1
+                            
+                            # ═══════════════════════════════════════════════════════════
+                            # FORCE_ENTRY_IMMEDIATE: Generate signal directly from 4H setup
+                            # This allows collecting MAE data from ALL setups, not just confirmed ones
+                            # ═══════════════════════════════════════════════════════════
+                            if self.config.confirmation_mode == "FORCE_ENTRY":
+                                # Create signal immediately at 4H close price
+                                signal = await self._create_and_validate_signal_v3(
+                                    setup,
+                                    {"type": "force_entry_4h", "price": self.current_price},
+                                    candle_4h,  # Use 4H candle as entry point
+                                    quality_4h
+                                )
+                                
+                                if signal:
+                                    self.stats["total_signals"] += 1
+                                    
+                                    if signal.lifecycle_state == SignalLifecycle.BLOCKED.value:
+                                        self.stats["blocked_signals"] += 1
+                                    else:
+                                        self.stats["executable_signals"] += 1
+                                        # Start outcome tracking
+                                        tracker = OutcomeTracker(signal)
+                                        self.active_trackers.append(tracker)
+                                    
+                                    # Save signal
+                                    await self._save_signal(signal)
+                                    
+                                # Don't add to active_setups in FORCE_ENTRY mode
+                                # (signal already generated)
+                            else:
+                                # Normal mode: add to active setups and wait for 5M confirmation
+                                self.active_setups.append(setup)
                 
                 # ═══════════════════════════════════════════════════════════════
                 # STEP 4: Filter 5M candles for this 4H window (no extra API calls)
@@ -22830,7 +22882,13 @@ class V3ReplayEngine:
     ) -> Optional[Dict]:
         """
         Create a setup from detected 4H event.
-        Uses SAME calculate_v3_stop_loss() and calculate_v3_targets() as production.
+        
+        In backtest mode (no live orderbook), we use SWING-BASED targets
+        instead of cluster-based targets.
+        
+        Target Logic (backtest degraded mode):
+        - LONG: T1 = swing_high, T2 = swing_high + 1%
+        - SHORT: T1 = swing_low, T2 = swing_low - 1%
         """
         direction = event["direction"]
         current_price = candle_4h["close"]
@@ -22847,24 +22905,32 @@ class V3ReplayEngine:
             current_price=current_price
         )
         
-        # Use SAME target calculation (degraded mode - no cluster data)
-        target_info = calculate_v3_targets(
-            direction=direction,
-            entry_price=current_price,
-            liquidity_above=0,
-            liquidity_below=0,
-            resistances=[],
-            supports=[],
-            swing_high=swing_high,
-            swing_low=swing_low,
-            liquidity_clusters=[],  # No cluster data in backtest
-            aggregated_orderbook=None
-        )
+        # ═══════════════════════════════════════════════════════════════════
+        # BACKTEST TARGETS - Use swing-based when no orderbook
+        # (In production, we'd use calculate_v3_targets with real clusters)
+        # ═══════════════════════════════════════════════════════════════════
+        if direction == "LONG":
+            # T1 = swing high (natural resistance)
+            # T2 = extended beyond swing high
+            target_1 = swing_high
+            target_2 = swing_high * 1.01  # 1% beyond T1
+            target_1_type = "swing_high"
+            target_2_type = "extended"
+        else:  # SHORT
+            # T1 = swing low (natural support)
+            # T2 = extended below swing low
+            target_1 = swing_low
+            target_2 = swing_low * 0.99  # 1% beyond T1
+            target_1_type = "swing_low"
+            target_2_type = "extended"
         
         # Calculate R:R
         risk = abs(current_price - stop_info["stop_loss"])
-        reward = abs(target_info["target_1"] - current_price) if target_info.get("has_valid_targets") else 0
+        reward = abs(target_1 - current_price)
         rr_ratio = reward / risk if risk > 0 else 0
+        
+        # Mark as valid targets for backtest (swing-based)
+        has_valid_targets = reward > 0
         
         # Store setup for later confirmation
         setup = {
@@ -22882,11 +22948,11 @@ class V3ReplayEngine:
             "sweep_level": sweep_level,
             "stop_loss": stop_info["stop_loss"],
             "stop_type": stop_info["stop_type"],
-            "target_1": target_info["target_1"],
-            "target_2": target_info["target_2"],
-            "target_1_type": target_info["target_1_type"],
-            "target_2_type": target_info["target_2_type"],
-            "has_valid_targets": target_info.get("has_valid_targets", True),
+            "target_1": round(target_1, 2),
+            "target_2": round(target_2, 2),
+            "target_1_type": target_1_type,
+            "target_2_type": target_2_type,
+            "has_valid_targets": has_valid_targets,
             "risk_reward_ratio": round(rr_ratio, 2),
             "strength": event.get("strength", 50),
             "signal": event.get("signal", ""),
@@ -24658,31 +24724,194 @@ async def get_mae_distribution():
         result["recommended_stop_models"] = {
             "aggressive_p50": {
                 "mae_base": overall["p50"],
-                "buffer": 0.05,
-                "total_stop": round(overall["p50"] + 0.05, 3),
-                "description": "50th percentile MAE + 0.05% buffer"
+                "buffer": 0.10,
+                "total_stop": round(overall["p50"] + 0.10, 3),
+                "expected_stop_hit_rate": "~50%",
+                "description": "50th percentile MAE + 0.10% buffer"
             },
             "balanced_p75": {
                 "mae_base": overall["p75"],
-                "buffer": 0.10,
-                "total_stop": round(overall["p75"] + 0.10, 3),
-                "description": "75th percentile MAE + 0.10% buffer"
+                "buffer": 0.15,
+                "total_stop": round(overall["p75"] + 0.15, 3),
+                "expected_stop_hit_rate": "~25%",
+                "description": "75th percentile MAE + 0.15% buffer"
             },
             "conservative_p90": {
                 "mae_base": overall["p90"],
-                "buffer": 0.12,
-                "total_stop": round(overall["p90"] + 0.12, 3),
-                "description": "90th percentile MAE + 0.12% buffer"
+                "buffer": 0.20,
+                "total_stop": round(overall["p90"] + 0.20, 3),
+                "expected_stop_hit_rate": "~10%",
+                "description": "90th percentile MAE + 0.20% buffer"
             },
             "very_conservative_p95": {
                 "mae_base": overall["p95"],
-                "buffer": 0.15,
-                "total_stop": round(overall["p95"] + 0.15, 3),
-                "description": "95th percentile MAE + 0.15% buffer"
+                "buffer": 0.20,
+                "total_stop": round(overall["p95"] + 0.20, 3),
+                "expected_stop_hit_rate": "~5%",
+                "description": "95th percentile MAE + 0.20% buffer"
             }
         }
     
     return result
+
+
+@api_router.get("/backtest/robustness-analysis")
+async def get_robustness_analysis():
+    """
+    Comprehensive robustness analysis of backtest results.
+    
+    Analyzes:
+    1. Performance stability across time periods
+    2. Worst-case scenarios (high MAE events)
+    3. Stop hit rate predictions for different stop models
+    4. Regime-specific performance
+    5. Direction-specific tail risk
+    """
+    # Get all signals with outcomes
+    cursor = backtest_signals_collection.find(
+        {"outcome.mae": {"$gt": 0}},
+        {"_id": 0}
+    )
+    signals = await cursor.to_list(None)
+    
+    if len(signals) < 20:
+        return {
+            "error": f"Insufficient data ({len(signals)} signals). Need at least 20 signals.",
+            "recommendation": "Run extended backtests with FORCE_ENTRY mode"
+        }
+    
+    # Collect data
+    all_mae = []
+    all_mfe = []
+    by_direction = {"LONG": [], "SHORT": []}
+    by_month = {}
+    worst_cases = []
+    
+    for s in signals:
+        mae = s.get("outcome", {}).get("mae", 0)
+        mfe = s.get("outcome", {}).get("mfe", 0)
+        direction = s.get("direction", "UNKNOWN").replace("CONTRARIAN_", "")
+        timestamp = s.get("timestamp", "")
+        
+        all_mae.append(mae)
+        all_mfe.append(mfe)
+        
+        if direction in by_direction:
+            by_direction[direction].append({"mae": mae, "mfe": mfe})
+        
+        # Group by month
+        if timestamp:
+            month = timestamp[:7]  # YYYY-MM
+            if month not in by_month:
+                by_month[month] = []
+            by_month[month].append({"mae": mae, "mfe": mfe, "direction": direction})
+        
+        # Track worst cases (MAE > 2%)
+        if mae > 2.0:
+            worst_cases.append({
+                "timestamp": timestamp,
+                "direction": direction,
+                "mae": round(mae, 3),
+                "mfe": round(mfe, 3),
+                "setup_type": s.get("setup_type", "unknown")
+            })
+    
+    # Calculate percentiles
+    sorted_mae = sorted(all_mae)
+    n = len(sorted_mae)
+    
+    def percentile(data, p):
+        idx = int(len(data) * p / 100)
+        return data[min(idx, len(data)-1)]
+    
+    # Stop hit rate predictions
+    stop_models = {
+        "0.5%": 0.5,
+        "1.0%": 1.0,
+        "1.5%": 1.5,
+        "2.0%": 2.0,
+        "2.5%": 2.5,
+        "3.0%": 3.0
+    }
+    
+    stop_hit_predictions = {}
+    for name, stop_pct in stop_models.items():
+        hits = len([m for m in all_mae if m > stop_pct])
+        stop_hit_predictions[name] = {
+            "stop_pct": stop_pct,
+            "predicted_hits": hits,
+            "predicted_hit_rate": round(hits / n * 100, 1)
+        }
+    
+    # Monthly performance
+    monthly_stats = {}
+    for month, data in sorted(by_month.items()):
+        maes = [d["mae"] for d in data]
+        mfes = [d["mfe"] for d in data]
+        monthly_stats[month] = {
+            "signals": len(data),
+            "avg_mae": round(sum(maes) / len(maes), 3),
+            "max_mae": round(max(maes), 3),
+            "avg_mfe": round(sum(mfes) / len(mfes), 3),
+            "edge_rate": round(len([d for d in data if d["mfe"] > d["mae"]]) / len(data) * 100, 1)
+        }
+    
+    # Direction-specific analysis
+    direction_stats = {}
+    for dir_name, data in by_direction.items():
+        if data:
+            maes = [d["mae"] for d in data]
+            mfes = [d["mfe"] for d in data]
+            sorted_dir_mae = sorted(maes)
+            direction_stats[dir_name] = {
+                "count": len(data),
+                "avg_mae": round(sum(maes) / len(maes), 3),
+                "p75_mae": round(percentile(sorted_dir_mae, 75), 3),
+                "p95_mae": round(percentile(sorted_dir_mae, 95), 3),
+                "max_mae": round(max(maes), 3),
+                "avg_mfe": round(sum(mfes) / len(mfes), 3),
+                "edge_rate": round(len([d for d in data if d["mfe"] > d["mae"]]) / len(data) * 100, 1)
+            }
+    
+    # Overall stability metrics
+    mae_volatility = (max(all_mae) - min(all_mae)) / (sum(all_mae) / len(all_mae)) if all_mae else 0
+    
+    return {
+        "total_signals": n,
+        "data_period": f"{min(by_month.keys())} to {max(by_month.keys())}" if by_month else "unknown",
+        
+        "overall_stats": {
+            "avg_mae": round(sum(all_mae) / n, 3),
+            "p50_mae": round(percentile(sorted_mae, 50), 3),
+            "p75_mae": round(percentile(sorted_mae, 75), 3),
+            "p90_mae": round(percentile(sorted_mae, 90), 3),
+            "p95_mae": round(percentile(sorted_mae, 95), 3),
+            "max_mae": round(max(all_mae), 3),
+            "mae_volatility": round(mae_volatility, 2),
+            "avg_mfe": round(sum(all_mfe) / n, 3),
+            "overall_edge_rate": round(len([i for i in range(n) if all_mfe[i] > all_mae[i]]) / n * 100, 1)
+        },
+        
+        "stop_hit_predictions": stop_hit_predictions,
+        
+        "monthly_performance": monthly_stats,
+        
+        "by_direction": direction_stats,
+        
+        "worst_cases": {
+            "count": len(worst_cases),
+            "threshold": "MAE > 2%",
+            "percentage": round(len(worst_cases) / n * 100, 1),
+            "events": sorted(worst_cases, key=lambda x: x["mae"], reverse=True)[:10]
+        },
+        
+        "risk_assessment": {
+            "safe_stop_recommendation": f"{round(percentile(sorted_mae, 95) + 0.20, 2)}% (P95 + 0.20% buffer)",
+            "moderate_stop_recommendation": f"{round(percentile(sorted_mae, 75) + 0.15, 2)}% (P75 + 0.15% buffer)",
+            "tail_risk_warning": f"Max MAE observed: {round(max(all_mae), 2)}% - {len(worst_cases)} events exceeded 2%",
+            "direction_warning": "LONG positions show higher tail risk" if direction_stats.get("LONG", {}).get("max_mae", 0) > direction_stats.get("SHORT", {}).get("max_mae", 0) else "SHORT positions show higher tail risk"
+        }
+    }
 
 
 @api_router.websocket("/ws/price")
