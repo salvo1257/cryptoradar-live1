@@ -1,5 +1,5 @@
 # CryptoRadar v3.5.3 - Product Requirements Document
-**Last Updated:** 2026-04-16 (Liquidity Engine Core Dashboard Relocation)
+**Last Updated:** 2026-04-16 (Liquidity Zone Engine added to Dashboard)
 
 ## QUICK STATUS
 - **Current Version:** v3.5.3
@@ -8,38 +8,42 @@
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
 - **V3.5.2 Feature:** V3 Backtest/Replay Engine (backend complete)
-- **V3.5.3 Feature:** Liquidity Engine relocated to main dashboard as core component
+- **V3.5.3 Feature:** Liquidity Zone Engine added to main dashboard (separate from Magnet Liquidity)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
-## LIQUIDITY ENGINE CORE RELOCATION (2026-04-16)
+## LIQUIDITY ZONE ENGINE DASHBOARD ADDITION (2026-04-16)
 
 ### Purpose
-Relocate Liquidity Engine from signal history section to main dashboard as a standalone, always-visible core market-reading component.
+Add the existing Liquidity Zone Engine component to the main dashboard as a SEPARATE section from the existing Magnet Liquidity card.
 
-### Requirements Implemented
-1. **Placement:** Positioned immediately after V3 Signal + Market Regime (primary decision layer)
-2. **Independence:** Does NOT depend on signals - always shows current market liquidity state
-3. **Display Metrics:**
-   - Magnet Direction (UP/DOWN/BALANCED)
-   - Cluster Distance (%)
-   - Cluster Volume ($M)
-   - Magnet Strength (%)
-4. **Status Labels:**
-   - "Strong Attraction" - High score + clear direction
-   - "Weak Liquidity" - Low score or weak strength
-   - "No Clear Magnet" - Balanced or moderate with no clear bias
-   - "Moderate Attraction" - Default state
+### What Was Done
+1. **Restored Magnet Liquidity card** - Reverted to original state (no modifications)
+2. **Added Liquidity Zone Engine** - New section "Zone Liquidità" in dashboard
+3. **Kept components separate** - Both components display independently
 
-### UI Changes
-- New section header "LIQUIDITY ENGINE" with "CORE" badge
-- Purple gradient border to distinguish as core component
-- Key metrics row with 4-column grid (Direction | Distance | Volume | Strength)
-- Status label prominently displayed at top of card
+### Dashboard Structure (Final)
+1. Decision Engine
+2. V3 Signal + Market Regime
+3. V2 Diagnostic (collapsible)
+4. Chart
+5. Primary Intelligence (Bias, OI, Funding)
+6. **Market Dynamics** - Energy, **Magnet Liquidity (original)**, Whales
+7. **Liquidity Zones (NEW)** - Zone Engine with ABOVE/BELOW clusters
+8. Technical Context (S/R, Orderbook, Liquidity)
+9. Tools
+
+### Liquidity Zone Engine Features
+- ABOVE/BELOW zone visualization
+- Cluster values with strength bars
+- Total liquidity per direction
+- Zone scores (0-100)
+- Legacy vs Zone comparison panel
+- "Directions aligned" indicator
 
 ### Files Modified
-- `/app/frontend/src/components/pages/DashboardPage.js` - Added Liquidity Engine section
-- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - Added status label logic and key metrics row
+- `/app/frontend/src/components/pages/DashboardPage.js` - Added LiquidityZoneInspector import and section
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - RESTORED to original (reverted changes)
 
 ## V3 BACKTEST ENGINE (2026-04-15)
 

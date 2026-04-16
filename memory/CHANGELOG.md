@@ -3,36 +3,34 @@
 
 ## v3.5.3 - 2026-04-16
 
-### Liquidity Engine Core Dashboard Relocation
+### Liquidity Zone Engine Added to Dashboard
 
-**Purpose:** Relocated Liquidity Engine out of signal history section to become a standalone, always-visible core market-reading component on the main dashboard.
+**Purpose:** Add the existing Liquidity Zone Engine component to the main dashboard as a SEPARATE section, keeping the original Magnet Liquidity card unchanged.
 
-#### Requirements Implemented
-1. **Placement:** Immediately after V3 Signal + Market Regime (primary decision layer)
-2. **Independence:** Does NOT depend on signals - always shows current market liquidity state
-3. **Key Metrics Display:**
-   - Magnet Direction (UP/DOWN/BALANCED)
-   - Cluster Distance (%)
-   - Cluster Volume ($M)
-   - Magnet Strength (%)
-4. **Status Labels:**
-   | Label | Condition |
-   |-------|-----------|
-   | Strong Attraction | High score + clear direction (UP/DOWN) |
-   | Weak Liquidity | Score < 35 or weak strength |
-   | No Clear Magnet | Balanced direction or moderate with no clear bias |
-   | Moderate Attraction | Default state |
+#### What Was Done
+1. **Restored Magnet Liquidity card** - Reverted all modifications, original UI/behavior intact
+2. **Added Liquidity Zone Engine** - New "Zone Liquidità" section in dashboard
+3. **Components kept separate** - Both display independently:
+   - **Magnet Liquidity**: Directional liquidity (single magnet target)
+   - **Zone Engine**: Structural liquidity (ABOVE/BELOW cluster zones)
 
-#### UI Changes
-- New section header "LIQUIDITY ENGINE" with "CORE" badge
-- Purple gradient border to distinguish as core component
-- Key metrics row with 4-column responsive grid
-- Status label prominently displayed at top of card
-- Removed from "Market Dynamics" section (now standalone)
+#### Dashboard Structure
+| Section | Components |
+|---------|------------|
+| Market Dynamics | Energy, **Magnet Liquidity (original)**, Whales |
+| Liquidity Zones (NEW) | **Zone Engine** with ABOVE/BELOW clusters |
+
+#### Liquidity Zone Engine Features
+- Zone visualization with TOP/CENTER/BOTTOM prices
+- Strength bars per zone
+- Total liquidity ABOVE/BELOW
+- Zone scores (0-100)
+- Legacy vs Zone comparison panel
+- "Directions aligned" status
 
 #### Files Modified
 - `/app/frontend/src/components/pages/DashboardPage.js`
-- `/app/frontend/src/components/cards/LiquidityMagnetCard.js`
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` (RESTORED)
 
 ---
 
