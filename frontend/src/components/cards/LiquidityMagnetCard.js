@@ -76,7 +76,7 @@ export function LiquidityMagnetCard({ compact = false }) {
     }
   };
 
-  // Status label logic based on user requirements
+  // Status label logic based on user requirements - includes direction explicitly
   const getStatusLabel = (magnetData) => {
     if (!magnetData) return { label: 'No Data', color: 'text-zinc-500', bgColor: 'bg-zinc-800' };
     
@@ -84,13 +84,23 @@ export function LiquidityMagnetCard({ compact = false }) {
     const strength = magnetData.magnet_strength;
     const direction = magnetData.target_direction;
     
-    // Strong Attraction: High score + clear direction
-    if ((strength === 'VERY_STRONG' || strength === 'STRONG') && (direction === 'UP' || direction === 'DOWN')) {
+    // Strong Attraction UP
+    if ((strength === 'VERY_STRONG' || strength === 'STRONG') && direction === 'UP') {
       return { 
-        label: 'Strong Attraction', 
-        color: 'text-purple-300', 
-        bgColor: 'bg-purple-500/20',
-        borderColor: 'border-purple-500/50'
+        label: 'Strong Attraction UP', 
+        color: 'text-bullish', 
+        bgColor: 'bg-bullish/20',
+        borderColor: 'border-bullish/50'
+      };
+    }
+    
+    // Strong Attraction DOWN
+    if ((strength === 'VERY_STRONG' || strength === 'STRONG') && direction === 'DOWN') {
+      return { 
+        label: 'Strong Attraction DOWN', 
+        color: 'text-bearish', 
+        bgColor: 'bg-bearish/20',
+        borderColor: 'border-bearish/50'
       };
     }
     
@@ -114,12 +124,12 @@ export function LiquidityMagnetCard({ compact = false }) {
       };
     }
     
-    // Default: Moderate attraction
+    // Default: No Clear Magnet (conservative fallback)
     return { 
-      label: 'Moderate Attraction', 
-      color: 'text-purple-400', 
-      bgColor: 'bg-purple-500/10',
-      borderColor: 'border-purple-500/30'
+      label: 'No Clear Magnet', 
+      color: 'text-yellow-400', 
+      bgColor: 'bg-yellow-500/10',
+      borderColor: 'border-yellow-500/30'
     };
   };
 
