@@ -21794,6 +21794,115 @@ class BacktestConfig:
     
     # Track all signals regardless of validation (for edge analysis)
     track_all_signals: bool = False
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EXPERIMENTAL STOP MODEL (for stop optimization testing)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    # Stop model: ORIGINAL | MAE_CONSERVATIVE | MAE_BALANCED | MAE_AGGRESSIVE | CUSTOM
+    stop_model: str = "ORIGINAL"
+    
+    # Custom stop parameters (when stop_model = "CUSTOM")
+    custom_stop_pct: float = 1.0  # Fixed percentage stop
+    
+    # MAE-based stop parameters
+    mae_percentile: float = 75.0  # Percentile to use (50, 75, 90, 95)
+    mae_safety_buffer: float = 0.1  # Additional buffer on top of MAE percentile
+
+
+# MAE percentile data (calibrated from backtest analysis 2026-04-16)
+# Structure: {direction: {regime: {setup_type: {percentile: value}}}}
+MAE_PERCENTILE_DATA = {
+    "LONG": {
+        "default": {
+            "default": {
+                "50": 0.20,   # 50th percentile MAE for LONG (from real data)
+                "75": 0.20,   # 75th percentile
+                "90": 0.20,   # 90th percentile
+                "95": 0.20    # 95th percentile
+            }
+        }
+    },
+    "SHORT": {
+        "default": {
+            "default": {
+                "50": 0.20,
+                "75": 0.20,
+                "90": 0.20,
+                "95": 0.20
+            }
+        }
+    }
+}
+
+
+def get_mae_based_stop(
+    direction: str,
+    entry_price: float,
+    regime: str = "default",
+    setup_type: str = "default",
+    percentile: float = 75.0,
+    safety_buffer: float = 0.1
+) -> Dict[str, Any]:
+    """
+    Calculate stop loss based on historical MAE distribution.
+    
+    CALIBRATED DATA (2026-04-16):
+    - Overall MAE: min=0.03%, p50=0.20%, p75=0.20%, p90=0.20%, max=0.20%
+    - Current swing-based stop: ~5.3% (44x wider than needed!)
+    
+    Recommended stops based on real data:
+    - Aggressive (P50): 0.20% + 0.05% = 0.25%
+    - Balanced (P75):   0.20% + 0.10% = 0.30%
+    - Conservative (P95): 0.20% + 0.15% = 0.35%
+    
+    Args:
+        direction: LONG or SHORT
+        entry_price: Current entry price
+        regime: Market regime (TREND, COMPRESSION, RANGE, etc.)
+        setup_type: Type of setup (sweep_reversal, rejection, etc.)
+        percentile: Which MAE percentile to use (50, 75, 90, 95)
+        safety_buffer: Additional % buffer on top of percentile
+    
+    Returns:
+        Stop loss details with price and methodology
+    """
+    # Get base direction
+    dir_key = direction.replace("CONTRARIAN_", "")
+    
+    # Look up MAE percentile data (with fallbacks)
+    dir_data = MAE_PERCENTILE_DATA.get(dir_key, MAE_PERCENTILE_DATA.get("LONG"))
+    regime_data = dir_data.get(regime, dir_data.get("default"))
+    setup_data = regime_data.get(setup_type, regime_data.get("default"))
+    
+    # Get percentile value
+    percentile_key = str(int(percentile))
+    mae_pct = setup_data.get(percentile_key, setup_data.get("75", 0.25))
+    
+    # Calculate stop with safety buffer
+    total_stop_pct = mae_pct + safety_buffer
+    
+    if dir_key == "LONG":
+        stop_loss = entry_price * (1 - total_stop_pct / 100)
+    else:  # SHORT
+        stop_loss = entry_price * (1 + total_stop_pct / 100)
+    
+    return {
+        "stop_loss": round(stop_loss, 2),
+        "stop_type": f"mae_p{int(percentile)}",
+        "mae_percentile": mae_pct,
+        "safety_buffer": safety_buffer,
+        "total_stop_pct": total_stop_pct,
+        "methodology": f"MAE P{int(percentile)} ({mae_pct:.2f}%) + buffer ({safety_buffer:.2f}%)"
+    }
+
+
+# Stop model presets
+STOP_MODEL_PRESETS = {
+    "MAE_CONSERVATIVE": {"percentile": 95, "buffer": 0.15},  # 95th percentile + 0.15%
+    "MAE_BALANCED": {"percentile": 75, "buffer": 0.10},      # 75th percentile + 0.10%
+    "MAE_AGGRESSIVE": {"percentile": 50, "buffer": 0.05}     # 50th percentile + 0.05%
+}
 
 
 class ConfirmationDebugStats:
@@ -23103,6 +23212,13 @@ class V3ReplayEngine:
         """
         Create signal and apply V3.4 validation using SAME logic as production.
         
+        STOP MODEL OPTIONS:
+        - ORIGINAL: Use swing-based stop from calculate_v3_stop_loss()
+        - MAE_CONSERVATIVE: 95th percentile MAE + buffer
+        - MAE_BALANCED: 75th percentile MAE + buffer
+        - MAE_AGGRESSIVE: 50th percentile MAE + buffer
+        - CUSTOM: Fixed percentage stop
+        
         V3.4 Validation includes:
         1. R:R minimum check (0.5)
         2. Magnet conflict check (degraded - uses bias instead)
@@ -23110,6 +23226,7 @@ class V3ReplayEngine:
         4. Bias conflict check
         """
         current_price = candle_5m["close"]
+        direction = setup["direction"]
         
         # Create signal with full context
         signal = BacktestSignal(
@@ -23117,24 +23234,72 @@ class V3ReplayEngine:
             run_id=self.run_id,
             timestamp=candle_5m["timestamp"],
             candle_index=self.processed_candles,
-            direction=setup["direction"],
+            direction=direction,
             setup_type=setup["event_type"],
             lifecycle_state=SignalLifecycle.WAITING_CONFIRMATION.value,
             data_quality=quality
         )
         
-        # Set targets from setup
+        # ═══════════════════════════════════════════════════════════════════
+        # STOP MODEL SELECTION
+        # ═══════════════════════════════════════════════════════════════════
+        stop_model = self.config.stop_model
+        original_stop = setup["stop_loss"]
+        
+        if stop_model == "ORIGINAL":
+            # Use setup's original swing-based stop
+            stop_loss = original_stop
+            stop_type = setup.get("stop_type", "swing")
+            stop_pct = abs(current_price - stop_loss) / current_price * 100
+            
+        elif stop_model in ["MAE_CONSERVATIVE", "MAE_BALANCED", "MAE_AGGRESSIVE"]:
+            # Use MAE-based stop
+            preset = STOP_MODEL_PRESETS[stop_model]
+            regime = self._estimate_regime_from_candles([candle_5m])[0]
+            
+            mae_stop = get_mae_based_stop(
+                direction=direction,
+                entry_price=current_price,
+                regime=regime,
+                setup_type=setup["event_type"],
+                percentile=preset["percentile"],
+                safety_buffer=preset["buffer"]
+            )
+            
+            stop_loss = mae_stop["stop_loss"]
+            stop_type = mae_stop["stop_type"]
+            stop_pct = mae_stop["total_stop_pct"]
+            
+        elif stop_model == "CUSTOM":
+            # Use fixed percentage stop
+            stop_pct = self.config.custom_stop_pct
+            if direction.replace("CONTRARIAN_", "") == "LONG":
+                stop_loss = current_price * (1 - stop_pct / 100)
+            else:
+                stop_loss = current_price * (1 + stop_pct / 100)
+            stop_type = "custom_fixed"
+            
+        else:
+            # Default to original
+            stop_loss = original_stop
+            stop_type = setup.get("stop_type", "swing")
+            stop_pct = abs(current_price - stop_loss) / current_price * 100
+        
+        # Set targets
         signal.targets.entry = current_price
-        signal.targets.stop_loss = setup["stop_loss"]
+        signal.targets.stop_loss = round(stop_loss, 2)
         signal.targets.target_1 = setup["target_1"]
         signal.targets.target_2 = setup["target_2"]
         
-        # Recalculate R:R at actual entry price (not setup price)
-        risk = abs(current_price - setup["stop_loss"])
+        # Calculate R:R with selected stop
+        risk = abs(current_price - stop_loss)
         reward = abs(setup["target_1"] - current_price)
         signal.targets.rr_ratio = round(reward / risk, 2) if risk > 0 else 0
-        signal.targets.risk_pct = (risk / current_price) * 100 if current_price > 0 else 0
+        signal.targets.risk_pct = stop_pct
         signal.targets.reward_pct = (reward / current_price) * 100 if current_price > 0 else 0
+        
+        # Store stop model info in context
+        signal.context.compression_level = f"{stop_model}_{stop_type}"
         
         # Set context (from degraded OHLC estimation)
         regime, bias = self._estimate_regime_from_candles([candle_5m])  # Minimal
@@ -23142,7 +23307,9 @@ class V3ReplayEngine:
         signal.context.bias = bias
         signal.context.energy_score = 50.0  # Unknown in degraded mode
         signal.context.magnet_direction = "BALANCED"  # Unknown
-        signal.context.compression_level = "MEDIUM"
+        
+        # Store original stop for comparison
+        signal.context.magnet_strength = abs(current_price - original_stop) / current_price * 100  # Repurposed field
         
         # ═══════════════════════════════════════════════════════════════════
         # V3.4 VALIDATION (SAME logic as record_v3_entry_signal)
@@ -23180,7 +23347,7 @@ class V3ReplayEngine:
             block_reasons = [r for r in block_reasons if not r.startswith("LOW_RR") and not r.startswith("NO_VALID")]
             
             # Store original R:R for analysis
-            signal.context.compression_level = f"RR_ANALYSIS_{signal.targets.rr_ratio:.2f}"
+            signal.context.compression_level = f"{stop_model}_RR_{signal.targets.rr_ratio:.2f}"
         
         # Determine if blocked
         if block_reasons:
@@ -23504,7 +23671,9 @@ async def launch_backtest(
     v35_enabled: bool = Query(default=True),
     confirmation_mode: str = Query(default="NORMAL", description="NORMAL | RELAXED | FORCE_ENTRY"),
     debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging"),
-    disable_rr_filter: bool = Query(default=False, description="Disable R:R filter for MFE/MAE analysis")
+    disable_rr_filter: bool = Query(default=False, description="Disable R:R filter for MFE/MAE analysis"),
+    stop_model: str = Query(default="ORIGINAL", description="ORIGINAL | MAE_CONSERVATIVE | MAE_BALANCED | MAE_AGGRESSIVE | CUSTOM"),
+    custom_stop_pct: float = Query(default=1.0, description="Custom stop % when stop_model=CUSTOM")
 ):
     """
     Launch a new V3 backtest run.
@@ -23513,6 +23682,13 @@ async def launch_backtest(
     - NORMAL: Exact same 5M confirmation logic as production
     - RELAXED: Loosen zone buffer (1% vs 0.2%) and stabilization (1 vs 2 candles)
     - FORCE_ENTRY: Bypass 5M confirmation entirely, test 4H setup edge
+    
+    Stop Models:
+    - ORIGINAL: Swing-based stop (current V3 logic)
+    - MAE_CONSERVATIVE: 95th percentile MAE + 0.15% buffer
+    - MAE_BALANCED: 75th percentile MAE + 0.10% buffer
+    - MAE_AGGRESSIVE: 50th percentile MAE + 0.05% buffer
+    - CUSTOM: Fixed percentage stop (use custom_stop_pct)
     
     Analysis Modes:
     - disable_rr_filter: When True, signals are NOT blocked for low R:R
@@ -23526,6 +23702,11 @@ async def launch_backtest(
     if confirmation_mode not in valid_modes:
         raise HTTPException(status_code=400, detail=f"confirmation_mode must be one of {valid_modes}")
     
+    # Validate stop_model
+    valid_stop_models = ["ORIGINAL", "MAE_CONSERVATIVE", "MAE_BALANCED", "MAE_AGGRESSIVE", "CUSTOM"]
+    if stop_model not in valid_stop_models:
+        raise HTTPException(status_code=400, detail=f"stop_model must be one of {valid_stop_models}")
+    
     run_id = str(uuid.uuid4())
     
     config = BacktestConfig(
@@ -23537,7 +23718,9 @@ async def launch_backtest(
         v35_contrarian_enabled=v35_enabled,
         confirmation_mode=confirmation_mode,
         debug_confirmation=debug_confirmation,
-        disable_rr_filter=disable_rr_filter
+        disable_rr_filter=disable_rr_filter,
+        stop_model=stop_model,
+        custom_stop_pct=custom_stop_pct
     )
     
     # Create run record
@@ -24206,6 +24389,301 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+
+@api_router.post("/backtest/compare-stop-models")
+async def compare_stop_models(
+    date_from: str = Query(..., description="Start date ISO format"),
+    date_to: str = Query(..., description="End date ISO format")
+):
+    """
+    Compare different stop loss models on the same data.
+    
+    Models tested:
+    - ORIGINAL: Current swing-based stop (baseline)
+    - MAE_CONSERVATIVE: 95th percentile MAE + 0.15% buffer
+    - MAE_BALANCED: 75th percentile MAE + 0.10% buffer
+    - MAE_AGGRESSIVE: 50th percentile MAE + 0.05% buffer
+    
+    All runs use FORCE_ENTRY mode and disable_rr_filter=true
+    to ensure we compare stop models on the same signals.
+    """
+    results = {}
+    stop_models = ["ORIGINAL", "MAE_CONSERVATIVE", "MAE_BALANCED", "MAE_AGGRESSIVE"]
+    
+    for model in stop_models:
+        run_id = str(uuid.uuid4())
+        
+        config = BacktestConfig(
+            symbol="BTCUSD",
+            date_from=date_from,
+            date_to=date_to,
+            engine_version="v3.5.1",
+            v34_validation_enabled=True,
+            v35_contrarian_enabled=False,
+            confirmation_mode="FORCE_ENTRY",
+            debug_confirmation=False,
+            disable_rr_filter=True,
+            stop_model=model
+        )
+        
+        try:
+            engine = V3ReplayEngine(run_id, config)
+            summary = await engine.run()
+            
+            # Save signals for analysis
+            await backtest_runs_collection.insert_one({
+                "run_id": run_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "completed",
+                "config": asdict(config),
+                "summary": summary
+            })
+            
+            # Collect detailed metrics
+            cursor = backtest_signals_collection.find({"run_id": run_id}, {"_id": 0})
+            signals = await cursor.to_list(None)
+            
+            # Calculate metrics
+            wins = 0
+            losses = 0
+            stop_hits = 0
+            t1_hits = 0
+            rr_values = []
+            mfe_values = []
+            mae_values = []
+            drawdowns = []
+            
+            for s in signals:
+                outcome = s.get("outcome", {})
+                targets = s.get("targets", {})
+                
+                result = outcome.get("result", "")
+                if result in ["WIN", "PARTIAL_WIN"]:
+                    wins += 1
+                elif result == "LOSS":
+                    losses += 1
+                
+                if outcome.get("stop_hit"):
+                    stop_hits += 1
+                if outcome.get("t1_hit"):
+                    t1_hits += 1
+                
+                rr = targets.get("rr_ratio", 0)
+                if rr > 0:
+                    rr_values.append(rr)
+                
+                mfe = outcome.get("mfe", 0)
+                mae = outcome.get("mae", 0)
+                if mfe > 0 or mae > 0:
+                    mfe_values.append(mfe)
+                    mae_values.append(mae)
+                    drawdowns.append(mae)
+            
+            total = wins + losses
+            
+            results[model] = {
+                "run_id": run_id,
+                "status": "completed",
+                "signals_generated": len(signals),
+                "signals_executable": summary["signals"]["executable"],
+                
+                "outcomes": {
+                    "wins": wins,
+                    "losses": losses,
+                    "total": total
+                },
+                
+                "rates": {
+                    "win_rate": round(wins / total * 100, 1) if total > 0 else 0,
+                    "stop_hit_rate": round(stop_hits / len(signals) * 100, 1) if signals else 0,
+                    "t1_hit_rate": round(t1_hits / len(signals) * 100, 1) if signals else 0
+                },
+                
+                "averages": {
+                    "avg_rr": round(sum(rr_values) / len(rr_values), 2) if rr_values else 0,
+                    "avg_mfe": round(sum(mfe_values) / len(mfe_values), 3) if mfe_values else 0,
+                    "avg_mae": round(sum(mae_values) / len(mae_values), 3) if mae_values else 0,
+                    "max_drawdown": round(max(drawdowns), 3) if drawdowns else 0
+                },
+                
+                "stop_info": {
+                    "model": model,
+                    "preset": STOP_MODEL_PRESETS.get(model, {"percentile": "N/A", "buffer": "N/A"})
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"[Stop Model Compare] {model} failed: {e}")
+            results[model] = {
+                "status": "failed",
+                "error": str(e)
+            }
+    
+    # Generate comparison
+    comparison = {
+        "period": f"{date_from} to {date_to}",
+        "models": results,
+        "comparison_table": []
+    }
+    
+    # Build comparison table
+    for model in stop_models:
+        if results[model].get("status") == "completed":
+            r = results[model]
+            comparison["comparison_table"].append({
+                "model": model,
+                "win_rate": r["rates"]["win_rate"],
+                "avg_rr": r["averages"]["avg_rr"],
+                "stop_hit_rate": r["rates"]["stop_hit_rate"],
+                "avg_mae": r["averages"]["avg_mae"],
+                "max_drawdown": r["averages"]["max_drawdown"]
+            })
+    
+    # Determine best model
+    if comparison["comparison_table"]:
+        # Score models: win_rate * avg_rr / stop_hit_rate
+        best_score = 0
+        best_model = None
+        
+        for row in comparison["comparison_table"]:
+            stop_rate = max(row["stop_hit_rate"], 1)  # Avoid division by zero
+            score = row["win_rate"] * row["avg_rr"] / stop_rate
+            
+            if score > best_score:
+                best_score = score
+                best_model = row["model"]
+        
+        comparison["recommendation"] = {
+            "best_model": best_model,
+            "score": round(best_score, 2),
+            "reason": f"Highest risk-adjusted performance (WR * RR / StopRate)"
+        }
+    
+    return comparison
+
+
+@api_router.get("/backtest/mae-distribution")
+async def get_mae_distribution():
+    """
+    Analyze MAE distribution from all historical backtest signals.
+    
+    Calculates percentiles (50th, 75th, 90th, 95th) separated by:
+    - Direction (LONG/SHORT)
+    - Regime (TREND/COMPRESSION/RANGE/EXPANSION)
+    - Setup type
+    
+    This data is used to calibrate the MAE-based stop model.
+    """
+    # Collect all signals with MAE data from all runs
+    cursor = backtest_signals_collection.find(
+        {"outcome.mae": {"$gt": 0}},
+        {"_id": 0, "direction": 1, "setup_type": 1, "context.regime": 1, "outcome.mae": 1}
+    )
+    signals = await cursor.to_list(None)
+    
+    if not signals:
+        return {
+            "error": "No signals with MAE data found",
+            "recommendation": "Run backtests with disable_rr_filter=true to collect MAE data"
+        }
+    
+    # Organize MAE values by category
+    mae_by_direction = {"LONG": [], "SHORT": []}
+    mae_by_regime = {}
+    mae_by_setup = {}
+    all_mae = []
+    
+    for s in signals:
+        mae = s.get("outcome", {}).get("mae", 0)
+        direction = s.get("direction", "UNKNOWN").replace("CONTRARIAN_", "")
+        regime = s.get("context", {}).get("regime", "default")
+        setup_type = s.get("setup_type", "default")
+        
+        all_mae.append(mae)
+        
+        if direction in mae_by_direction:
+            mae_by_direction[direction].append(mae)
+        
+        if regime not in mae_by_regime:
+            mae_by_regime[regime] = []
+        mae_by_regime[regime].append(mae)
+        
+        if setup_type not in mae_by_setup:
+            mae_by_setup[setup_type] = []
+        mae_by_setup[setup_type].append(mae)
+    
+    def calc_percentiles(values: List[float]) -> Dict[str, float]:
+        if not values:
+            return {}
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        return {
+            "count": n,
+            "min": round(sorted_vals[0], 4),
+            "max": round(sorted_vals[-1], 4),
+            "mean": round(sum(values) / n, 4),
+            "p50": round(sorted_vals[int(n * 0.50)], 4),
+            "p75": round(sorted_vals[int(n * 0.75)], 4),
+            "p90": round(sorted_vals[min(int(n * 0.90), n-1)], 4),
+            "p95": round(sorted_vals[min(int(n * 0.95), n-1)], 4)
+        }
+    
+    result = {
+        "total_signals": len(signals),
+        
+        "overall": calc_percentiles(all_mae),
+        
+        "by_direction": {
+            dir_name: calc_percentiles(values) 
+            for dir_name, values in mae_by_direction.items() if values
+        },
+        
+        "by_regime": {
+            regime: calc_percentiles(values)
+            for regime, values in mae_by_regime.items() if values
+        },
+        
+        "by_setup_type": {
+            setup: calc_percentiles(values)
+            for setup, values in mae_by_setup.items() if values
+        },
+        
+        "recommended_stop_models": {}
+    }
+    
+    # Generate recommended stop values based on data
+    if result["overall"]:
+        overall = result["overall"]
+        result["recommended_stop_models"] = {
+            "aggressive_p50": {
+                "mae_base": overall["p50"],
+                "buffer": 0.05,
+                "total_stop": round(overall["p50"] + 0.05, 3),
+                "description": "50th percentile MAE + 0.05% buffer"
+            },
+            "balanced_p75": {
+                "mae_base": overall["p75"],
+                "buffer": 0.10,
+                "total_stop": round(overall["p75"] + 0.10, 3),
+                "description": "75th percentile MAE + 0.10% buffer"
+            },
+            "conservative_p90": {
+                "mae_base": overall["p90"],
+                "buffer": 0.12,
+                "total_stop": round(overall["p90"] + 0.12, 3),
+                "description": "90th percentile MAE + 0.12% buffer"
+            },
+            "very_conservative_p95": {
+                "mae_base": overall["p95"],
+                "buffer": 0.15,
+                "total_stop": round(overall["p95"] + 0.15, 3),
+                "description": "95th percentile MAE + 0.15% buffer"
+            }
+        }
+    
+    return result
+
 
 @api_router.websocket("/ws/price")
 async def websocket_price(websocket: WebSocket):
