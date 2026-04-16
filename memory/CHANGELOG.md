@@ -1,6 +1,49 @@
 # CryptoRadar Changelog
 
 
+## v3.5.4 - 2026-04-16
+
+### PUBLIC vs ADMIN Access Control System
+
+**Purpose:** Implement complete access control system to prepare for public deployment. PUBLIC users see market data only, ADMIN users see operational trade signals.
+
+#### What PUBLIC Users See
+- ✅ Price/Ticker, Data Integrity, Market Regime
+- ✅ Market Bias, Market Energy
+- ✅ Magnet Liquidity, Liquidity Zone Engine
+- ✅ Chart, Support/Resistance, Whale Alerts
+- ✅ News, Manual
+
+#### What PUBLIC Users Do NOT See
+- 🔒 V3 Signal Card (operational trade signals)
+- 🔒 Decision Engine (actionable LONG/SHORT/WAIT)
+- 🔒 Signal History, Backtest, Settings
+- 🔒 Reliability Analytics, Alerts, Notes
+- 🔒 V2 Diagnostic panel
+
+#### Backend Protection
+All sensitive endpoints protected with `X-Admin-Key` header:
+- `/api/v3/*` - V3 operational endpoints
+- `/api/backtest/*` - Backtest engine
+- `/api/signal-history/*` - Signal tracking
+- `/api/admin/*`, `/api/settings`, `/api/telegram/*`
+
+#### Admin Login
+- Login via modal with secret key
+- Token stored in localStorage
+- Verify endpoint: `GET /api/auth/verify-admin`
+- Login endpoint: `POST /api/auth/admin-login`
+
+#### Files Created/Modified
+- `/app/frontend/src/contexts/AccessContext.js` (NEW)
+- `/app/frontend/src/components/ui/AdminAccess.js` (NEW)
+- `/app/backend/server.py` - Auth middleware
+- `/app/frontend/src/App.js` - AccessProvider + AdminRoute
+- `/app/frontend/src/components/Sidebar.js` - Public/Admin nav split
+- `/app/frontend/src/components/pages/DashboardPage.js` - Conditional UI
+
+---
+
 ## v3.5.3 - 2026-04-16
 
 ### Liquidity Zone Engine Added to Dashboard (Side by Side with Magnet)

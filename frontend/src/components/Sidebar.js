@@ -15,12 +15,15 @@ import {
   BookOpen,
   X,
   BarChart3,
-  FlaskConical
+  FlaskConical,
+  Lock
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { useAccess } from '../contexts/AccessContext';
 import { cn } from '../lib/utils';
 
-const navItems = [
+// PUBLIC items - visible to everyone
+const publicNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'dashboard' },
   { path: '/support-resistance', icon: Activity, label: 'supportResistance' },
   { path: '/whale-alerts', icon: Zap, label: 'whaleAlerts' },
@@ -28,12 +31,16 @@ const navItems = [
   { path: '/patterns', icon: Search, label: 'patterns' },
   { path: '/candlesticks', icon: CandlestickChart, label: 'candlesticks' },
   { path: '/news', icon: Newspaper, label: 'news' },
+  { path: '/manual', icon: BookOpen, label: 'manual' },
+];
+
+// ADMIN-ONLY items - require authentication
+const adminNavItems = [
   { path: '/alerts', icon: Bell, label: 'alerts' },
   { path: '/alert-history', icon: History, label: 'alertHistory' },
   { path: '/backtest', icon: FlaskConical, label: 'backtest' },
   { path: '/reliability', icon: BarChart3, label: 'reliabilityAnalytics' },
   { path: '/notes', icon: StickyNote, label: 'notes' },
-  { path: '/manual', icon: BookOpen, label: 'manual' },
   { path: '/settings', icon: Settings, label: 'settings' },
 ];
 
@@ -79,8 +86,9 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto">
+          {/* PUBLIC navigation items */}
           <ul className="space-y-1 px-2">
-            {navItems.map(({ path, icon: Icon, label }) => (
+            {publicNavItems.map(({ path, icon: Icon, label }) => (
               <li key={path}>
                 <NavLink
                   to={path}
@@ -99,6 +107,9 @@ export function Sidebar() {
               </li>
             ))}
           </ul>
+
+          {/* ADMIN navigation items - shown but locked for non-admin */}
+          <AdminNavSection />
         </nav>
 
         {/* Footer */}
@@ -109,6 +120,46 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  );
+}
+
+// Separate component to use useAccess hook
+function AdminNavSection() {
+  const { t, setSidebarOpen } = useApp();
+  const { isAdmin } = useAccess();
+
+  return (
+    <div className="mt-4 pt-4 border-t border-crypto-border/50">
+      <div className="px-3 mb-2 flex items-center gap-2">
+        <Lock className={cn("w-3 h-3", isAdmin ? "text-amber-400" : "text-zinc-600")} />
+        <span className={cn("text-[10px] uppercase tracking-wider font-bold", isAdmin ? "text-amber-400" : "text-zinc-600")}>
+          {isAdmin ? "Admin" : "Admin Only"}
+        </span>
+      </div>
+      <ul className="space-y-1 px-2">
+        {adminNavItems.map(({ path, icon: Icon, label }) => (
+          <li key={path}>
+            <NavLink
+              to={path}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) => cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-sm text-sm font-medium transition-all",
+                isAdmin
+                  ? isActive 
+                    ? "bg-amber-500/10 text-amber-400 border-l-2 border-amber-500" 
+                    : "text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5"
+                  : "text-zinc-600 cursor-not-allowed opacity-50"
+              )}
+              data-testid={`nav-${label}`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{t(label)}</span>
+              {!isAdmin && <Lock className="w-3 h-3 ml-auto text-zinc-600" />}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

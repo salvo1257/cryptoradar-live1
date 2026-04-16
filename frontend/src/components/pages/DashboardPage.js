@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 import { TradingChart } from '../TradingChart';
-import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock } from 'lucide-react';
 import { 
   MarketBiasCard, 
   SupportResistanceCard, 
@@ -24,6 +25,7 @@ import { Badge } from '../ui/badge';
 
 export function DashboardPage() {
   const { isLoading, language } = useApp();
+  const { isAdmin } = useAccess();
   // V2 panel OPEN by default as requested
   const [showDiagnostic, setShowDiagnostic] = useState(true);
 
@@ -94,10 +96,23 @@ export function DashboardPage() {
     <div className="p-6 space-y-8" data-testid="dashboard-page">
       
       {/* ═══════════════════════════════════════════════════════════════════
-          DECISION ENGINE - ONE CLEAR FINAL ACTION
-          Aggregates all signals into LONG/SHORT/WAIT
+          DECISION ENGINE - ADMIN ONLY - Aggregates all signals
       ═══════════════════════════════════════════════════════════════════ */}
-      <DecisionEngineCard language={language} />
+      {isAdmin ? (
+        <DecisionEngineCard language={language} />
+      ) : (
+        <div className="bg-crypto-card/60 border border-zinc-700/50 rounded-sm p-6 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-500/20 rounded">
+              <Lock className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h3 className="font-heading font-bold text-white">Market Overview</h3>
+              <p className="text-xs text-zinc-400">Public view - Trade signals require admin access</p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* ═══════════════════════════════════════════════════════════════════
           DATA INTEGRITY STATUS - Always visible at top
@@ -106,36 +121,45 @@ export function DashboardPage() {
       <DataFreshnessIndicator />
       
       {/* ═══════════════════════════════════════════════════════════════════
-          TOP ROW: V3 Signal + Market Regime (Primary Decision Layer)
-          This is what users should see first - the main signal and context
+          TOP ROW: V3 Signal (ADMIN) + Market Regime (PUBLIC)
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* V3 - Primary Operational Signal (2/3 width) */}
+        {/* V3 - ADMIN ONLY - Primary Operational Signal */}
         <div className="lg:col-span-2">
-          <V3SignalCard language={language} />
+          {isAdmin ? (
+            <V3SignalCard language={language} />
+          ) : (
+            <div className="bg-crypto-card/60 border border-zinc-700/50 rounded-sm p-6 h-full flex items-center justify-center">
+              <div className="text-center">
+                <Lock className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">V3 Signal - Admin Only</p>
+              </div>
+            </div>
+          )}
         </div>
         
-        {/* Market Regime - Quick Context (1/3 width) */}
+        {/* Market Regime - PUBLIC - Quick Context */}
         <div className="lg:col-span-1">
           <MarketRegimeCard language={language} />
         </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          LIQUIDITY CONTEXT: Magnet + Zones (Full Decision Context)
+          LIQUIDITY CONTEXT: Magnet + Zones (PUBLIC - Full Decision Context)
           Where price wants to go AND where liquidity is located
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Magnet Liquidity - Directional Target */}
+        {/* Magnet Liquidity - PUBLIC - Directional Target */}
         <LiquidityMagnetCard />
         
-        {/* Liquidity Zone Engine - Structural Zones */}
+        {/* Liquidity Zone Engine - PUBLIC - Structural Zones */}
         <LiquidityZoneInspector lang={language} />
       </div>
       
       {/* ═══════════════════════════════════════════════════════════════════
-          V2 Diagnostic Section - EXPANDED by default for comparison
+          V2 Diagnostic Section - ADMIN ONLY
       ═══════════════════════════════════════════════════════════════════ */}
+      {isAdmin && (
       <div className="bg-zinc-900/40 border border-zinc-700/50 rounded-sm overflow-hidden">
         <button
           onClick={() => setShowDiagnostic(!showDiagnostic)}
@@ -164,6 +188,7 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           CHART: Main Price Action View - Enhanced visual framing

@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { cn } from '../lib/utils';
+import { AdminAccessButton } from './ui/AdminAccess';
 
 export function TopBar() {
   const { 
@@ -189,6 +190,9 @@ export function TopBar() {
         >
           <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
         </Button>
+
+        {/* Admin access button */}
+        <AdminAccessButton />
       </div>
     </header>
   );

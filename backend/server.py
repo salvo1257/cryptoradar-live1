@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Header
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,6 +21,26 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN ACCESS CONTROL SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ADMIN_SECRET_KEY = os.environ.get("ADMIN_SECRET_KEY", "cr4pt0r4d4r_4dm1n_2024")
+admin_api_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
+
+async def verify_admin_access(x_admin_key: Optional[str] = Header(None)):
+    """Verify admin access via header token"""
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required. Provide valid X-Admin-Key header."
+        )
+    return True
+
+async def optional_admin_check(x_admin_key: Optional[str] = Header(None)) -> bool:
+    """Check if request has valid admin access (non-blocking)"""
+    return x_admin_key == ADMIN_SECRET_KEY if x_admin_key else False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATA INTEGRITY SYSTEM - Freshness Tracking & Stale Data Detection
@@ -15937,6 +15958,37 @@ def generate_trade_signal(
 
 # ============== API ROUTES ==============
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTH / ACCESS CONTROL ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.post("/auth/admin-login")
+async def admin_login(credentials: dict):
+    """
+    Admin login endpoint. Validates the secret key and returns access status.
+    """
+    provided_key = credentials.get("secret_key", "")
+    if provided_key == ADMIN_SECRET_KEY:
+        return {
+            "success": True,
+            "access_level": "admin",
+            "message": "Admin access granted",
+            "token": ADMIN_SECRET_KEY  # In production, use JWT
+        }
+    else:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+@api_router.get("/auth/verify-admin")
+async def verify_admin(is_admin: bool = Depends(optional_admin_check)):
+    """
+    Verify if current request has admin access.
+    Does not require admin access to call - returns status.
+    """
+    return {
+        "is_admin": is_admin,
+        "access_level": "admin" if is_admin else "public"
+    }
+
 @api_router.get("/health")
 async def health_check():
     """System health check"""
@@ -16940,7 +16992,10 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
 # ============== V3 MULTI-TIMEFRAME SIGNAL ENGINE ENDPOINT ==============
 
 @api_router.get("/v3/trade-signal")
-async def get_v3_trade_signal(lang: str = Query(default="it", description="Language: it, en, de, pl")):
+async def get_v3_trade_signal(
+    lang: str = Query(default="it", description="Language: it, en, de, pl"),
+    _: bool = Depends(verify_admin_access)
+):
     """
     V3 Multi-Timeframe Signal Engine.
     
@@ -17157,7 +17212,7 @@ async def get_v3_trade_signal(lang: str = Query(default="it", description="Langu
 
 
 @api_router.get("/v3/active-setups")
-async def get_v3_active_setups():
+async def get_v3_active_setups(_: bool = Depends(verify_admin_access)):
     """
     Get all active V3 setups from the database.
     
@@ -17179,7 +17234,7 @@ async def get_v3_active_setups():
 
 
 @api_router.post("/v3/expire-setup/{setup_id}")
-async def expire_v3_setup(setup_id: str, reason: str = "Manual expiration"):
+async def expire_v3_setup(setup_id: str, reason: str = "Manual expiration", _: bool = Depends(verify_admin_access)):
     """
     Manually expire/invalidate a V3 setup.
     """
@@ -17188,7 +17243,7 @@ async def expire_v3_setup(setup_id: str, reason: str = "Manual expiration"):
 
 
 @api_router.delete("/v3/clear-setups")
-async def clear_v3_setups():
+async def clear_v3_setups(_: bool = Depends(verify_admin_access)):
     """
     Clear all V3 setups (for testing/reset purposes).
     """
@@ -17197,7 +17252,7 @@ async def clear_v3_setups():
 
 
 @api_router.get("/v3/signal-tracking-status")
-async def get_v3_signal_tracking_status():
+async def get_v3_signal_tracking_status(_: bool = Depends(verify_admin_access)):
     """
     Get status of V3 signal tracking.
     
@@ -17237,7 +17292,7 @@ async def get_v3_signal_tracking_status():
 
 
 @api_router.get("/v3/signal-lock-status")
-async def get_v3_signal_lock_status():
+async def get_v3_signal_lock_status(_: bool = Depends(verify_admin_access)):
     """
     Get current same-direction signal lock status.
     
@@ -17305,7 +17360,7 @@ async def get_v3_signal_lock_status():
 
 
 @api_router.post("/v3/close-signal/{signal_id}")
-async def close_v3_signal(signal_id: str, outcome: str = Query(..., description="WIN, LOSS, EXPIRED, or CANCELLED")):
+async def close_v3_signal(signal_id: str, outcome: str = Query(..., description="WIN, LOSS, EXPIRED, or CANCELLED"), _: bool = Depends(verify_admin_access)):
     """
     Manually close/update a V3 signal outcome.
     
@@ -17356,7 +17411,7 @@ async def close_v3_signal(signal_id: str, outcome: str = Query(..., description=
 
 
 @api_router.get("/v3/shadow-tracking-status")
-async def get_shadow_tracking_status():
+async def get_shadow_tracking_status(_: bool = Depends(verify_admin_access)):
     """
     Get REAL-TIME status of shadow outcome tracking system.
     
@@ -17441,7 +17496,7 @@ async def get_shadow_tracking_status():
 
 
 @api_router.post("/v3/test-record-signal")
-async def test_record_v3_signal():
+async def test_record_v3_signal(_: bool = Depends(verify_admin_access)):
     """
     Test the V3 signal recording function with sample data.
     
@@ -17493,7 +17548,7 @@ async def test_record_v3_signal():
 
 
 @api_router.post("/v3/backfill-missing-signals")
-async def backfill_v3_signals():
+async def backfill_v3_signals(_: bool = Depends(verify_admin_access)):
     """
     Backfill V3 signals that were ENTRY_READY but not recorded in signal_history.
     
@@ -17558,7 +17613,7 @@ async def backfill_v3_signals():
 
 
 @api_router.get("/v3/shadow-targets")
-async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
+async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100), _: bool = Depends(verify_admin_access)):
     """
     SHADOW MODE ANALYSIS v0.3: View shadow liquidity target data with REAL-TIME tracking.
     
@@ -17677,7 +17732,7 @@ async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100)):
 
 
 @api_router.get("/v3/shadow-performance")
-async def get_shadow_performance_metrics():
+async def get_shadow_performance_metrics(_: bool = Depends(verify_admin_access)):
     """
     SHADOW MODE PERFORMANCE COMPARISON: Standard vs Shadow Target Analysis.
     
@@ -17703,7 +17758,7 @@ async def get_shadow_performance_metrics():
 
 
 @api_router.get("/v3/shadow-validation-logs")
-async def get_shadow_validation_logs(limit: int = Query(default=50, le=200)):
+async def get_shadow_validation_logs(limit: int = Query(default=50, le=200), _: bool = Depends(verify_admin_access)):
     """
     SHADOW VALIDATION LOGS: View all shadow validation results.
     
@@ -17781,7 +17836,7 @@ async def get_shadow_validation_logs(limit: int = Query(default=50, le=200)):
 
 
 @api_router.get("/v3/cluster-validation-summary")
-async def get_cluster_validation_summary_endpoint():
+async def get_cluster_validation_summary_endpoint(_: bool = Depends(verify_admin_access)):
     """
     V3 CLUSTER TARGET VALIDATION SUMMARY
     
@@ -17813,10 +17868,7 @@ async def get_cluster_validation_summary_endpoint():
 
 
 @api_router.get("/v3/cluster-validation-signals")
-async def get_cluster_validation_signals(
-    limit: int = Query(default=50, le=200),
-    outcome_filter: str = Query(default=None, description="Filter by outcome: PENDING, T1_HIT, T2_HIT, STOP_HIT, EXPIRED, BLOCKED")
-):
+async def get_cluster_validation_signals(limit: int = Query(default=50, le=200), outcome_filter: str = Query(default=None, description="Filter by outcome: PENDING, T1_HIT, T2_HIT, STOP_HIT, EXPIRED, BLOCKED"), _: bool = Depends(verify_admin_access)):
     """
     V3 CLUSTER VALIDATION SIGNALS LIST
     
@@ -17880,7 +17932,7 @@ async def get_cluster_validation_signals(
 
 
 @api_router.get("/v3/intelligence-status")
-async def get_v3_intelligence_status(lang: str = Query(default="en")):
+async def get_v3_intelligence_status(lang: str = Query(default="en"), _: bool = Depends(verify_admin_access)):
     """
     V3.3 ENHANCED INTELLIGENCE STATUS
     
@@ -18189,7 +18241,7 @@ def _build_module_integration_summary(
 
 
 @api_router.get("/v3/promotion-readiness")
-async def get_promotion_readiness():
+async def get_promotion_readiness(_: bool = Depends(verify_admin_access)):
     """
     PROMOTION READINESS REPORT: Should we switch to shadow targets?
     
@@ -18215,7 +18267,7 @@ async def get_promotion_readiness():
 
 
 @api_router.get("/v3/monitoring-metrics")
-async def get_v3_monitoring_metrics():
+async def get_v3_monitoring_metrics(_: bool = Depends(verify_admin_access)):
     """
     Comprehensive V3 engine monitoring metrics for validation.
     
@@ -19278,7 +19330,7 @@ async def get_liquidity_comparison(lang: str = Query(default="it", description="
     }
 
 @api_router.get("/debug/liquidity-pipeline")
-async def debug_liquidity_pipeline():
+async def debug_liquidity_pipeline(_: bool = Depends(verify_admin_access)):
     """
     DEBUG ENDPOINT: Trace the full liquidity data pipeline.
     Shows raw data at each stage to identify where data is lost.
@@ -19439,7 +19491,7 @@ async def debug_liquidity_pipeline():
         return debug_info
 
 @api_router.post("/signal-history/record")
-async def record_signal():
+async def record_signal(_: bool = Depends(verify_admin_access)):
     """
     Record the current trade signal to history.
     Called periodically or on significant signal changes.
@@ -19640,14 +19692,7 @@ async def record_signal():
 
 
 @api_router.get("/signal-history")
-async def get_signal_history(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
-    direction: Optional[str] = Query(default=None, description="Filter by direction: LONG, SHORT, NO TRADE"),
-    outcome: Optional[str] = Query(default=None, description="Filter by outcome: WIN, LOSS, PARTIAL_WIN, EXPIRED, PENDING"),
-    engine_version: Optional[str] = Query(default=None, description="Filter by engine version: v1, v2, v3"),
-    exclude_no_trade: bool = Query(default=False, description="Exclude NO TRADE signals (operational only)")
-):
+async def get_signal_history(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100), direction: Optional[str] = Query(default=None, description="Filter by direction: LONG, SHORT, NO TRADE"), outcome: Optional[str] = Query(default=None, description="Filter by outcome: WIN, LOSS, PARTIAL_WIN, EXPIRED, PENDING"), engine_version: Optional[str] = Query(default=None, description="Filter by engine version: v1, v2, v3"), exclude_no_trade: bool = Query(default=False, description="Exclude NO TRADE signals (operational only)"), _: bool = Depends(verify_admin_access)):
     """
     Get signal history with pagination.
     
@@ -19695,7 +19740,7 @@ async def get_signal_history(
 
 
 @api_router.get("/signal-history/stats")
-async def get_signal_stats():
+async def get_signal_stats(_: bool = Depends(verify_admin_access)):
     """
     Get statistics from signal history.
     """
@@ -19746,7 +19791,7 @@ async def get_signal_stats():
 
 
 @api_router.delete("/signal-history/clear")
-async def clear_signal_history():
+async def clear_signal_history(_: bool = Depends(verify_admin_access)):
     """Clear all signal history (admin function)"""
     try:
         result = await signal_history_collection.delete_many({})
@@ -19757,7 +19802,7 @@ async def clear_signal_history():
 
 
 @api_router.post("/signal-history/migrate-outcomes")
-async def migrate_signal_outcomes():
+async def migrate_signal_outcomes(_: bool = Depends(verify_admin_access)):
     """
     Migrate old signals to have the new outcome field.
     - NO TRADE signals get outcome "NO_TRADE"
@@ -19787,7 +19832,7 @@ async def migrate_signal_outcomes():
 
 
 @api_router.post("/signal-history/fix-missing-outcomes")
-async def fix_missing_outcomes():
+async def fix_missing_outcomes(_: bool = Depends(verify_admin_access)):
     """
     Fix signals with missing outcome field.
     
@@ -19856,7 +19901,7 @@ async def fix_missing_outcomes():
 
 
 @api_router.post("/signal-history/recalculate-with-ohlc")
-async def recalculate_outcomes_with_ohlc(limit: int = Query(default=50, description="Max signals to recalculate")):
+async def recalculate_outcomes_with_ohlc(limit: int = Query(default=50, description="Max signals to recalculate"), _: bool = Depends(verify_admin_access)):
     """
     Recalculate outcomes for EXPIRED signals using OHLC candle data.
     
@@ -19972,7 +20017,7 @@ async def recalculate_outcomes_with_ohlc(limit: int = Query(default=50, descript
 # ============== SIGNAL OUTCOME TRACKING ==============
 
 @api_router.post("/signal-history/check-outcomes")
-async def check_signal_outcomes():
+async def check_signal_outcomes(_: bool = Depends(verify_admin_access)):
     """
     Check and update outcomes for all pending signals using OHLC candle data.
     
@@ -20113,7 +20158,7 @@ async def check_signal_outcomes():
 
 
 @api_router.get("/signal-history/scheduler-status")
-async def get_scheduler_status():
+async def get_scheduler_status(_: bool = Depends(verify_admin_access)):
     """
     Get the status of the automatic outcome checker scheduler.
     
@@ -20210,7 +20255,7 @@ async def get_engine_comparison_stats() -> dict:
 
 
 @api_router.post("/signal-history/trigger-check")
-async def trigger_outcome_check():
+async def trigger_outcome_check(_: bool = Depends(verify_admin_access)):
     """
     Manually trigger an immediate outcome check.
     Useful for testing or forcing an update without waiting for the next scheduled run.
@@ -20228,7 +20273,7 @@ async def trigger_outcome_check():
 
 
 @api_router.get("/signal-history/statistics")
-async def get_signal_statistics():
+async def get_signal_statistics(_: bool = Depends(verify_admin_access)):
     """
     Get comprehensive performance statistics for signal tracking.
     
@@ -20444,7 +20489,7 @@ async def get_signal_statistics():
 
 
 @api_router.get("/signal-history/reliability-analytics")
-async def get_reliability_analytics():
+async def get_reliability_analytics(_: bool = Depends(verify_admin_access)):
     """
     Comprehensive Signal Reliability Analytics / Heatmap data.
     
@@ -20868,7 +20913,7 @@ def generate_reliability_recommendations(by_direction, by_setup, by_confidence, 
 
 
 @api_router.post("/signal-history/migrate-to-v1")
-async def migrate_signals_to_v1():
+async def migrate_signals_to_v1(_: bool = Depends(verify_admin_access)):
     """
     One-time migration endpoint to tag all existing signals without 
     signal_engine_version as v1 (legacy sweep-only logic).
@@ -20894,7 +20939,8 @@ async def migrate_signals_to_v1():
 async def update_signal_outcome(
     signal_id: str,
     outcome: str = Query(..., description="WIN, LOSS, PARTIAL_WIN, EXPIRED"),
-    notes: str = Query(default="", description="Optional notes")
+    notes: str = Query(default="", description="Optional notes"),
+    _: bool = Depends(verify_admin_access)
 ):
     """
     Manually update a signal's outcome (for corrections or manual closing).
@@ -21074,7 +21120,7 @@ async def delete_note(note_id: str):
 # ============== SETTINGS ==============
 
 @api_router.get("/settings", response_model=Settings)
-async def get_settings():
+async def get_settings(_: bool = Depends(verify_admin_access)):
     """Get user settings"""
     settings = await db.settings.find_one({}, {"_id": 0})
     if settings:
@@ -21082,13 +21128,13 @@ async def get_settings():
     return Settings()
 
 @api_router.put("/settings", response_model=Settings)
-async def update_settings(settings: Settings):
+async def update_settings(settings: Settings, _: bool = Depends(verify_admin_access)):
     """Update user settings"""
     await db.settings.update_one({}, {"$set": settings.model_dump()}, upsert=True)
     return settings
 
 @api_router.post("/telegram/test")
-async def test_telegram(message: TelegramMessage):
+async def test_telegram(message: TelegramMessage, _: bool = Depends(verify_admin_access)):
     """Test Telegram notification"""
     settings = await db.settings.find_one({}, {"_id": 0})
     if not settings or not settings.get("telegram_bot_token") or not settings.get("telegram_chat_id"):
@@ -21113,7 +21159,7 @@ async def test_telegram(message: TelegramMessage):
 
 
 @api_router.post("/telegram/test-v3-alert")
-async def test_v3_telegram_alert():
+async def test_v3_telegram_alert(_: bool = Depends(verify_admin_access)):
     """
     Test V3 ENTRY_READY Telegram alert with sample data.
     Useful for verifying Telegram setup is working correctly.
@@ -21160,7 +21206,7 @@ async def test_v3_telegram_alert():
 
 
 @api_router.get("/telegram/v3-alerts-status")
-async def get_v3_alerts_status():
+async def get_v3_alerts_status(_: bool = Depends(verify_admin_access)):
     """
     Get status of V3 alert system.
     Shows recent alerts sent and deduplication tracking.
@@ -21186,7 +21232,7 @@ async def get_v3_alerts_status():
 
 
 @api_router.post("/v3/test-signal-validation")
-async def test_v3_signal_validation():
+async def test_v3_signal_validation(_: bool = Depends(verify_admin_access)):
     """
     V3.4 VALIDATION TEST ENDPOINT
     
@@ -21361,7 +21407,7 @@ async def test_v3_signal_validation():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @api_router.get("/v3/contrarian-stats")
-async def get_contrarian_stats():
+async def get_contrarian_stats(_: bool = Depends(verify_admin_access)):
     """
     Get V3.5 Contrarian signal statistics.
     
@@ -21372,7 +21418,7 @@ async def get_contrarian_stats():
 
 
 @api_router.post("/v3/test-contrarian-evaluation")
-async def test_contrarian_evaluation():
+async def test_contrarian_evaluation(_: bool = Depends(verify_admin_access)):
     """
     Test V3.5 Contrarian evaluation logic with simulated scenarios.
     
@@ -21543,7 +21589,7 @@ async def test_contrarian_evaluation():
 
 
 @api_router.get("/v3/contrarian-signals")
-async def get_contrarian_signals(limit: int = Query(default=20, le=100)):
+async def get_contrarian_signals(limit: int = Query(default=20, le=100), _: bool = Depends(verify_admin_access)):
     """
     Get recent V3.5 Contrarian signals.
     """
@@ -21576,7 +21622,7 @@ async def get_contrarian_signals(limit: int = Query(default=20, le=100)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @api_router.post("/admin/archive-legacy-signals")
-async def archive_legacy_signals():
+async def archive_legacy_signals(_: bool = Depends(verify_admin_access)):
     """
     Archive all non-V3 signals to a separate collection.
     This prepares the system for V3-only operational mode.
@@ -21641,7 +21687,7 @@ async def archive_legacy_signals():
 
 
 @api_router.post("/admin/reset-v3-statistics")
-async def reset_v3_statistics():
+async def reset_v3_statistics(_: bool = Depends(verify_admin_access)):
     """
     Reset all V3 monitoring statistics to zero.
     Called after archiving legacy signals to start fresh.
@@ -21673,7 +21719,7 @@ async def reset_v3_statistics():
 
 
 @api_router.get("/admin/v3-system-status")
-async def get_v3_system_status():
+async def get_v3_system_status(_: bool = Depends(verify_admin_access)):
     """
     Get current V3-only system status and data quality report.
     """
@@ -23765,18 +23811,7 @@ class V3ReplayEngine:
 # --- Backtest API Endpoints ---
 
 @api_router.post("/backtest/launch")
-async def launch_backtest(
-    symbol: str = Query(default="BTCUSD"),
-    date_from: str = Query(..., description="Start date ISO format"),
-    date_to: str = Query(..., description="End date ISO format"),
-    v34_enabled: bool = Query(default=True),
-    v35_enabled: bool = Query(default=True),
-    confirmation_mode: str = Query(default="NORMAL", description="NORMAL | RELAXED | FORCE_ENTRY"),
-    debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging"),
-    disable_rr_filter: bool = Query(default=False, description="Disable R:R filter for MFE/MAE analysis"),
-    stop_model: str = Query(default="ORIGINAL", description="ORIGINAL | MAE_CONSERVATIVE | MAE_BALANCED | MAE_AGGRESSIVE | CUSTOM"),
-    custom_stop_pct: float = Query(default=1.0, description="Custom stop % when stop_model=CUSTOM")
-):
+async def launch_backtest(symbol: str = Query(default="BTCUSD"), date_from: str = Query(..., description="Start date ISO format"), date_to: str = Query(..., description="End date ISO format"), v34_enabled: bool = Query(default=True), v35_enabled: bool = Query(default=True), confirmation_mode: str = Query(default="NORMAL", description="NORMAL | RELAXED | FORCE_ENTRY"), debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging"), disable_rr_filter: bool = Query(default=False, description="Disable R:R filter for MFE/MAE analysis"), stop_model: str = Query(default="ORIGINAL", description="ORIGINAL | MAE_CONSERVATIVE | MAE_BALANCED | MAE_AGGRESSIVE | CUSTOM"), custom_stop_pct: float = Query(default=1.0, description="Custom stop % when stop_model=CUSTOM"), _: bool = Depends(verify_admin_access)):
     """
     Launch a new V3 backtest run.
     
@@ -23885,7 +23920,7 @@ async def launch_backtest(
 
 
 @api_router.get("/backtest/runs")
-async def list_backtest_runs(limit: int = Query(default=20, le=100)):
+async def list_backtest_runs(limit: int = Query(default=20, le=100), _: bool = Depends(verify_admin_access)):
     """List all backtest runs"""
     cursor = backtest_runs_collection.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
     runs = await cursor.to_list(limit)
@@ -23893,7 +23928,7 @@ async def list_backtest_runs(limit: int = Query(default=20, le=100)):
 
 
 @api_router.get("/backtest/run/{run_id}")
-async def get_backtest_run(run_id: str):
+async def get_backtest_run(run_id: str, _: bool = Depends(verify_admin_access)):
     """Get backtest run details and progress"""
     run = await backtest_runs_collection.find_one({"run_id": run_id}, {"_id": 0})
     if not run:
@@ -23906,7 +23941,8 @@ async def get_backtest_signals(
     run_id: str,
     lifecycle: Optional[str] = Query(default=None),
     direction: Optional[str] = Query(default=None),
-    limit: int = Query(default=100, le=500)
+    limit: int = Query(default=100, le=500),
+    _: bool = Depends(verify_admin_access)
 ):
     """Get signals from a backtest run"""
     query = {"run_id": run_id}
@@ -23927,7 +23963,7 @@ async def get_backtest_signals(
 
 
 @api_router.get("/backtest/run/{run_id}/summary")
-async def get_backtest_summary(run_id: str):
+async def get_backtest_summary(run_id: str, _: bool = Depends(verify_admin_access)):
     """Get backtest summary with full breakdowns"""
     run = await backtest_runs_collection.find_one({"run_id": run_id}, {"_id": 0})
     if not run:
@@ -23949,7 +23985,7 @@ async def get_backtest_summary(run_id: str):
 
 
 @api_router.get("/backtest/run/{run_id}/breakdowns")
-async def get_backtest_breakdowns(run_id: str):
+async def get_backtest_breakdowns(run_id: str, _: bool = Depends(verify_admin_access)):
     """Get detailed performance breakdowns by condition"""
     
     cursor = backtest_signals_collection.find(
@@ -24047,7 +24083,7 @@ async def get_backtest_breakdowns(run_id: str):
 
 
 @api_router.get("/backtest/run/{run_id}/mfe-mae-analysis")
-async def analyze_mfe_mae(run_id: str):
+async def analyze_mfe_mae(run_id: str, _: bool = Depends(verify_admin_access)):
     """
     Analyze MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion)
     for all signals in a backtest run.
@@ -24242,10 +24278,7 @@ async def analyze_mfe_mae(run_id: str):
 
 
 @api_router.post("/backtest/edge-analysis")
-async def run_edge_analysis(
-    date_from: str = Query(..., description="Start date ISO format"),
-    date_to: str = Query(..., description="End date ISO format")
-):
+async def run_edge_analysis(date_from: str = Query(..., description="Start date ISO format"), date_to: str = Query(..., description="End date ISO format"), _: bool = Depends(verify_admin_access)):
     """
     Run a complete edge analysis:
     1. Generate signals with R:R filter disabled
@@ -24359,10 +24392,7 @@ async def run_edge_analysis(
 
 
 @api_router.post("/backtest/compare")
-async def compare_backtest_modes(
-    date_from: str = Query(..., description="Start date ISO format"),
-    date_to: str = Query(..., description="End date ISO format")
-):
+async def compare_backtest_modes(date_from: str = Query(..., description="Start date ISO format"), date_to: str = Query(..., description="End date ISO format"), _: bool = Depends(verify_admin_access)):
     """
     Run backtests in all three modes and compare results.
     
@@ -24494,10 +24524,7 @@ manager = ConnectionManager()
 
 
 @api_router.post("/backtest/compare-stop-models")
-async def compare_stop_models(
-    date_from: str = Query(..., description="Start date ISO format"),
-    date_to: str = Query(..., description="End date ISO format")
-):
+async def compare_stop_models(date_from: str = Query(..., description="Start date ISO format"), date_to: str = Query(..., description="End date ISO format"), _: bool = Depends(verify_admin_access)):
     """
     Compare different stop loss models on the same data.
     
@@ -24666,7 +24693,7 @@ async def compare_stop_models(
 
 
 @api_router.get("/backtest/mae-distribution")
-async def get_mae_distribution():
+async def get_mae_distribution(_: bool = Depends(verify_admin_access)):
     """
     Analyze MAE distribution from all historical backtest signals.
     
@@ -24792,7 +24819,7 @@ async def get_mae_distribution():
 
 
 @api_router.get("/backtest/robustness-analysis")
-async def get_robustness_analysis():
+async def get_robustness_analysis(_: bool = Depends(verify_admin_access)):
     """
     Comprehensive robustness analysis of backtest results.
     

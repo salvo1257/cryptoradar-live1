@@ -1,16 +1,88 @@
-# CryptoRadar v3.5.3 - Product Requirements Document
-**Last Updated:** 2026-04-16 (Liquidity Zone Engine added to Dashboard)
+# CryptoRadar v3.5.4 - Product Requirements Document
+**Last Updated:** 2026-04-16 (PUBLIC vs ADMIN Access Control System)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.3
+- **Current Version:** v3.5.4
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
 - **V3.5.2 Feature:** V3 Backtest/Replay Engine (backend complete)
-- **V3.5.3 Feature:** Liquidity Zone Engine added to main dashboard (separate from Magnet Liquidity)
+- **V3.5.3 Feature:** Liquidity Zone Engine added to main dashboard
+- **V3.5.4 Feature:** PUBLIC vs ADMIN access control system
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## ACCESS CONTROL SYSTEM (v3.5.4 - 2026-04-16)
+
+### Overview
+Implemented complete PUBLIC vs ADMIN access control to prepare for public deployment.
+
+### PUBLIC Users See (Default)
+| Component | Visible | Description |
+|-----------|---------|-------------|
+| Price/Ticker | ✅ | BTC/USDT live price |
+| Data Integrity | ✅ | 6/7 fresh indicator |
+| Market Regime | ✅ | RANGE/TREND with setup suggestion |
+| Market Bias | ✅ | BULLISH/NEUTRAL/BEARISH |
+| Market Energy | ✅ | Energy level indicator |
+| Magnet Liquidity | ✅ | Directional liquidity target |
+| Liquidity Zone Engine | ✅ | ABOVE/BELOW cluster zones |
+| Chart | ✅ | TradingView BTC/USDT |
+| Support/Resistance | ✅ | Key levels |
+| Whale Alerts | ✅ | Large transactions |
+| News | ✅ | Market news |
+| Manual | ✅ | Documentation |
+
+### PUBLIC Users Do NOT See
+| Component | Hidden | Reason |
+|-----------|--------|--------|
+| V3 Signal Card | 🔒 | Operational trade signals |
+| Decision Engine | 🔒 | Actionable trade direction |
+| Signal History | 🔒 | Performance tracking |
+| Backtest | 🔒 | Strategy testing |
+| Settings | 🔒 | Configuration |
+| Reliability Analytics | 🔒 | Performance metrics |
+| Alerts | 🔒 | Alert management |
+| Notes | 🔒 | Personal notes |
+| V2 Diagnostic | 🔒 | Debug/comparison panel |
+
+### ADMIN Users See
+Everything PUBLIC sees PLUS all protected components.
+
+### Backend Protection
+Protected endpoints (require `X-Admin-Key` header):
+- `/api/v3/trade-signal` - V3 operational signal
+- `/api/v3/*` - All V3 setup/tracking endpoints
+- `/api/backtest/*` - All backtest endpoints
+- `/api/signal-history/*` - All signal history endpoints
+- `/api/admin/*` - Admin operations
+- `/api/settings` - Settings management
+- `/api/telegram/*` - Alert configuration
+- `/api/debug/*` - Debug endpoints
+
+### Admin Authentication
+- **Login Endpoint:** `POST /api/auth/admin-login`
+- **Verify Endpoint:** `GET /api/auth/verify-admin`
+- **Secret Key:** Stored in `ADMIN_SECRET_KEY` env variable
+- **Token Storage:** localStorage (`cryptoradar_admin_token`)
+- **Header:** `X-Admin-Key: <token>`
+
+### UI Components
+- `AccessContext.js` - React context for access state
+- `AdminAccess.js` - Login modal and button components
+- `AdminRoute` - Protected route wrapper in App.js
+- Sidebar shows "ADMIN ONLY" section with lock icons
+
+### Files Modified
+- `/app/backend/.env` - Added `ADMIN_SECRET_KEY`
+- `/app/backend/server.py` - Added auth middleware and endpoint protection
+- `/app/frontend/src/contexts/AccessContext.js` (NEW)
+- `/app/frontend/src/components/ui/AdminAccess.js` (NEW)
+- `/app/frontend/src/App.js` - Added AccessProvider and AdminRoute
+- `/app/frontend/src/components/TopBar.js` - Added AdminAccessButton
+- `/app/frontend/src/components/Sidebar.js` - Split nav into public/admin
+- `/app/frontend/src/components/pages/DashboardPage.js` - Conditional rendering
 
 ## LIQUIDITY ZONE ENGINE DASHBOARD ADDITION (2026-04-16)
 
