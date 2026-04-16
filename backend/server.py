@@ -21787,6 +21787,13 @@ class BacktestConfig:
     
     # Debug logging for confirmation analysis
     debug_confirmation: bool = False  # Log detailed 5M confirmation attempts
+    
+    # Disable R:R filter to analyze actual price behavior
+    # When True, signals are NOT blocked for low R:R - allows MFE/MAE analysis
+    disable_rr_filter: bool = False
+    
+    # Track all signals regardless of validation (for edge analysis)
+    track_all_signals: bool = False
 
 
 class ConfirmationDebugStats:
@@ -23164,6 +23171,17 @@ class V3ReplayEngine:
         # NOTE: Magnet and Squeeze checks are NOT available in historical backtest
         # because we don't have derivatives data. This is tracked via data_quality.
         
+        # ═══════════════════════════════════════════════════════════════════
+        # DISABLE R:R FILTER MODE (for MFE/MAE analysis)
+        # When enabled, signals are NOT blocked for low R:R or invalid targets
+        # ═══════════════════════════════════════════════════════════════════
+        if self.config.disable_rr_filter:
+            # Remove R:R and target validity block reasons - we want to track actual price behavior
+            block_reasons = [r for r in block_reasons if not r.startswith("LOW_RR") and not r.startswith("NO_VALID")]
+            
+            # Store original R:R for analysis
+            signal.context.compression_level = f"RR_ANALYSIS_{signal.targets.rr_ratio:.2f}"
+        
         # Determine if blocked
         if block_reasons:
             signal.lifecycle_state = SignalLifecycle.BLOCKED.value
@@ -23485,7 +23503,8 @@ async def launch_backtest(
     v34_enabled: bool = Query(default=True),
     v35_enabled: bool = Query(default=True),
     confirmation_mode: str = Query(default="NORMAL", description="NORMAL | RELAXED | FORCE_ENTRY"),
-    debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging")
+    debug_confirmation: bool = Query(default=False, description="Enable detailed 5M debug logging"),
+    disable_rr_filter: bool = Query(default=False, description="Disable R:R filter for MFE/MAE analysis")
 ):
     """
     Launch a new V3 backtest run.
@@ -23494,6 +23513,10 @@ async def launch_backtest(
     - NORMAL: Exact same 5M confirmation logic as production
     - RELAXED: Loosen zone buffer (1% vs 0.2%) and stabilization (1 vs 2 candles)
     - FORCE_ENTRY: Bypass 5M confirmation entirely, test 4H setup edge
+    
+    Analysis Modes:
+    - disable_rr_filter: When True, signals are NOT blocked for low R:R
+      This allows tracking actual price behavior (MFE/MAE) regardless of calculated R:R
     
     This is an async operation - returns run_id immediately.
     Use /backtest/run/{run_id} to check progress.
@@ -23513,7 +23536,8 @@ async def launch_backtest(
         v34_validation_enabled=v34_enabled,
         v35_contrarian_enabled=v35_enabled,
         confirmation_mode=confirmation_mode,
-        debug_confirmation=debug_confirmation
+        debug_confirmation=debug_confirmation,
+        disable_rr_filter=disable_rr_filter
     )
     
     # Create run record
@@ -23735,6 +23759,318 @@ async def get_backtest_breakdowns(run_id: str):
         "total_signals_analyzed": len(signals),
         "breakdowns": breakdowns
     }
+
+
+@api_router.get("/backtest/run/{run_id}/mfe-mae-analysis")
+async def analyze_mfe_mae(run_id: str):
+    """
+    Analyze MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion)
+    for all signals in a backtest run.
+    
+    This helps understand:
+    - Do signals have edge? (MFE > MAE)
+    - Are targets too close? (actual MFE > calculated target distance)
+    - Are stops too wide? (MAE vs stop distance)
+    - What achievable R:R would be based on actual price behavior?
+    """
+    # Get all signals with outcomes
+    cursor = backtest_signals_collection.find(
+        {"run_id": run_id, "outcome": {"$ne": None}},
+        {"_id": 0}
+    )
+    signals = await cursor.to_list(None)
+    
+    if not signals:
+        # Check if run exists
+        run = await backtest_runs_collection.find_one({"run_id": run_id})
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        # Try to get signals without outcomes (for analysis mode)
+        cursor = backtest_signals_collection.find({"run_id": run_id}, {"_id": 0})
+        signals = await cursor.to_list(None)
+        
+        if not signals:
+            return {
+                "run_id": run_id,
+                "error": "No signals found",
+                "recommendation": "Run backtest with disable_rr_filter=true and confirmation_mode=FORCE_ENTRY"
+            }
+    
+    # Collect MFE/MAE data
+    mfe_values = []
+    mae_values = []
+    rr_calculated = []
+    rr_achievable = []
+    
+    signal_details = []
+    
+    for s in signals:
+        outcome = s.get("outcome", {})
+        targets = s.get("targets", {})
+        
+        mfe = outcome.get("mfe", 0)
+        mae = outcome.get("mae", 0)
+        
+        # Only analyze signals with tracking data
+        if mfe > 0 or mae > 0:
+            mfe_values.append(mfe)
+            mae_values.append(mae)
+            
+            # Calculated R:R from targets
+            calc_rr = targets.get("rr_ratio", 0)
+            rr_calculated.append(calc_rr)
+            
+            # Achievable R:R based on actual price movement
+            # Achievable = MFE / MAE (if we used actual excursions)
+            if mae > 0:
+                achievable = mfe / mae
+            else:
+                achievable = mfe if mfe > 0 else 0
+            rr_achievable.append(achievable)
+            
+            # Target distance % vs actual MFE
+            target_dist_pct = targets.get("reward_pct", 0)
+            stop_dist_pct = targets.get("risk_pct", 0)
+            
+            signal_details.append({
+                "signal_id": s.get("signal_id", "")[:8],
+                "direction": s.get("direction", ""),
+                "entry": targets.get("entry", 0),
+                "calculated": {
+                    "stop_loss_pct": round(stop_dist_pct, 3),
+                    "target_pct": round(target_dist_pct, 3),
+                    "rr_ratio": round(calc_rr, 2)
+                },
+                "actual": {
+                    "mfe_pct": round(mfe, 3),
+                    "mae_pct": round(mae, 3),
+                    "achievable_rr": round(achievable, 2)
+                },
+                "analysis": {
+                    "target_vs_mfe": "TARGET_TOO_CLOSE" if target_dist_pct < mfe * 0.5 else (
+                        "TARGET_REASONABLE" if target_dist_pct <= mfe * 1.2 else "TARGET_TOO_FAR"
+                    ),
+                    "stop_vs_mae": "STOP_TOO_TIGHT" if stop_dist_pct < mae * 0.8 else (
+                        "STOP_REASONABLE" if stop_dist_pct <= mae * 1.5 else "STOP_TOO_WIDE"
+                    ),
+                    "has_edge": mfe > mae
+                },
+                "result": outcome.get("result", "PENDING"),
+                "t1_hit": outcome.get("t1_hit", False)
+            })
+    
+    if not mfe_values:
+        return {
+            "run_id": run_id,
+            "signals_count": len(signals),
+            "error": "No signals with MFE/MAE data. Signals may not have been tracked post-entry.",
+            "recommendation": "Ensure signals reach EXECUTABLE state and outcome tracking runs."
+        }
+    
+    # Calculate statistics
+    avg_mfe = sum(mfe_values) / len(mfe_values)
+    avg_mae = sum(mae_values) / len(mae_values)
+    avg_calc_rr = sum(rr_calculated) / len(rr_calculated) if rr_calculated else 0
+    avg_achievable_rr = sum(rr_achievable) / len(rr_achievable) if rr_achievable else 0
+    
+    # Distribution buckets
+    mfe_distribution = {
+        "<0.25%": len([m for m in mfe_values if m < 0.25]),
+        "0.25-0.5%": len([m for m in mfe_values if 0.25 <= m < 0.5]),
+        "0.5-1%": len([m for m in mfe_values if 0.5 <= m < 1.0]),
+        "1-2%": len([m for m in mfe_values if 1.0 <= m < 2.0]),
+        "2%+": len([m for m in mfe_values if m >= 2.0])
+    }
+    
+    mae_distribution = {
+        "<0.25%": len([m for m in mae_values if m < 0.25]),
+        "0.25-0.5%": len([m for m in mae_values if 0.25 <= m < 0.5]),
+        "0.5-1%": len([m for m in mae_values if 0.5 <= m < 1.0]),
+        "1-2%": len([m for m in mae_values if 1.0 <= m < 2.0]),
+        "2%+": len([m for m in mae_values if m >= 2.0])
+    }
+    
+    # Count signals with edge
+    signals_with_edge = len([d for d in signal_details if d["analysis"]["has_edge"]])
+    edge_rate = signals_with_edge / len(signal_details) * 100 if signal_details else 0
+    
+    # Target analysis
+    target_too_close = len([d for d in signal_details if d["analysis"]["target_vs_mfe"] == "TARGET_TOO_CLOSE"])
+    target_too_far = len([d for d in signal_details if d["analysis"]["target_vs_mfe"] == "TARGET_TOO_FAR"])
+    
+    stop_too_tight = len([d for d in signal_details if d["analysis"]["stop_vs_mae"] == "STOP_TOO_TIGHT"])
+    stop_too_wide = len([d for d in signal_details if d["analysis"]["stop_vs_mae"] == "STOP_TOO_WIDE"])
+    
+    # Generate diagnosis
+    diagnosis = []
+    
+    if avg_mfe < 0.3:
+        diagnosis.append("LOW_MFE: Average favorable excursion < 0.3%. Setups may lack edge.")
+    
+    if avg_mae > avg_mfe:
+        diagnosis.append("NEGATIVE_EDGE: Average MAE > MFE. Setups tend to move against before moving for.")
+    
+    if target_too_close > len(signal_details) * 0.5:
+        diagnosis.append("TARGETS_UNDERESTIMATE_MOVE: >50% of signals could have bigger targets based on MFE.")
+    
+    if stop_too_wide > len(signal_details) * 0.5:
+        diagnosis.append("STOPS_TOO_WIDE: >50% of signals have stops wider than actual adverse movement.")
+    
+    if avg_achievable_rr > avg_calc_rr * 1.5:
+        diagnosis.append("MONETIZATION_ISSUE: Achievable R:R significantly higher than calculated. Improve target/stop logic.")
+    
+    if edge_rate > 60:
+        diagnosis.append("POSITIVE_EDGE: >60% of signals show favorable movement exceeding adverse.")
+    
+    return {
+        "run_id": run_id,
+        "signals_analyzed": len(signal_details),
+        
+        "summary": {
+            "avg_mfe_pct": round(avg_mfe, 3),
+            "avg_mae_pct": round(avg_mae, 3),
+            "avg_calculated_rr": round(avg_calc_rr, 2),
+            "avg_achievable_rr": round(avg_achievable_rr, 2),
+            "edge_rate_pct": round(edge_rate, 1),
+            "signals_with_edge": signals_with_edge
+        },
+        
+        "distributions": {
+            "mfe": mfe_distribution,
+            "mae": mae_distribution
+        },
+        
+        "target_stop_analysis": {
+            "targets_too_close": target_too_close,
+            "targets_reasonable": len(signal_details) - target_too_close - target_too_far,
+            "targets_too_far": target_too_far,
+            "stops_too_tight": stop_too_tight,
+            "stops_reasonable": len(signal_details) - stop_too_tight - stop_too_wide,
+            "stops_too_wide": stop_too_wide
+        },
+        
+        "diagnosis": diagnosis,
+        
+        "signal_details": signal_details[:20]  # First 20 for inspection
+    }
+
+
+@api_router.post("/backtest/edge-analysis")
+async def run_edge_analysis(
+    date_from: str = Query(..., description="Start date ISO format"),
+    date_to: str = Query(..., description="End date ISO format")
+):
+    """
+    Run a complete edge analysis:
+    1. Generate signals with R:R filter disabled
+    2. Track actual price behavior (MFE/MAE)
+    3. Compare calculated targets vs actual movements
+    4. Determine if V3 has edge but poor monetization, or lacks edge
+    
+    This is a comprehensive diagnostic run.
+    """
+    run_id = str(uuid.uuid4())
+    
+    config = BacktestConfig(
+        symbol="BTCUSD",
+        date_from=date_from,
+        date_to=date_to,
+        engine_version="v3.5.1",
+        v34_validation_enabled=True,
+        v35_contrarian_enabled=False,  # Disable contrarian for clean analysis
+        confirmation_mode="FORCE_ENTRY",  # Bypass 5M to test 4H edge
+        debug_confirmation=True,
+        disable_rr_filter=True  # Allow all signals for MFE/MAE tracking
+    )
+    
+    try:
+        engine = V3ReplayEngine(run_id, config)
+        summary = await engine.run()
+        
+        # Get MFE/MAE analysis
+        cursor = backtest_signals_collection.find(
+            {"run_id": run_id},
+            {"_id": 0}
+        )
+        signals = await cursor.to_list(None)
+        
+        # Analyze outcomes
+        mfe_values = []
+        mae_values = []
+        calc_rr_values = []
+        
+        for s in signals:
+            outcome = s.get("outcome", {})
+            targets = s.get("targets", {})
+            
+            mfe = outcome.get("mfe", 0)
+            mae = outcome.get("mae", 0)
+            
+            if mfe > 0 or mae > 0:
+                mfe_values.append(mfe)
+                mae_values.append(mae)
+                calc_rr_values.append(targets.get("rr_ratio", 0))
+        
+        # Calculate key metrics
+        avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
+        avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0
+        avg_calc_rr = sum(calc_rr_values) / len(calc_rr_values) if calc_rr_values else 0
+        
+        # Edge determination
+        has_edge = avg_mfe > avg_mae
+        achievable_rr = avg_mfe / avg_mae if avg_mae > 0 else avg_mfe
+        
+        # Diagnosis
+        if not mfe_values:
+            conclusion = "INSUFFICIENT_DATA"
+            recommendation = "No signals tracked. Check if outcome tracking is running."
+        elif avg_mfe < 0.2:
+            conclusion = "NO_EDGE"
+            recommendation = "V3 setups show minimal favorable movement. Review setup detection logic."
+        elif avg_mae > avg_mfe * 1.5:
+            conclusion = "NEGATIVE_EDGE"
+            recommendation = "V3 setups move against more than for. Review entry timing or direction logic."
+        elif achievable_rr > 1.0 and avg_calc_rr < 0.5:
+            conclusion = "EDGE_EXISTS_POOR_MONETIZATION"
+            recommendation = f"V3 has edge (achievable R:R {achievable_rr:.2f}) but calculated R:R is too low ({avg_calc_rr:.2f}). Fix target/stop logic."
+        elif achievable_rr > 0.7:
+            conclusion = "EDGE_EXISTS_MODERATE"
+            recommendation = "V3 shows moderate edge. Consider tightening stops or widening targets."
+        else:
+            conclusion = "MARGINAL_EDGE"
+            recommendation = "V3 shows marginal edge. May not be tradeable after fees/slippage."
+        
+        return {
+            "run_id": run_id,
+            "period": f"{date_from} to {date_to}",
+            "signals_generated": len(signals),
+            "signals_tracked": len(mfe_values),
+            
+            "metrics": {
+                "avg_mfe_pct": round(avg_mfe, 3),
+                "avg_mae_pct": round(avg_mae, 3),
+                "avg_calculated_rr": round(avg_calc_rr, 2),
+                "achievable_rr": round(achievable_rr, 2)
+            },
+            
+            "conclusion": conclusion,
+            "recommendation": recommendation,
+            
+            "details": {
+                "setups_detected": summary["setups"]["detected"],
+                "confirmation_debug": summary.get("confirmation_debug"),
+                "block_reasons": summary.get("block_reasons", {})
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"[Edge Analysis] Failed: {e}")
+        return {
+            "run_id": run_id,
+            "status": "failed",
+            "error": str(e)
+        }
 
 
 @api_router.post("/backtest/compare")
