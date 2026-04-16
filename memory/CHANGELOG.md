@@ -3,30 +3,41 @@
 
 ## v3.5.3 - 2026-04-16
 
-### Liquidity Zone Engine Added to Dashboard
+### Liquidity Zone Engine Added to Dashboard (Side by Side with Magnet)
 
-**Purpose:** Add the existing Liquidity Zone Engine component to the main dashboard as a SEPARATE section, keeping the original Magnet Liquidity card unchanged.
+**Purpose:** Add the existing Liquidity Zone Engine component to the main dashboard, positioned SIDE BY SIDE with Magnet Liquidity for full decision context in one screen.
+
+#### Final Dashboard Layout
+```
+1. Decision Engine (LONG/SHORT/WAIT)
+2. Data Freshness Indicator
+3. V3 Signal (2/3) + Market Regime (1/3)
+4. MAGNET LIQUIDITY (1/2) + ZONE ENGINE (1/2)  ← NEW
+5. V2 Diagnostic (collapsible)
+6. Chart
+7. Other sections...
+```
 
 #### What Was Done
-1. **Restored Magnet Liquidity card** - Reverted all modifications, original UI/behavior intact
-2. **Added Liquidity Zone Engine** - New "Zone Liquidità" section in dashboard
-3. **Components kept separate** - Both display independently:
-   - **Magnet Liquidity**: Directional liquidity (single magnet target)
-   - **Zone Engine**: Structural liquidity (ABOVE/BELOW cluster zones)
+1. **Restored Magnet Liquidity card** - Original UI/behavior intact
+2. **Added Liquidity Zone Engine** - Side-by-side with Magnet
+3. **Positioned AFTER V3 Signal + Regime** - Before other sections
+4. **No redesign** - Both components display full features
 
-#### Dashboard Structure
-| Section | Components |
-|---------|------------|
-| Market Dynamics | Energy, **Magnet Liquidity (original)**, Whales |
-| Liquidity Zones (NEW) | **Zone Engine** with ABOVE/BELOW clusters |
+#### Liquidity Zone Engine Features (Intact)
+| Feature | Description |
+|---------|-------------|
+| ABOVE zones | Clusters above current price with values |
+| BELOW zones | Clusters below current price with values |
+| Zone Strength | Score 0-100 with PRIMARY indicator |
+| Total Liquidity | Sum per direction ($M) |
+| Comparison | Legacy vs Zone-based analysis |
+| Status | "Directions aligned" indicator |
 
-#### Liquidity Zone Engine Features
-- Zone visualization with TOP/CENTER/BOTTOM prices
-- Strength bars per zone
-- Total liquidity ABOVE/BELOW
-- Zone scores (0-100)
-- Legacy vs Zone comparison panel
-- "Directions aligned" status
+#### UX Goal
+User can see in ONE SCREEN:
+- Where price wants to go (Signal + Magnet)
+- Where liquidity is located (Zone Engine)
 
 #### Files Modified
 - `/app/frontend/src/components/pages/DashboardPage.js`

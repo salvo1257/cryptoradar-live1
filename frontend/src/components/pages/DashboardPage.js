@@ -120,6 +120,18 @@ export function DashboardPage() {
           <MarketRegimeCard language={language} />
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          LIQUIDITY CONTEXT: Magnet + Zones (Full Decision Context)
+          Where price wants to go AND where liquidity is located
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Magnet Liquidity - Directional Target */}
+        <LiquidityMagnetCard />
+        
+        {/* Liquidity Zone Engine - Structural Zones */}
+        <LiquidityZoneInspector lang={language} />
+      </div>
       
       {/* ═══════════════════════════════════════════════════════════════════
           V2 Diagnostic Section - EXPANDED by default for comparison
@@ -201,7 +213,7 @@ export function DashboardPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          SECTION: Market Dynamics (Energy, Magnet, Whales)
+          SECTION: Market Dynamics (Energy, Whales)
           Advanced momentum and flow indicators
       ═══════════════════════════════════════════════════════════════════ */}
       <section className="space-y-4">
@@ -211,28 +223,10 @@ export function DashboardPage() {
             {t.marketDynamics}
           </h3>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <MarketEnergyCard />
-          <LiquidityMagnetCard />
           <WhaleAlertCard compact />
         </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          SECTION: Liquidity Zones (Structural Liquidity)
-          Zone-based liquidity detection - ABOVE/BELOW clusters
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section className="space-y-4" data-testid="liquidity-zones-section">
-        <div className="flex items-center gap-3 px-1">
-          <div className="w-1.5 h-5 bg-cyan-500 rounded-full"></div>
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">
-              {t.liquidityZones}
-            </h3>
-          </div>
-        </div>
-        <LiquidityZoneInspector lang={language} />
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════

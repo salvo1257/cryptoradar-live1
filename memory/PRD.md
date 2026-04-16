@@ -15,35 +15,45 @@
 ## LIQUIDITY ZONE ENGINE DASHBOARD ADDITION (2026-04-16)
 
 ### Purpose
-Add the existing Liquidity Zone Engine component to the main dashboard as a SEPARATE section from the existing Magnet Liquidity card.
+Add the existing Liquidity Zone Engine component to the main dashboard as a SEPARATE section from the existing Magnet Liquidity card. Both components display SIDE BY SIDE for full decision context in one screen.
 
 ### What Was Done
 1. **Restored Magnet Liquidity card** - Reverted to original state (no modifications)
-2. **Added Liquidity Zone Engine** - New section "Zone Liquidità" in dashboard
-3. **Kept components separate** - Both components display independently
+2. **Added Liquidity Zone Engine** - Rendered side-by-side with Magnet Liquidity
+3. **Positioned AFTER V3 Signal + Market Regime** - Before V2 Diagnostic and Chart
+4. **Kept components separate and identical** - No redesign, full features intact
 
-### Dashboard Structure (Final)
-1. Decision Engine
-2. V3 Signal + Market Regime
-3. V2 Diagnostic (collapsible)
-4. Chart
-5. Primary Intelligence (Bias, OI, Funding)
-6. **Market Dynamics** - Energy, **Magnet Liquidity (original)**, Whales
-7. **Liquidity Zones (NEW)** - Zone Engine with ABOVE/BELOW clusters
-8. Technical Context (S/R, Orderbook, Liquidity)
-9. Tools
+### Dashboard Structure (Final - Top to Bottom)
+| Position | Component | Description |
+|----------|-----------|-------------|
+| 1 | Decision Engine | LONG/SHORT/WAIT final action |
+| 2 | Data Freshness | 6/7 fresh indicator |
+| 3 | V3 Signal + Market Regime | Side by side (2/3 + 1/3 width) |
+| **4** | **Magnet Liquidity + Zone Engine** | **SIDE BY SIDE (1/2 + 1/2 width)** |
+| 5 | V2 Diagnostic | Collapsible comparison panel |
+| 6 | Chart | BTC/USDT TradingView |
+| 7+ | Intelligence/Dynamics/Context | Other sections |
 
-### Liquidity Zone Engine Features
-- ABOVE/BELOW zone visualization
-- Cluster values with strength bars
+### Liquidity Zone Engine Features (Intact)
+- ABOVE/BELOW zone visualization with TOP/CENTER/BOTTOM prices
+- Cluster values with strength bars ($M)
+- Zone scores (0-100) with PRIMARY indicator
 - Total liquidity per direction
-- Zone scores (0-100)
 - Legacy vs Zone comparison panel
-- "Directions aligned" indicator
+- "Directions aligned" status indicator
+
+### UX Goal Achieved
+Dashboard shows FULL DECISION CONTEXT in one screen:
+- **Signal** (V3 SHORT/LONG with entry/stop/targets)
+- **Regime** (RANGE/TREND with setup suggestion)
+- **Magnet** (Directional target where price wants to go)
+- **Zones** (Structural liquidity ABOVE/BELOW current price)
+
+User can understand "Where price wants to go AND where liquidity is located" without navigation.
 
 ### Files Modified
-- `/app/frontend/src/components/pages/DashboardPage.js` - Added LiquidityZoneInspector import and section
-- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - RESTORED to original (reverted changes)
+- `/app/frontend/src/components/pages/DashboardPage.js` - Added side-by-side layout
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - RESTORED to original
 
 ## V3 BACKTEST ENGINE (2026-04-15)
 
