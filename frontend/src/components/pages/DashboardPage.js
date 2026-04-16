@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { TradingChart } from '../TradingChart';
-import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Magnet } from 'lucide-react';
 import { 
   MarketBiasCard, 
   SupportResistanceCard, 
@@ -31,6 +31,8 @@ export function DashboardPage() {
     it: {
       diagnostic: 'V2 Confronto / Diagnostica',
       comparison: 'Confronto',
+      liquidityEngine: 'Liquidity Engine',
+      liquiditySubtitle: 'Stato Liquidità di Mercato',
       primaryIntelligence: 'Intelligence Primaria',
       marketDynamics: 'Dinamiche Mercato',
       technicalContext: 'Contesto Tecnico',
@@ -41,6 +43,8 @@ export function DashboardPage() {
     en: {
       diagnostic: 'V2 Comparison / Diagnostic',
       comparison: 'Comparison',
+      liquidityEngine: 'Liquidity Engine',
+      liquiditySubtitle: 'Market Liquidity State',
       primaryIntelligence: 'Primary Intelligence',
       marketDynamics: 'Market Dynamics',
       technicalContext: 'Technical Context',
@@ -51,6 +55,8 @@ export function DashboardPage() {
     de: {
       diagnostic: 'V2 Vergleich / Diagnose',
       comparison: 'Vergleich',
+      liquidityEngine: 'Liquidity Engine',
+      liquiditySubtitle: 'Markt-Liquiditätszustand',
       primaryIntelligence: 'Primäre Intelligenz',
       marketDynamics: 'Marktdynamik',
       technicalContext: 'Technischer Kontext',
@@ -61,6 +67,8 @@ export function DashboardPage() {
     pl: {
       diagnostic: 'V2 Porównanie / Diagnostyka',
       comparison: 'Porównanie',
+      liquidityEngine: 'Liquidity Engine',
+      liquiditySubtitle: 'Stan Płynności Rynku',
       primaryIntelligence: 'Podstawowe Dane',
       marketDynamics: 'Dynamika Rynku',
       technicalContext: 'Kontekst Techniczny',
@@ -115,6 +123,29 @@ export function DashboardPage() {
           <MarketRegimeCard language={language} />
         </div>
       </div>
+      
+      {/* ═══════════════════════════════════════════════════════════════════
+          LIQUIDITY ENGINE - Core Market Reading Component
+          Always visible, independent from signals. Shows real-time liquidity state.
+          Direction | Distance | Volume | Strength | Status
+      ═══════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-3" data-testid="liquidity-engine-section">
+        <div className="flex items-center gap-3 px-1">
+          <div className="w-1.5 h-5 bg-purple-500 rounded-full"></div>
+          <div className="flex items-center gap-2">
+            <Magnet className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">
+              {t.liquidityEngine}
+            </h3>
+          </div>
+          <Badge variant="outline" className="text-[10px] text-purple-400/80 border-purple-500/30 bg-purple-500/10 px-2">
+            CORE
+          </Badge>
+        </div>
+        <div className="bg-gradient-to-r from-purple-900/20 via-crypto-card/60 to-purple-900/20 backdrop-blur-sm border border-purple-500/30 rounded-sm p-1">
+          <LiquidityMagnetCard />
+        </div>
+      </section>
       
       {/* ═══════════════════════════════════════════════════════════════════
           V2 Diagnostic Section - EXPANDED by default for comparison
@@ -196,7 +227,7 @@ export function DashboardPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          SECTION: Market Dynamics (Energy, Magnet, Whales)
+          SECTION: Market Dynamics (Energy, Whales)
           Advanced momentum and flow indicators
       ═══════════════════════════════════════════════════════════════════ */}
       <section className="space-y-4">
@@ -206,9 +237,8 @@ export function DashboardPage() {
             {t.marketDynamics}
           </h3>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <MarketEnergyCard />
-          <LiquidityMagnetCard />
           <WhaleAlertCard compact />
         </div>
       </section>

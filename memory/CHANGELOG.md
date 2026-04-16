@@ -1,6 +1,41 @@
 # CryptoRadar Changelog
 
 
+## v3.5.3 - 2026-04-16
+
+### Liquidity Engine Core Dashboard Relocation
+
+**Purpose:** Relocated Liquidity Engine out of signal history section to become a standalone, always-visible core market-reading component on the main dashboard.
+
+#### Requirements Implemented
+1. **Placement:** Immediately after V3 Signal + Market Regime (primary decision layer)
+2. **Independence:** Does NOT depend on signals - always shows current market liquidity state
+3. **Key Metrics Display:**
+   - Magnet Direction (UP/DOWN/BALANCED)
+   - Cluster Distance (%)
+   - Cluster Volume ($M)
+   - Magnet Strength (%)
+4. **Status Labels:**
+   | Label | Condition |
+   |-------|-----------|
+   | Strong Attraction | High score + clear direction (UP/DOWN) |
+   | Weak Liquidity | Score < 35 or weak strength |
+   | No Clear Magnet | Balanced direction or moderate with no clear bias |
+   | Moderate Attraction | Default state |
+
+#### UI Changes
+- New section header "LIQUIDITY ENGINE" with "CORE" badge
+- Purple gradient border to distinguish as core component
+- Key metrics row with 4-column responsive grid
+- Status label prominently displayed at top of card
+- Removed from "Market Dynamics" section (now standalone)
+
+#### Files Modified
+- `/app/frontend/src/components/pages/DashboardPage.js`
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js`
+
+---
+
 ## v3.5.2 - 2026-04-15
 
 ### V3 Backtest / Replay Engine (Backend Complete)

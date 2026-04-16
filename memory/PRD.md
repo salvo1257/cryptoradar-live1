@@ -1,15 +1,45 @@
-# CryptoRadar v3.5.2 - Product Requirements Document
-**Last Updated:** 2026-04-15 (V3 Backtest Engine Backend Complete)
+# CryptoRadar v3.5.3 - Product Requirements Document
+**Last Updated:** 2026-04-16 (Liquidity Engine Core Dashboard Relocation)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.2
-- **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE
+- **Current Version:** v3.5.3
+- **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
 - **V3.5.2 Feature:** V3 Backtest/Replay Engine (backend complete)
+- **V3.5.3 Feature:** Liquidity Engine relocated to main dashboard as core component
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## LIQUIDITY ENGINE CORE RELOCATION (2026-04-16)
+
+### Purpose
+Relocate Liquidity Engine from signal history section to main dashboard as a standalone, always-visible core market-reading component.
+
+### Requirements Implemented
+1. **Placement:** Positioned immediately after V3 Signal + Market Regime (primary decision layer)
+2. **Independence:** Does NOT depend on signals - always shows current market liquidity state
+3. **Display Metrics:**
+   - Magnet Direction (UP/DOWN/BALANCED)
+   - Cluster Distance (%)
+   - Cluster Volume ($M)
+   - Magnet Strength (%)
+4. **Status Labels:**
+   - "Strong Attraction" - High score + clear direction
+   - "Weak Liquidity" - Low score or weak strength
+   - "No Clear Magnet" - Balanced or moderate with no clear bias
+   - "Moderate Attraction" - Default state
+
+### UI Changes
+- New section header "LIQUIDITY ENGINE" with "CORE" badge
+- Purple gradient border to distinguish as core component
+- Key metrics row with 4-column grid (Direction | Distance | Volume | Strength)
+- Status label prominently displayed at top of card
+
+### Files Modified
+- `/app/frontend/src/components/pages/DashboardPage.js` - Added Liquidity Engine section
+- `/app/frontend/src/components/cards/LiquidityMagnetCard.js` - Added status label logic and key metrics row
 
 ## V3 BACKTEST ENGINE (2026-04-15)
 

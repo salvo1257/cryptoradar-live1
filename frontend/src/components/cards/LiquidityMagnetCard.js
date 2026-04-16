@@ -76,6 +76,53 @@ export function LiquidityMagnetCard({ compact = false }) {
     }
   };
 
+  // Status label logic based on user requirements
+  const getStatusLabel = (magnetData) => {
+    if (!magnetData) return { label: 'No Data', color: 'text-zinc-500', bgColor: 'bg-zinc-800' };
+    
+    const score = magnetData.magnet_score || 0;
+    const strength = magnetData.magnet_strength;
+    const direction = magnetData.target_direction;
+    
+    // Strong Attraction: High score + clear direction
+    if ((strength === 'VERY_STRONG' || strength === 'STRONG') && (direction === 'UP' || direction === 'DOWN')) {
+      return { 
+        label: 'Strong Attraction', 
+        color: 'text-purple-300', 
+        bgColor: 'bg-purple-500/20',
+        borderColor: 'border-purple-500/50'
+      };
+    }
+    
+    // Weak Liquidity: Low score or weak strength
+    if (score < 35 || strength === 'WEAK') {
+      return { 
+        label: 'Weak Liquidity', 
+        color: 'text-zinc-400', 
+        bgColor: 'bg-zinc-800/50',
+        borderColor: 'border-zinc-600/50'
+      };
+    }
+    
+    // No Clear Magnet: Balanced direction or moderate with no clear bias
+    if (direction === 'BALANCED' || (strength === 'MODERATE' && score < 55)) {
+      return { 
+        label: 'No Clear Magnet', 
+        color: 'text-yellow-400', 
+        bgColor: 'bg-yellow-500/10',
+        borderColor: 'border-yellow-500/30'
+      };
+    }
+    
+    // Default: Moderate attraction
+    return { 
+      label: 'Moderate Attraction', 
+      color: 'text-purple-400', 
+      bgColor: 'bg-purple-500/10',
+      borderColor: 'border-purple-500/30'
+    };
+  };
+
   const getSweepConfig = (sweep) => {
     switch (sweep) {
       case 'SWEEP_UP_FIRST':
@@ -90,6 +137,7 @@ export function LiquidityMagnetCard({ compact = false }) {
   const config = magnetData ? getDirectionConfig(magnetData.target_direction) : getDirectionConfig('BALANCED');
   const strengthConfig = magnetData ? getStrengthConfig(magnetData.magnet_strength) : getStrengthConfig('WEAK');
   const sweepConfig = magnetData ? getSweepConfig(magnetData.sweep_expectation) : getSweepConfig('NO_CLEAR_SWEEP');
+  const statusConfig = getStatusLabel(magnetData);
 
   const formatPrice = (price) => {
     return price ? `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '-';
@@ -134,7 +182,56 @@ export function LiquidityMagnetCard({ compact = false }) {
       <div className="p-4">
         {magnetData ? (
           <div className="space-y-4">
-            {/* Magnet Score & Direction */}
+            {/* STATUS LABEL - Prominent at-a-glance indicator */}
+            <div className={cn(
+              "flex items-center justify-center py-2.5 px-4 rounded-sm border",
+              statusConfig.bgColor,
+              statusConfig.borderColor
+            )} data-testid="liquidity-status-label">
+              <span className={cn("font-heading font-bold text-sm uppercase tracking-wider", statusConfig.color)}>
+                {statusConfig.label}
+              </span>
+            </div>
+
+            {/* KEY METRICS ROW - Direction | Distance | Volume | Strength */}
+            <div className="grid grid-cols-4 gap-3" data-testid="liquidity-key-metrics">
+              {/* Direction */}
+              <div className={cn("p-3 rounded-sm text-center", config.bgColor)}>
+                <div className="flex items-center justify-center gap-1.5 mb-1">
+                  <config.icon className={cn("w-4 h-4", config.iconColor)} />
+                  <span className={cn("font-mono font-bold text-base", config.color)}>
+                    {magnetData.target_direction || 'N/A'}
+                  </span>
+                </div>
+                <div className="text-[10px] text-zinc-500 uppercase">{t('direction') || 'Direction'}</div>
+              </div>
+              
+              {/* Distance */}
+              <div className="p-3 rounded-sm text-center bg-zinc-800/50">
+                <div className={cn("font-mono font-bold text-base", config.color)}>
+                  {formatDistance(magnetData.nearest_magnet_distance_percent)}
+                </div>
+                <div className="text-[10px] text-zinc-500 uppercase">{t('distance') || 'Distance'}</div>
+              </div>
+              
+              {/* Volume */}
+              <div className="p-3 rounded-sm text-center bg-zinc-800/50">
+                <div className="font-mono font-bold text-base text-zinc-200">
+                  {magnetData.nearest_magnet_value ? `$${(magnetData.nearest_magnet_value / 1000000).toFixed(1)}M` : '-'}
+                </div>
+                <div className="text-[10px] text-zinc-500 uppercase">{t('clusterVolume') || 'Volume'}</div>
+              </div>
+              
+              {/* Strength */}
+              <div className="p-3 rounded-sm text-center bg-zinc-800/50">
+                <div className={cn("font-mono font-bold text-base", strengthConfig.color)}>
+                  {magnetData.magnet_score?.toFixed(0) || 0}%
+                </div>
+                <div className="text-[10px] text-zinc-500 uppercase">{t('strength') || 'Strength'}</div>
+              </div>
+            </div>
+
+            {/* Magnet Score & Direction - Detailed */}
             <div className={cn(
               "flex items-center justify-between p-3 rounded-sm border-l-2",
               config.bgColor,
