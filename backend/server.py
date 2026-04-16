@@ -4729,11 +4729,29 @@ async def analyze_ohlc_for_outcome(signal_timestamp: datetime, validity_hours: i
         stop_hit_time = None
         stop_hit_price = None
         
+        # Track MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion)
+        mfe_price = entry_price  # Best price reached
+        mae_price = entry_price  # Worst price reached
+        
         # Analyze each candle in chronological order
         for candle in sorted(relevant_candles, key=lambda x: x["time"]):
             candle_high = candle["high"]
             candle_low = candle["low"]
             candle_time = datetime.fromtimestamp(candle["time"], tz=timezone.utc)
+            
+            # Track MFE/MAE for all trades
+            if direction == "LONG":
+                # For LONG: MFE is highest high, MAE is lowest low
+                if candle_high > mfe_price:
+                    mfe_price = candle_high
+                if candle_low < mae_price:
+                    mae_price = candle_low
+            else:  # SHORT
+                # For SHORT: MFE is lowest low, MAE is highest high
+                if candle_low < mfe_price:
+                    mfe_price = candle_low
+                if candle_high > mae_price:
+                    mae_price = candle_high
             
             if direction == "LONG":
                 # LONG: high touches targets, low touches stop
@@ -4866,6 +4884,14 @@ async def analyze_ohlc_for_outcome(signal_timestamp: datetime, validity_hours: i
                     "notes": "Signal still active"
                 }
         
+        # Calculate MFE/MAE percentages
+        if direction == "LONG":
+            mfe_pct = ((mfe_price - entry_price) / entry_price) * 100
+            mae_pct = ((entry_price - mae_price) / entry_price) * 100
+        else:  # SHORT
+            mfe_pct = ((entry_price - mfe_price) / entry_price) * 100
+            mae_pct = ((mae_price - entry_price) / entry_price) * 100
+        
         return {
             "outcome": outcome,
             "outcome_price": outcome_price,
@@ -4874,7 +4900,12 @@ async def analyze_ohlc_for_outcome(signal_timestamp: datetime, validity_hours: i
             "target_2_hit": target_2_hit,
             "stop_hit": stop_hit,
             "outcome_notes": outcome_notes,
-            "candles_analyzed": len(relevant_candles)
+            "candles_analyzed": len(relevant_candles),
+            # MFE/MAE tracking
+            "mfe_price": round(mfe_price, 2),
+            "mae_price": round(mae_price, 2),
+            "mfe_pct": round(mfe_pct, 3),
+            "mae_pct": round(mae_pct, 3)
         }
         
     except Exception as e:
@@ -20035,7 +20066,12 @@ async def check_signal_outcomes():
                         "stop_hit": ohlc_result.get("stop_hit", False),
                         "price_at_check": current_price,
                         "outcome_notes": ohlc_result.get("outcome_notes", ""),
-                        "candles_analyzed": ohlc_result.get("candles_analyzed", 0)
+                        "candles_analyzed": ohlc_result.get("candles_analyzed", 0),
+                        # MFE/MAE live tracking
+                        "mfe_price": ohlc_result.get("mfe_price"),
+                        "mae_price": ohlc_result.get("mae_price"),
+                        "mfe_pct": ohlc_result.get("mfe_pct", 0),
+                        "mae_pct": ohlc_result.get("mae_pct", 0)
                     }}
                 )
                 updated_count += 1

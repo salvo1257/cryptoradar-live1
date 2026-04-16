@@ -9,3 +9,4 @@ export { AlertsPage } from './AlertsPage';
 export { AlertHistoryPage } from './AlertHistoryPage';
 export { NotesPage } from './NotesPage';
 export { SettingsPage } from './SettingsPage';
+export { BacktestPage } from './BacktestPage';

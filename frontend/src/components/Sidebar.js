@@ -14,7 +14,8 @@ import {
   Settings,
   BookOpen,
   X,
-  BarChart3
+  BarChart3,
+  FlaskConical
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { cn } from '../lib/utils';
@@ -29,6 +30,7 @@ const navItems = [
   { path: '/news', icon: Newspaper, label: 'news' },
   { path: '/alerts', icon: Bell, label: 'alerts' },
   { path: '/alert-history', icon: History, label: 'alertHistory' },
+  { path: '/backtest', icon: FlaskConical, label: 'backtest' },
   { path: '/reliability', icon: BarChart3, label: 'reliabilityAnalytics' },
   { path: '/notes', icon: StickyNote, label: 'notes' },
   { path: '/manual', icon: BookOpen, label: 'manual' },
