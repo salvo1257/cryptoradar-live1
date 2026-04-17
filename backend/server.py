@@ -1377,7 +1377,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{symbol} #{direction}""",
+#CryptoRadar #V3 #{base_symbol} #{direction}""",
         
         "it": """🚨 <b>CryptoRadar V3 Segnale</b>
 
@@ -1401,7 +1401,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{symbol} #{direction}""",
+#CryptoRadar #V3 #{base_symbol} #{direction}""",
         
         "de": """🚨 <b>CryptoRadar V3 Signal</b>
 
@@ -1425,7 +1425,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{symbol} #{direction}""",
+#CryptoRadar #V3 #{base_symbol} #{direction}""",
 
         "pl": """🚨 <b>CryptoRadar V3 Sygnał</b>
 
@@ -1449,7 +1449,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{symbol} #{direction}"""
+#CryptoRadar #V3 #{base_symbol} #{direction}"""
     }
 }
 
@@ -3069,18 +3069,26 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         setup_display = setup_labels.get(event_type, event_type.replace("_", " ").title())
         
         # ═══════════════════════════════════════════════════════════════════
-        # EXTRACT BASE SYMBOL from trading pair (e.g., BTCUSDT → BTC)
+        # FORMAT TRADING PAIR as BASE/QUOTE (e.g., BTCUSDT → BTC/USDT)
         # ═══════════════════════════════════════════════════════════════════
-        trading_pair = setup_data.get("symbol", setup_data.get("trading_pair", "BTCUSDT"))
-        # Remove common quote currencies to get base symbol
-        symbol = trading_pair.upper()
-        for quote in ["USDT", "USD", "USDC", "BUSD", "EUR", "GBP", "PERP", "PERPETUAL"]:
-            if symbol.endswith(quote):
-                symbol = symbol[:-len(quote)]
+        raw_pair = setup_data.get("symbol", setup_data.get("trading_pair", "BTCUSDT")).upper()
+        
+        # Extract base and quote from trading pair
+        quote_currencies = ["USDT", "USD", "USDC", "BUSD", "EUR", "GBP", "PERP", "PERPETUAL"]
+        base_symbol = raw_pair
+        quote_symbol = ""
+        
+        for quote in quote_currencies:
+            if raw_pair.endswith(quote):
+                base_symbol = raw_pair[:-len(quote)]
+                quote_symbol = quote
                 break
-        # Fallback: if still looks like a pair, take first 3-4 chars
-        if len(symbol) > 5:
-            symbol = symbol[:3] if symbol[:3] in ["BTC", "ETH", "SOL", "XRP", "ADA"] else symbol[:4]
+        
+        # Format as BASE/QUOTE for display
+        if quote_symbol:
+            trading_pair_display = f"{base_symbol}/{quote_symbol}"
+        else:
+            trading_pair_display = base_symbol
         
         # ═══════════════════════════════════════════════════════════════════
         # FETCH MARKET CONTEXT for professional message format
@@ -3135,7 +3143,8 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         
         # Prepare data for template
         data = {
-            "symbol": symbol,  # Base symbol (e.g., BTC, ETH)
+            "symbol": trading_pair_display,  # Full pair format: BTC/USDT
+            "base_symbol": base_symbol,       # Base only: BTC
             "direction": direction,
             "direction_emoji": "📈" if direction == "LONG" else "📉",
             "price": current_price or setup_data.get("entry_price", 0),
@@ -3160,13 +3169,18 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
             "timestamp": timestamp
         }
         
-        # Send notification
-        success = await send_telegram_notification("v3_entry_ready", data)
+        # ═══════════════════════════════════════════════════════════════════
+        # PRIVATE DISTRIBUTION - Send only to whitelisted users
+        # BLOCKED signals never reach this point (blocked upstream)
+        # ═══════════════════════════════════════════════════════════════════
+        result = await send_private_signal_to_whitelist("v3_entry_ready", data)
+        success = result.get("success", False)
         
         if success and setup_id:
             # Track successful send for deduplication
             v3_alerts_sent[setup_id] = datetime.now(timezone.utc)
-            logger.info(f"[V3 Alert] ENTRY_READY alert sent for setup {setup_id[:8]} - {direction}")
+            sent_count = len(result.get("sent_to", []))
+            logger.info(f"[V3 Alert] ENTRY_READY alert sent to {sent_count} users for setup {setup_id[:8]} - {direction}")
             
             # Cleanup old entries (keep only last 50)
             if len(v3_alerts_sent) > 50:
@@ -3450,24 +3464,75 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         # Calculate validity based on event type
         validity_hours = 8 if event_type in ["liquidity_sweep_high", "liquidity_sweep_low"] else 12
         
+        # ═══════════════════════════════════════════════════════════════════
+        # EXTRACT TRADABLE PAIR for consistent identity across system
+        # ═══════════════════════════════════════════════════════════════════
+        raw_pair = setup_data.get("symbol", setup_data.get("trading_pair", "BTCUSDT")).upper()
+        quote_currencies = ["USDT", "USD", "USDC", "BUSD", "EUR", "GBP", "PERP"]
+        base_symbol = raw_pair
+        quote_symbol = "USDT"  # Default
+        for quote in quote_currencies:
+            if raw_pair.endswith(quote):
+                base_symbol = raw_pair[:-len(quote)]
+                quote_symbol = quote
+                break
+        tradable_pair = f"{base_symbol}/{quote_symbol}"
+        
         # Build comprehensive history entry matching V2 format
         history_entry = {
             "signal_id": signal_id,
             "signal_hash": signal_hash,  # NEW: Store hash for future reference
             "timestamp": datetime.now(timezone.utc),
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # SIGNAL IDENTITY - Consistent across Dashboard/Telegram/History
+            # ═══════════════════════════════════════════════════════════════════
+            "tradable_pair": tradable_pair,     # BTC/USDT format
+            "base_symbol": base_symbol,          # BTC
+            "quote_symbol": quote_symbol,        # USDT
             "direction": direction,
-            "confidence": setup_data.get("quality_score", 50),  # Use quality as confidence
-            "estimated_move": 0.5,  # Default, could be calculated
+            "setup_type": event_type,
+            "signal_engine_version": "v3",
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # TRADE LEVELS
+            # ═══════════════════════════════════════════════════════════════════
             "entry_zone_low": entry_zone_low,
             "entry_zone_high": entry_zone_high,
             "stop_loss": stop_loss,
             "target_1": target_1,
             "target_2": target_2,
             "risk_reward_ratio": setup_data.get("risk_reward_ratio", 1.0),
-            "setup_type": event_type,
-            "signal_engine_version": "v3",
-            "timeframe": "4H+5M",  # Multi-timeframe
             "btc_price": current_price,
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # MARKET CONTEXT SNAPSHOT
+            # ═══════════════════════════════════════════════════════════════════
+            "market_regime": setup_data.get("market_regime"),
+            "market_bias": market_context.get("market_bias") if market_context else None,
+            "bias_percentage": market_context.get("bias_percentage") if market_context else None,
+            "energy_score": market_context.get("energy_score") if market_context else None,
+            "energy_level": market_context.get("energy_level") if market_context else None,
+            "liquidity_direction": market_context.get("liquidity_direction") if market_context else None,
+            "magnet_direction": market_context.get("magnet_direction") if market_context else None,
+            "magnet_score": market_context.get("magnet_score") if market_context else None,
+            "whale_direction": market_context.get("whale_direction") if market_context else None,
+            "whale_strength": market_context.get("whale_strength") if market_context else None,
+            "compression_level": market_context.get("compression_level") if market_context else None,
+            
+            # ═══════════════════════════════════════════════════════════════════
+            # SIGNAL LIFECYCLE
+            # Generated → Blocked/Executable → Resolved (WIN/LOSS/EXPIRED)
+            # ═══════════════════════════════════════════════════════════════════
+            "lifecycle_state": "EXECUTABLE",    # GENERATED, BLOCKED, EXECUTABLE, RESOLVED
+            "signal_state": "OPERATIONAL",
+            "is_blocked": False,
+            "block_reason": None,
+            
+            # Legacy fields for compatibility
+            "confidence": setup_data.get("quality_score", 50),
+            "estimated_move": 0.5,
+            "timeframe": "4H+5M",
             
             # V3-specific fields
             "v3_setup_id": setup_id,
@@ -3478,22 +3543,12 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             "v3_swing_high": setup_data.get("swing_high"),
             "v3_swing_low": setup_data.get("swing_low"),
             
-            # Market context snapshot
-            "market_bias": market_context.get("market_bias") if market_context else None,
-            "whale_direction": market_context.get("whale_direction") if market_context else None,
-            "whale_strength": market_context.get("whale_strength") if market_context else None,
-            "liquidity_direction": market_context.get("liquidity_direction") if market_context else None,
-            "magnet_direction": market_context.get("magnet_direction") if market_context else None,
-            "magnet_score": market_context.get("magnet_score") if market_context else None,
-            "energy_score": market_context.get("energy_score") if market_context else None,
-            "compression_level": market_context.get("compression_level") if market_context else None,
-            "market_regime": setup_data.get("market_regime"),
-            
             "warnings": [],
             "reasoning_summary": setup_data.get("reasoning", "V3 ENTRY_READY signal"),
-            "signal_state": "OPERATIONAL",
             
-            # Outcome tracking fields - initialized for V3
+            # ═══════════════════════════════════════════════════════════════════
+            # OUTCOME TRACKING - MFE/MAE for live performance analysis
+            # ═══════════════════════════════════════════════════════════════════
             "outcome": "PENDING",
             "outcome_timestamp": None,
             "outcome_price": None,
@@ -3504,7 +3559,14 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             "validity_hours": validity_hours,
             "price_at_check": None,
             "outcome_notes": "",
-            "shadow_tracked": True  # NEW: Mark as shadow tracked
+            
+            # MFE/MAE tracking
+            "mfe": None,           # Maximum Favorable Excursion (%)
+            "mae": None,           # Maximum Adverse Excursion (%)
+            "mfe_price": None,     # Price at MFE
+            "mae_price": None,     # Price at MAE
+            
+            "shadow_tracked": True
         }
         
         # Insert into signal history
@@ -21689,25 +21751,33 @@ async def send_private_v3_signal(
 @api_router.post("/telegram/test-v3-format")
 async def test_v3_message_format(
     direction: str = Query(default="LONG", description="LONG or SHORT"),
-    symbol: str = Query(default="BTC", description="Trading symbol (e.g., BTC, ETH, SOL)"),
+    symbol: str = Query(default="BTCUSDT", description="Trading pair (e.g., BTCUSDT, ETHUSDT)"),
     _: bool = Depends(verify_admin_access)
 ):
     """
-    Test the new professional V3 message format.
+    Test the professional V3 message format.
     Sends a sample signal with full market context to all whitelisted users.
     """
-    # Sample data with full context
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     
-    # Clean symbol (remove any quote currency suffix)
-    clean_symbol = symbol.upper()
-    for quote in ["USDT", "USD", "USDC", "BUSD", "EUR", "PERP"]:
-        if clean_symbol.endswith(quote):
-            clean_symbol = clean_symbol[:-len(quote)]
+    # Parse pair into BASE/QUOTE format
+    raw_pair = symbol.upper()
+    quote_currencies = ["USDT", "USD", "USDC", "BUSD", "EUR", "PERP"]
+    base_symbol = raw_pair
+    quote_symbol = ""
+    
+    for quote in quote_currencies:
+        if raw_pair.endswith(quote):
+            base_symbol = raw_pair[:-len(quote)]
+            quote_symbol = quote
             break
     
+    # Format as BASE/QUOTE
+    pair_display = f"{base_symbol}/{quote_symbol}" if quote_symbol else base_symbol
+    
     sample_data = {
-        "symbol": clean_symbol,
+        "symbol": pair_display,           # Full pair: BTC/USDT
+        "base_symbol": base_symbol,       # Base only: BTC (for hashtags)
         "direction": direction,
         "direction_emoji": "📈" if direction == "LONG" else "📉",
         "entry_low": 73400,
@@ -21733,7 +21803,7 @@ async def test_v3_message_format(
         "sample_data": sample_data,
         "message_preview": f"""🚨 CryptoRadar V3 Signal
 
-{sample_data['direction_emoji']} {clean_symbol} {direction}
+{sample_data['direction_emoji']} {pair_display} {direction}
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${sample_data['entry_low']:,.0f} - ${sample_data['entry_high']:,.0f}
@@ -21753,7 +21823,7 @@ Context:
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{clean_symbol} #{direction}"""
+#CryptoRadar #V3 #{base_symbol} #{direction}"""
     }
 
 

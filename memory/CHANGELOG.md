@@ -1,6 +1,48 @@
 # CryptoRadar Changelog
 
 
+## v3.5.6 - 2026-04-17
+
+### V3 System Final Coherence Pass
+
+**Purpose:** Ensure complete consistency across Telegram, Signal History, and Dashboard for live trading.
+
+#### 1. Telegram Header Format (UPDATED)
+```
+OLD: 📈 BTC LONG
+NEW: 📈 BTC/USDT LONG
+```
+- Full tradable pair in BASE/QUOTE format
+- Dynamic extraction from trading pair
+- Hashtags: #CryptoRadar #V3 #BTC #LONG
+
+#### 2. Signal History Fields (ENHANCED)
+| Category | Fields |
+|----------|--------|
+| Identity | tradable_pair, base_symbol, quote_symbol, direction, setup_type |
+| Levels | entry_zone_low/high, stop_loss, target_1/2, rr |
+| Context | regime, bias (%), energy, liquidity_direction, magnet_score |
+| Outcome | outcome, mfe, mae, mfe_price, mae_price |
+| Lifecycle | lifecycle_state, is_blocked, block_reason |
+
+#### 3. Lifecycle States
+- `GENERATED` → Signal detected
+- `BLOCKED` → Failed validation (never sent to Telegram)
+- `EXECUTABLE` → Ready for trading (sent to whitelist)
+- `RESOLVED` → Final outcome (WIN/LOSS/EXPIRED)
+
+#### 4. Consistency Guarantees
+- Same signal identity in Dashboard / Telegram / History
+- Same tradable_pair field everywhere
+- Blocked signals NEVER appear as live alerts
+
+#### 5. Private Distribution
+- `send_private_signal_to_whitelist()` now used for all V3 alerts
+- Only EXECUTABLE signals trigger alerts
+- Blocked signals stored for analysis only
+
+---
+
 ## v3.5.5 - 2026-04-17
 
 ### Telegram Private Distribution System

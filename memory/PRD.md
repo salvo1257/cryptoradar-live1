@@ -60,46 +60,69 @@ TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_AUTHORIZED_CHAT_IDS=123456789,987654321,555555555
 ```
 
-## TELEGRAM MESSAGE FORMAT (v3.5.5 - Updated 2026-04-17)
+## V3 SYSTEM CONSISTENCY (v3.5.6 - Final Coherence Pass)
 
-### Professional V3 Signal Format
-Redesigned for 3-second readability with full trade context.
-
+### 1. TELEGRAM HEADER FORMAT
 ```
-🚨 CryptoRadar V3 Signal
-
-📈 LONG
-━━━━━━━━━━━━━━━━━━━━
-
-📍 Entry: $73,400 - $73,700
-🛑 Stop: $72,900
-🎯 T1: $74,500
-🎯 T2: $75,200
-⚖️ R:R 1.6:1
-
-Context:
-• Regime: COMPRESSION
-• Bias: BULLISH (71%)
-• Energy: MEDIUM
-• Liquidity: Strong Attraction Up
-
-📊 Quality: 78/100
-⚡ Setup: Sweep Low
-
-⏰ 2026-04-17 14:41 UTC
+📈 BTC/USDT LONG
+📉 ETH/USDT SHORT
 ```
+- Full tradable pair: BASE/QUOTE format
+- Dynamic extraction: BTCUSDT → BTC/USDT
+- Hashtags use base symbol: #BTC #LONG
 
-### Message Structure
-| Section | Fields |
-|---------|--------|
-| Header | Direction (LONG/SHORT) with emoji |
-| Trade Setup | Entry zone, Stop, T1, T2, R:R |
-| Context | Regime, Bias, Energy, Liquidity |
-| Metadata | Quality score, Setup type, Timestamp |
+### 2. SIGNAL HISTORY FIELDS
+| Field | Description |
+|-------|-------------|
+| `tradable_pair` | BTC/USDT format |
+| `base_symbol` | BTC |
+| `quote_symbol` | USDT |
+| `direction` | LONG/SHORT |
+| `setup_type` | Event type (sweep_low, resistance_breakout, etc.) |
+| `entry_zone_low/high` | Entry range |
+| `stop_loss` | Stop price |
+| `target_1/target_2` | Target prices |
+| `risk_reward_ratio` | R:R ratio |
+| `market_regime` | TREND/RANGE/COMPRESSION/EXPANSION |
+| `market_bias` | BULLISH/BEARISH/NEUTRAL |
+| `bias_percentage` | Bias strength (%) |
+| `energy_score/level` | Market energy |
+| `liquidity_direction` | Magnet direction |
+| `magnet_score` | Liquidity strength |
+| `outcome` | PENDING/WIN/LOSS/EXPIRED |
+| `mfe/mae` | Maximum excursions (%) |
+| `lifecycle_state` | GENERATED/BLOCKED/EXECUTABLE/RESOLVED |
+| `is_blocked` | Boolean flag |
+| `timestamp` | Signal creation time |
 
-### Test Endpoints
-- `POST /api/telegram/test-v3-format?direction=LONG` - Preview message format
-- `POST /api/telegram/test-v3-format?direction=SHORT` - Preview SHORT format
+### 3. LIFECYCLE STATES
+| State | Description |
+|-------|-------------|
+| GENERATED | Signal detected by V3 engine |
+| BLOCKED | Failed validation (low R:R, conflicting signals) |
+| EXECUTABLE | Passed validation, ready for trading |
+| RESOLVED | Final outcome determined (WIN/LOSS/EXPIRED) |
+
+### 4. CONSISTENCY GUARANTEES
+- **Dashboard** shows same pair/direction/setup as **Telegram** and **Signal History**
+- All use `tradable_pair` field for identity
+- All use same `lifecycle_state` for status
+
+### 5. BLOCKED SIGNAL RULE
+- **BLOCKED signals NEVER appear as Telegram alerts**
+- Blocked at validation layer before `send_private_signal_to_whitelist()` is called
+- Blocked signals stored in history with `is_blocked: true` for analysis
+- Only `lifecycle_state: EXECUTABLE` signals trigger alerts
+
+### 6. PUBLIC/ADMIN ACCESS
+| Component | PUBLIC | ADMIN |
+|-----------|--------|-------|
+| Telegram alerts | ❌ | ✅ (whitelisted only) |
+| Signal history | ❌ | ✅ |
+| V3 operational signal | ❌ | ✅ |
+| Decision engine | ❌ | ✅ |
+| Backtest/Settings | ❌ | ✅ |
+| Market data (Regime, Bias, Liquidity) | ✅ | ✅ |
 
 ## ACCESS CONTROL SYSTEM (v3.5.4 - 2026-04-16)
 
