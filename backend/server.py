@@ -650,7 +650,7 @@ class SignalV3(BaseModel):
     V3 Signal Response - Multi-Timeframe Signal Engine output.
     Returns current state and any active setups.
     """
-    engine_version: str = "v3"
+    engine_version: str = "v3.5"  # Updated for Quality Score system
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Current market state (4H)
@@ -674,8 +674,9 @@ class SignalV3(BaseModel):
     retest_in_progress: bool = False
     retest_zone_distance_percent: Optional[float] = None
     
-    # Quality and context
-    overall_quality: int = 0
+    # Quality and context (V3.5 Enhanced)
+    overall_quality: int = 0  # 0-100 quality score
+    quality_tier: str = "NONE"  # HIGH, MEDIUM, LOW, VERY_LOW, BLOCKED, NONE
     context_summary: str = ""
     recommended_action: str = "WAIT"  # "WAIT", "MONITOR_SETUP", "PREPARE_ENTRY", "ENTRY_NOW"
     
@@ -3719,6 +3720,8 @@ market_data_cache = {
     "coinglass_oi_time": None,
     "coinglass_liquidation": None,
     "coinglass_liquidation_time": None,
+    "coinglass_heatmap": None,
+    "coinglass_heatmap_time": None,
     # Multi-exchange caches
     "coinbase_orderbook": None,
     "coinbase_orderbook_time": None,
@@ -3734,7 +3737,7 @@ market_data_cache = {
 CACHE_TTL = 15  # seconds
 ORDERBOOK_CACHE_TTL = 10  # seconds
 NEWS_CACHE_TTL = 300  # 5 minutes
-COINGLASS_CACHE_TTL = 30  # 30 seconds for CoinGlass data (reduced from 60s for better sync)
+COINGLASS_CACHE_TTL = 60  # 60 seconds for CoinGlass data (prevents 429 rate limits)
 TRADE_SIGNAL_CACHE_TTL = 180  # 3 minutes - Trade signal refresh rate
 
 # ============== MULTILINGUAL SYSTEM ==============
@@ -7258,8 +7261,17 @@ async def fetch_coinglass_liquidation_heatmap(current_price: float = None):
     CRITICAL: This is what provides 'liquidation_levels' for the magnet/zone engines.
     
     Correct endpoint: /api/futures/liquidation/heatmap/model2
+    
+    v3.5.6: Added 60-second cache to prevent 429 rate limit errors
     """
     try:
+        # Check cache first
+        if market_data_cache["coinglass_heatmap"] and market_data_cache["coinglass_heatmap_time"]:
+            cache_age = (datetime.now(timezone.utc) - market_data_cache["coinglass_heatmap_time"]).seconds
+            if cache_age < COINGLASS_CACHE_TTL:
+                logger.debug(f"[CoinGlass Heatmap] Returning cached data (age: {cache_age}s)")
+                return market_data_cache["coinglass_heatmap"]
+        
         if not COINGLASS_API_KEY:
             logger.warning("[CoinGlass Heatmap] No API key configured")
             return None
@@ -7377,12 +7389,18 @@ async def fetch_coinglass_liquidation_heatmap(current_price: float = None):
                         for i, lv in enumerate(liquidation_levels[:5]):
                             logger.info(f"[CoinGlass Heatmap] Level {i+1}: ${lv['price']:,.0f} = ${lv['value']/1e6:.2f}M")
                         
-                        return {
+                        result = {
                             "liquidation_levels": liquidation_levels,
                             "total_levels": len(liquidation_levels),
                             "source": "coinglass_heatmap_model2",
                             "timestamp": datetime.now(timezone.utc).isoformat()
                         }
+                        
+                        # Cache the successful result
+                        market_data_cache["coinglass_heatmap"] = result
+                        market_data_cache["coinglass_heatmap_time"] = datetime.now(timezone.utc)
+                        
+                        return result
                     else:
                         # Log raw data structure for debugging
                         logger.warning(f"[CoinGlass Heatmap] No levels parsed. Raw data sample: {str(raw_data)[:500]}")
@@ -9159,54 +9177,174 @@ def calculate_v3_stop_loss(
     swing_low: float,
     sweep_level: Optional[float],
     current_price: float,
-    volatility_percent: float = 0.5
+    volatility_percent: float = 0.5,
+    liquidity_zones_below: List = None,
+    liquidity_zones_above: List = None
 ) -> Dict[str, Any]:
     """
-    Calculate structure-based stop loss for V3.
+    V3.5 SMART STOP LOSS - Liquidity Zone Based
     
-    LONG: stop = min(swing_low, sweep_low) - buffer
-    SHORT: stop = max(swing_high, sweep_high) + buffer
+    ═══════════════════════════════════════════════════════════════════════════
+    NEW APPROACH: Set stop loss just beyond the nearest significant 
+    liquidity zone, not based on arbitrary swing percentages.
     
-    Buffer: 0.1% – 0.25% depending on volatility
+    LOGIC:
+    - LONG: Find nearest liquidity zone BELOW current price
+            Stop = zone_bottom - 0.1% buffer
+    - SHORT: Find nearest liquidity zone ABOVE current price
+             Stop = zone_top + 0.1% buffer
+    
+    FALLBACK (if no zones):
+    - Use swing low/high with 0.15% buffer
+    
+    TARGET: Average stop distance of 1.2% - 1.5% (aligned with MAE findings)
+    ═══════════════════════════════════════════════════════════════════════════
+    
+    Args:
+        direction: LONG or SHORT
+        swing_high: Recent swing high price
+        swing_low: Recent swing low price
+        sweep_level: Price level that was swept (if any)
+        current_price: Current BTC price
+        volatility_percent: Current volatility for buffer calculation
+        liquidity_zones_below: List of zones below current price
+        liquidity_zones_above: List of zones above current price
+        
+    Returns:
+        Dict with stop_loss, stop_type, distance_percent, and metadata
     """
-    # Calculate adaptive buffer based on volatility
-    buffer_percent = min(V3_STOP_BUFFER_MAX, max(V3_STOP_BUFFER_MIN, volatility_percent / 200))
+    SMART_STOP_BUFFER = 0.001  # 0.1% beyond zone edge
+    MAX_STOP_DISTANCE = 0.025  # 2.5% max stop distance
+    MIN_STOP_DISTANCE = 0.005  # 0.5% min stop distance
+    
+    stop_loss = None
+    stop_type = "none"
+    zone_used = None
     
     if direction == "LONG":
-        # Use the lower of swing_low and sweep_level (if available)
-        base_stop = swing_low
-        stop_type = "swing"
+        # ═══════════════════════════════════════════════════════════════════
+        # LONG: Look for nearest significant zone BELOW price
+        # Stop goes 0.1% below the zone bottom
+        # ═══════════════════════════════════════════════════════════════════
         
-        if sweep_level and sweep_level < swing_low:
-            base_stop = sweep_level
-            stop_type = "sweep"
-        elif sweep_level:
-            base_stop = min(swing_low, sweep_level)
-            stop_type = "combined"
+        if liquidity_zones_below and len(liquidity_zones_below) > 0:
+            # Find nearest zone below with significant liquidity
+            nearest_zone = None
+            nearest_distance = float('inf')
+            
+            for zone in liquidity_zones_below:
+                # Handle both dict and object types
+                if isinstance(zone, dict):
+                    zone_bottom = zone.get("zone_bottom", zone.get("price", 0))
+                    zone_strength = zone.get("total_liquidity", zone.get("strength", 0))
+                else:
+                    zone_bottom = getattr(zone, "zone_bottom", getattr(zone, "price", 0))
+                    zone_strength = getattr(zone, "total_liquidity", getattr(zone, "strength", 0))
+                
+                if zone_bottom <= 0:
+                    continue
+                    
+                distance = (current_price - zone_bottom) / current_price
+                
+                # Zone must be below price, within range, and significant
+                if 0 < distance < MAX_STOP_DISTANCE and zone_strength >= 1_000_000:
+                    if distance < nearest_distance:
+                        nearest_distance = distance
+                        nearest_zone = zone
+            
+            if nearest_zone:
+                if isinstance(nearest_zone, dict):
+                    zone_bottom = nearest_zone.get("zone_bottom", nearest_zone.get("price", 0))
+                else:
+                    zone_bottom = getattr(nearest_zone, "zone_bottom", getattr(nearest_zone, "price", 0))
+                
+                stop_loss = zone_bottom * (1 - SMART_STOP_BUFFER)
+                stop_type = "smart_zone"
+                zone_used = nearest_zone
         
-        stop_loss = base_stop * (1 - buffer_percent)
-        
+        # Fallback to swing-based if no zone found
+        if stop_loss is None:
+            base_stop = sweep_level if sweep_level and sweep_level < swing_low else swing_low
+            stop_loss = base_stop * (1 - 0.0015)  # 0.15% buffer
+            stop_type = "swing_fallback"
+            
     else:  # SHORT
-        # Use the higher of swing_high and sweep_level (if available)
-        base_stop = swing_high
-        stop_type = "swing"
+        # ═══════════════════════════════════════════════════════════════════
+        # SHORT: Look for nearest significant zone ABOVE price
+        # Stop goes 0.1% above the zone top
+        # ═══════════════════════════════════════════════════════════════════
         
-        if sweep_level and sweep_level > swing_high:
-            base_stop = sweep_level
-            stop_type = "sweep"
-        elif sweep_level:
-            base_stop = max(swing_high, sweep_level)
-            stop_type = "combined"
+        if liquidity_zones_above and len(liquidity_zones_above) > 0:
+            nearest_zone = None
+            nearest_distance = float('inf')
+            
+            for zone in liquidity_zones_above:
+                if isinstance(zone, dict):
+                    zone_top = zone.get("zone_top", zone.get("price", 0))
+                    zone_strength = zone.get("total_liquidity", zone.get("strength", 0))
+                else:
+                    zone_top = getattr(zone, "zone_top", getattr(zone, "price", 0))
+                    zone_strength = getattr(zone, "total_liquidity", getattr(zone, "strength", 0))
+                
+                if zone_top <= 0:
+                    continue
+                    
+                distance = (zone_top - current_price) / current_price
+                
+                if 0 < distance < MAX_STOP_DISTANCE and zone_strength >= 1_000_000:
+                    if distance < nearest_distance:
+                        nearest_distance = distance
+                        nearest_zone = zone
+            
+            if nearest_zone:
+                if isinstance(nearest_zone, dict):
+                    zone_top = nearest_zone.get("zone_top", nearest_zone.get("price", 0))
+                else:
+                    zone_top = getattr(nearest_zone, "zone_top", getattr(nearest_zone, "price", 0))
+                
+                stop_loss = zone_top * (1 + SMART_STOP_BUFFER)
+                stop_type = "smart_zone"
+                zone_used = nearest_zone
         
-        stop_loss = base_stop * (1 + buffer_percent)
+        # Fallback to swing-based if no zone found
+        if stop_loss is None:
+            base_stop = sweep_level if sweep_level and sweep_level > swing_high else swing_high
+            stop_loss = base_stop * (1 + 0.0015)  # 0.15% buffer
+            stop_type = "swing_fallback"
+    
+    # Calculate stop distance
+    stop_distance_percent = abs(current_price - stop_loss) / current_price * 100
+    
+    # Enforce min/max bounds
+    if stop_distance_percent < MIN_STOP_DISTANCE * 100:
+        # Stop too tight - widen it
+        if direction == "LONG":
+            stop_loss = current_price * (1 - MIN_STOP_DISTANCE)
+        else:
+            stop_loss = current_price * (1 + MIN_STOP_DISTANCE)
+        stop_distance_percent = MIN_STOP_DISTANCE * 100
+        stop_type = f"{stop_type}_widened"
+    
+    elif stop_distance_percent > MAX_STOP_DISTANCE * 100:
+        # Stop too wide - tighten it
+        if direction == "LONG":
+            stop_loss = current_price * (1 - MAX_STOP_DISTANCE)
+        else:
+            stop_loss = current_price * (1 + MAX_STOP_DISTANCE)
+        stop_distance_percent = MAX_STOP_DISTANCE * 100
+        stop_type = f"{stop_type}_capped"
+    
+    logger.info(f"[V3.5 SmartStop] {direction}: stop=${stop_loss:,.0f}, "
+               f"distance={stop_distance_percent:.2f}%, type={stop_type}")
     
     return {
         "stop_loss": round(stop_loss, 2),
         "stop_type": stop_type,
-        "buffer_percent": buffer_percent * 100,
-        "base_level": base_stop,
-        "swing_used": swing_low if direction == "LONG" else swing_high,
-        "sweep_used": sweep_level
+        "stop_distance_percent": round(stop_distance_percent, 2),
+        "zone_used": zone_used,
+        "swing_high": swing_high,
+        "swing_low": swing_low,
+        "sweep_level": sweep_level
     }
 
 
@@ -11987,62 +12125,202 @@ async def validate_v3_signal_quality(
     lang: str = "it"
 ) -> Dict[str, Any]:
     """
-    V3.4 Comprehensive Signal Quality Validation
+    V3.5 PROBABILISTIC QUALITY SCORE VALIDATION
     
-    Applies strict filters to eliminate contradictory signals:
-    1. R:R Minimum (HARD: >= 0.5)
-    2. Magnet Direction Alignment (signal must match magnet)
-    3. Squeeze Risk (don't trade overcrowded side)
-    4. Hierarchy Validation (Regime → Bias → Magnet → Energy)
-    5. Range Constraint (no breakouts in RANGE)
+    ═══════════════════════════════════════════════════════════════════════════
+    NEW APPROACH: Instead of binary BLOCKED/EXECUTABLE, we now use a 
+    QUALITY SCORE (0-100) that represents signal confidence.
+    
+    SCORING BREAKDOWN:
+    - Base Score: 40 points (every signal starts here)
+    - R:R Quality: +0 to +15 points
+    - Liquidity Alignment: +0 to +15 points  
+    - Magnet Alignment: +0 to +15 points
+    - Bias Confirmation: +0 to +10 points
+    - Energy Level: +0 to +10 points
+    - Regime Context: -10 to +5 points
+    - Derivatives Data: -15 to +10 points (if available)
+    
+    THRESHOLDS:
+    - Score >= 70: HIGH QUALITY (green light)
+    - Score 50-69: MEDIUM QUALITY (proceed with caution)
+    - Score 30-49: LOW QUALITY (high risk)
+    - Score < 30: VERY LOW (not recommended)
+    
+    HARD BLOCKS (only these stop the signal completely):
+    - R:R < 0.3 (mathematically unfavorable)
+    - No valid targets at all
+    ═══════════════════════════════════════════════════════════════════════════
     """
-    block_reasons = []
     warnings = []
-    quality_score = 50
+    score_breakdown = {}
+    
+    # Start with base score
+    quality_score = 40
+    score_breakdown["base"] = 40
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 1: HARD R:R MINIMUM (CRITICAL)
+    # METRIC 1: R:R QUALITY (max +15 points)
+    # Only HARD BLOCK if R:R < 0.3 (mathematically unfavorable)
     # ═══════════════════════════════════════════════════════════════════════════
-    MIN_RR_THRESHOLD = 0.5
+    HARD_RR_MINIMUM = 0.3  # Absolute minimum - below this is mathematically bad
     
     risk = abs(current_price - stop_loss) if stop_loss else 0
     reward = abs(target_1 - current_price) if target_1 else 0
     rr_ratio = reward / risk if risk > 0 else 0
     
-    if rr_ratio < MIN_RR_THRESHOLD:
-        block_reasons.append(f"{SignalBlockReason.LOW_RR}_{rr_ratio:.2f}")
-        logger.warning(f"[V3.4 Validate] ❌ BLOCKED: R:R {rr_ratio:.2f} < {MIN_RR_THRESHOLD}")
-    elif rr_ratio < 0.7:
+    is_hard_blocked = False
+    hard_block_reason = None
+    
+    if rr_ratio < HARD_RR_MINIMUM:
+        is_hard_blocked = True
+        hard_block_reason = f"HARD_BLOCK_RR_{rr_ratio:.2f}"
+        score_breakdown["rr"] = 0
+        logger.warning(f"[V3.5 QualityScore] ⛔ HARD BLOCK: R:R {rr_ratio:.2f} < {HARD_RR_MINIMUM}")
+    elif rr_ratio >= 1.5:
+        quality_score += 15
+        score_breakdown["rr"] = 15
+    elif rr_ratio >= 1.0:
+        quality_score += 12
+        score_breakdown["rr"] = 12
+    elif rr_ratio >= 0.7:
+        quality_score += 8
+        score_breakdown["rr"] = 8
+    elif rr_ratio >= 0.5:
+        quality_score += 5
+        score_breakdown["rr"] = 5
         warnings.append(f"Low R:R ({rr_ratio:.2f})")
     else:
-        quality_score += 10
+        quality_score += 2
+        score_breakdown["rr"] = 2
+        warnings.append(f"Very low R:R ({rr_ratio:.2f})")
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 2: NO VALID CLUSTERS
+    # METRIC 2: LIQUIDITY CLUSTERS (max +15 points)
+    # Missing clusters = lower score, NOT a hard block
     # ═══════════════════════════════════════════════════════════════════════════
     if not has_valid_targets:
-        block_reasons.append(SignalBlockReason.NO_VALID_CLUSTERS)
-        logger.warning(f"[V3.4 Validate] ❌ BLOCKED: No valid liquidity clusters")
+        is_hard_blocked = True
+        hard_block_reason = "HARD_BLOCK_NO_TARGETS"
+        score_breakdown["liquidity"] = 0
+        logger.warning(f"[V3.5 QualityScore] ⛔ HARD BLOCK: No valid targets")
+    elif cluster_validated:
+        quality_score += 15
+        score_breakdown["liquidity"] = 15
     else:
-        quality_score += 10
+        quality_score += 8
+        score_breakdown["liquidity"] = 8
+        warnings.append("Clusters not fully validated")
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 3: MAGNET DIRECTION CONFLICT (CRITICAL)
+    # METRIC 3: MAGNET ALIGNMENT (max +15 points)
+    # Conflict = lower score, NOT a hard block (market can move against magnet)
     # ═══════════════════════════════════════════════════════════════════════════
     if liquidity_magnet_direction and liquidity_magnet_direction not in ["BALANCED", "NONE", None]:
         signal_wants_up = direction == "LONG"
         magnet_points_up = liquidity_magnet_direction == "UP"
         
-        if signal_wants_up != magnet_points_up:
-            block_reasons.append(f"{SignalBlockReason.MAGNET_CONFLICT}_{direction}_vs_{liquidity_magnet_direction}")
-            logger.warning(f"[V3.4 Validate] ❌ BLOCKED: {direction} signal but magnet points {liquidity_magnet_direction}")
-        else:
+        if signal_wants_up == magnet_points_up:
+            # Perfect alignment
             quality_score += 15
-            if cluster_validated:
-                quality_score += 10
+            score_breakdown["magnet"] = 15
+        else:
+            # Conflict - reduce score but don't block
+            # (Sometimes price moves against magnet before following it)
+            quality_score -= 5
+            score_breakdown["magnet"] = -5
+            warnings.append(f"Magnet conflict: {direction} vs magnet {liquidity_magnet_direction}")
+    else:
+        # Balanced/neutral magnet - slight positive
+        quality_score += 5
+        score_breakdown["magnet"] = 5
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 4: SQUEEZE RISK (Funding + Positioning)
+    # METRIC 4: BIAS CONFIRMATION (max +10 points)
+    # Conflict with strong bias = warning, not block
+    # ═══════════════════════════════════════════════════════════════════════════
+    bias_bullish = market_bias == "BULLISH"
+    signal_bullish = direction == "LONG"
+    bias_aligned = bias_bullish == signal_bullish
+    
+    if bias_confidence >= 70:
+        if bias_aligned:
+            quality_score += 10
+            score_breakdown["bias"] = 10
+        else:
+            quality_score -= 8
+            score_breakdown["bias"] = -8
+            warnings.append(f"Conflicts with strong {market_bias} bias ({bias_confidence}%)")
+    elif bias_confidence >= 55:
+        if bias_aligned:
+            quality_score += 6
+            score_breakdown["bias"] = 6
+        else:
+            quality_score -= 3
+            score_breakdown["bias"] = -3
+            warnings.append(f"Conflicts with moderate {market_bias} bias")
+    else:
+        # Neutral bias - no adjustment
+        score_breakdown["bias"] = 0
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # METRIC 5: ENERGY LEVEL (max +10 points)
+    # Low energy = lower probability of breakout success
+    # ═══════════════════════════════════════════════════════════════════════════
+    if fuel_score is not None:
+        if fuel_score >= 70:
+            quality_score += 10
+            score_breakdown["energy"] = 10
+        elif fuel_score >= 50:
+            quality_score += 6
+            score_breakdown["energy"] = 6
+        elif fuel_score >= 30:
+            quality_score += 3
+            score_breakdown["energy"] = 3
+            warnings.append("Moderate energy - may limit move")
+        else:
+            quality_score -= 5
+            score_breakdown["energy"] = -5
+            warnings.append("Low energy - breakout may fail")
+    elif energy_state:
+        if energy_state == "HIGH":
+            quality_score += 8
+            score_breakdown["energy"] = 8
+        elif energy_state == "MEDIUM":
+            quality_score += 4
+            score_breakdown["energy"] = 4
+        else:
+            quality_score -= 3
+            score_breakdown["energy"] = -3
+            warnings.append("Low energy state")
+    else:
+        score_breakdown["energy"] = 0
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # METRIC 6: REGIME CONTEXT (-10 to +5 points)
+    # RANGE regime has lower breakout success rate
+    # ═══════════════════════════════════════════════════════════════════════════
+    if market_regime == "TREND":
+        quality_score += 5
+        score_breakdown["regime"] = 5
+    elif market_regime == "EXPANSION":
+        quality_score += 3
+        score_breakdown["regime"] = 3
+    elif market_regime == "COMPRESSION":
+        quality_score += 2
+        score_breakdown["regime"] = 2
+        warnings.append("COMPRESSION - breakout timing uncertain")
+    elif market_regime == "RANGE":
+        quality_score -= 10
+        score_breakdown["regime"] = -10
+        warnings.append("RANGE regime - bounded targets only")
+    else:
+        score_breakdown["regime"] = 0
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # METRIC 7: DERIVATIVES CONTEXT (-15 to +10 points)
+    # Squeeze risk = warning, not block (squeeze can accelerate move)
+    # Missing data = slight penalty, not block
     # ═══════════════════════════════════════════════════════════════════════════
     if derivatives_context and derivatives_context.get("data_available"):
         ls_ratio = derivatives_context.get("long_short_ratio", {})
@@ -12057,81 +12335,66 @@ async def validate_v3_signal_quality(
             extreme_positive_funding = funding_rate is not None and funding_rate > 0.05
             
             if direction == "SHORT" and (shorts_overcrowded or extreme_negative_funding):
-                block_reasons.append(f"{SignalBlockReason.SQUEEZE_RISK}_SHORTS_OVERCROWDED")
-                logger.warning(f"[V3.4 Validate] ❌ BLOCKED: SHORT but shorts overcrowded (ratio={global_ratio:.2f})")
-            
+                quality_score -= 15
+                score_breakdown["derivatives"] = -15
+                warnings.append(f"⚠️ SQUEEZE RISK: Shorts overcrowded (ratio={global_ratio:.2f})")
             elif direction == "LONG" and (longs_overcrowded or extreme_positive_funding):
-                block_reasons.append(f"{SignalBlockReason.SQUEEZE_RISK}_LONGS_OVERCROWDED")
-                logger.warning(f"[V3.4 Validate] ❌ BLOCKED: LONG but longs overcrowded (ratio={global_ratio:.2f})")
-            
+                quality_score -= 15
+                score_breakdown["derivatives"] = -15
+                warnings.append(f"⚠️ SQUEEZE RISK: Longs overcrowded (ratio={global_ratio:.2f})")
             elif direction == "SHORT" and global_ratio > 1.3:
-                warnings.append("Shorts getting crowded - squeeze risk")
+                quality_score -= 5
+                score_breakdown["derivatives"] = -5
+                warnings.append("Shorts getting crowded")
             elif direction == "LONG" and global_ratio < 0.77:
-                warnings.append("Longs getting crowded - squeeze risk")
-    
-    # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 5: BIAS CONFLICT (Signal vs Strong Bias)
-    # ═══════════════════════════════════════════════════════════════════════════
-    if bias_confidence >= 70:
-        bias_bullish = market_bias == "BULLISH"
-        signal_bullish = direction == "LONG"
-        
-        if bias_bullish != signal_bullish:
-            block_reasons.append(f"{SignalBlockReason.BIAS_CONFLICT}_{direction}_vs_{market_bias}")
-            logger.warning(f"[V3.4 Validate] ❌ BLOCKED: {direction} conflicts with strong {market_bias} bias ({bias_confidence}%)")
+                quality_score -= 5
+                score_breakdown["derivatives"] = -5
+                warnings.append("Longs getting crowded")
+            else:
+                # Healthy positioning
+                quality_score += 10
+                score_breakdown["derivatives"] = 10
         else:
-            quality_score += 15
-    elif bias_confidence >= 55:
-        bias_bullish = market_bias == "BULLISH"
-        signal_bullish = direction == "LONG"
-        
-        if bias_bullish != signal_bullish:
-            warnings.append(f"Conflicts with moderate {market_bias} bias")
-        else:
-            quality_score += 5
+            score_breakdown["derivatives"] = 0
+    else:
+        # Missing derivatives data - slight penalty
+        quality_score -= 3
+        score_breakdown["derivatives"] = -3
+        warnings.append("Derivatives data unavailable")
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 6: RANGE REGIME CONSTRAINT
+    # FINAL SCORE & RECOMMENDATION
     # ═══════════════════════════════════════════════════════════════════════════
-    if market_regime == "RANGE":
-        warnings.append("RANGE regime - bounded targets only")
-        quality_score -= 10
-        
-        if energy_state == "LOW" and (fuel_score is None or fuel_score < 30):
-            block_reasons.append(f"{SignalBlockReason.RANGE_BREAKOUT}_LOW_ENERGY")
-            logger.warning(f"[V3.4 Validate] ❌ BLOCKED: Breakout in RANGE with low energy")
-    
-    # ═══════════════════════════════════════════════════════════════════════════
-    # FILTER 7: ENERGY CHECK
-    # ═══════════════════════════════════════════════════════════════════════════
-    if energy_state == "LOW" and (fuel_score is None or fuel_score < 20):
-        if market_regime in ["TREND", "EXPANSION"]:
-            warnings.append("Low energy may limit move")
-            quality_score -= 5
-    
-    # ═══════════════════════════════════════════════════════════════════════════
-    # FINAL DECISION
-    # ═══════════════════════════════════════════════════════════════════════════
-    is_valid = len(block_reasons) == 0
     quality_score = max(0, min(100, quality_score))
     
-    if not is_valid:
+    # Determine quality tier
+    if is_hard_blocked:
+        quality_tier = "BLOCKED"
         recommended_action = "BLOCKED"
-    elif len(warnings) >= 3:
-        recommended_action = "WAIT"
-    elif quality_score >= 60:
+    elif quality_score >= 70:
+        quality_tier = "HIGH"
         recommended_action = "EXECUTE"
+    elif quality_score >= 50:
+        quality_tier = "MEDIUM"
+        recommended_action = "EXECUTE_CAUTION"
+    elif quality_score >= 30:
+        quality_tier = "LOW"
+        recommended_action = "RISKY"
     else:
-        recommended_action = "WAIT"
+        quality_tier = "VERY_LOW"
+        recommended_action = "NOT_RECOMMENDED"
     
-    logger.info(f"[V3.4 Validate] {direction}: valid={is_valid}, quality={quality_score}, "
-               f"action={recommended_action}, blocks={len(block_reasons)}, warnings={len(warnings)}")
+    logger.info(f"[V3.5 QualityScore] {direction}: score={quality_score}, tier={quality_tier}, "
+               f"action={recommended_action}, warnings={len(warnings)}, breakdown={score_breakdown}")
     
     return {
-        "is_valid": is_valid,
-        "block_reasons": block_reasons,
+        "is_valid": not is_hard_blocked,
+        "is_hard_blocked": is_hard_blocked,
+        "hard_block_reason": hard_block_reason,
         "warnings": warnings,
         "quality_score": quality_score,
+        "quality_tier": quality_tier,
+        "score_breakdown": score_breakdown,
         "recommended_action": recommended_action,
         "rr_ratio": round(rr_ratio, 2),
         "validation_timestamp": datetime.now(timezone.utc).isoformat()
@@ -12586,8 +12849,20 @@ async def process_v3_signal(
     else:
         context_summary = f"Nessun setup attivo - Regime: {market_regime}, Bias: {market_bias}"
     
-    # Calculate overall quality
+    # Calculate overall quality and tier
     overall_quality = primary_setup["quality_score"] if primary_setup else 0
+    
+    # Determine quality tier
+    if overall_quality >= 70:
+        quality_tier = "HIGH"
+    elif overall_quality >= 50:
+        quality_tier = "MEDIUM"
+    elif overall_quality >= 30:
+        quality_tier = "LOW"
+    elif overall_quality > 0:
+        quality_tier = "VERY_LOW"
+    else:
+        quality_tier = "NONE"
     
     # Build response
     fetch_time = int((datetime.now(timezone.utc) - fetch_start).total_seconds() * 1000)
@@ -12607,6 +12882,7 @@ async def process_v3_signal(
         retest_in_progress=retest_in_progress,
         retest_zone_distance_percent=retest_distance,
         overall_quality=overall_quality,
+        quality_tier=quality_tier,
         context_summary=context_summary,
         recommended_action=recommended_action,
         data_freshness={
@@ -17250,6 +17526,12 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
         open_interest_data={"change_1h": open_interest.change_1h, "change_24h": open_interest.change_24h} if open_interest else None,
         lang=lang
     )
+    
+    # Track whale activity freshness
+    if whale_activity and whale_activity.direction != "NEUTRAL":
+        update_data_freshness("whale_activity", True, "OrderBook+Volume")
+    else:
+        update_data_freshness("whale_activity", True, "OrderBook+Volume (Neutral)")
     
     # NEW v1.7: Build Liquidity Ladder
     liquidity_ladder = build_liquidity_ladder(

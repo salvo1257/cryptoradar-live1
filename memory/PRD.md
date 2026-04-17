@@ -1,8 +1,8 @@
-# CryptoRadar v3.5.6 - Product Requirements Document
-**Last Updated:** 2026-04-17 (Radar Mentor AI Integration)
+# CryptoRadar v3.5.7 - Product Requirements Document
+**Last Updated:** 2026-04-17 (V3 Engine Optimization & Quality Score System)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.6
+- **Current Version:** v3.5.7
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -12,8 +12,49 @@
 - **V3.5.4 Feature:** PUBLIC vs ADMIN access control system
 - **V3.5.5 Feature:** Telegram Private Distribution System with whitelist
 - **V3.5.6 Feature:** Radar Mentor AI (Claude Sonnet 4.5) with Freemium model
+- **V3.5.7 Feature:** Probabilistic Quality Score + Smart Stop Loss + CoinGlass Cache
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3.5.7 ENGINE OPTIMIZATION (2026-04-17)
+
+### 1. Probabilistic Quality Score System
+**Replaced binary BLOCKED/EXECUTABLE with 0-100 score**
+
+| Score Range | Tier | Recommended Action |
+|------------|------|-------------------|
+| 70-100 | HIGH | EXECUTE |
+| 50-69 | MEDIUM | EXECUTE_CAUTION |
+| 30-49 | LOW | RISKY |
+| 0-29 | VERY_LOW | NOT_RECOMMENDED |
+
+**Score Breakdown:**
+- Base Score: 40 points
+- R:R Quality: +0 to +15
+- Liquidity Alignment: +0 to +15
+- Magnet Alignment: -5 to +15
+- Bias Confirmation: -8 to +10
+- Energy Level: -5 to +10
+- Regime Context: -10 to +5
+- Derivatives Data: -15 to +10
+
+**Hard Blocks (only these stop signals):**
+- R:R < 0.3 (mathematically unfavorable)
+- No valid targets at all
+
+### 2. Smart Stop Loss (Liquidity Zone Based)
+**Replaced static swing-based stops with zone-based calculation**
+- LONG: Stop = nearest liquidity zone bottom - 0.1%
+- SHORT: Stop = nearest liquidity zone top + 0.1%
+- Target average: 1.2% - 1.5% (aligned with MAE findings)
+- Min: 0.5%, Max: 2.5%
+- Fallback: swing low/high if no zones
+
+### 3. CoinGlass Cache Optimization
+- Cache TTL increased to 60 seconds (from 30s)
+- Added cache for liquidation heatmap endpoint
+- Reduces 429 rate limit errors
+- Saves API credits during validation phase
 
 ## TELEGRAM PRIVATE DISTRIBUTION SYSTEM (v3.5.5 - 2026-04-17)
 
