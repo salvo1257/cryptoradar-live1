@@ -1357,7 +1357,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
     "v3_entry_ready": {
         "en": """🚨 <b>CryptoRadar V3 Signal</b>
 
-{direction_emoji} <b>{direction}</b>
+{direction_emoji} <b>{symbol} {direction}</b>
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
@@ -1377,11 +1377,11 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{direction}""",
+#CryptoRadar #V3 #{symbol} #{direction}""",
         
         "it": """🚨 <b>CryptoRadar V3 Segnale</b>
 
-{direction_emoji} <b>{direction}</b>
+{direction_emoji} <b>{symbol} {direction}</b>
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
@@ -1401,11 +1401,11 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{direction}""",
+#CryptoRadar #V3 #{symbol} #{direction}""",
         
         "de": """🚨 <b>CryptoRadar V3 Signal</b>
 
-{direction_emoji} <b>{direction}</b>
+{direction_emoji} <b>{symbol} {direction}</b>
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
@@ -1425,11 +1425,11 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{direction}""",
+#CryptoRadar #V3 #{symbol} #{direction}""",
 
         "pl": """🚨 <b>CryptoRadar V3 Sygnał</b>
 
-{direction_emoji} <b>{direction}</b>
+{direction_emoji} <b>{symbol} {direction}</b>
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
@@ -1449,7 +1449,7 @@ Sygnał wygasł bez trafienia celów lub stopu.
 
 ⏰ {timestamp}
 
-#CryptoRadar #V3 #{direction}"""
+#CryptoRadar #V3 #{symbol} #{direction}"""
     }
 }
 
@@ -3069,6 +3069,20 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         setup_display = setup_labels.get(event_type, event_type.replace("_", " ").title())
         
         # ═══════════════════════════════════════════════════════════════════
+        # EXTRACT BASE SYMBOL from trading pair (e.g., BTCUSDT → BTC)
+        # ═══════════════════════════════════════════════════════════════════
+        trading_pair = setup_data.get("symbol", setup_data.get("trading_pair", "BTCUSDT"))
+        # Remove common quote currencies to get base symbol
+        symbol = trading_pair.upper()
+        for quote in ["USDT", "USD", "USDC", "BUSD", "EUR", "GBP", "PERP", "PERPETUAL"]:
+            if symbol.endswith(quote):
+                symbol = symbol[:-len(quote)]
+                break
+        # Fallback: if still looks like a pair, take first 3-4 chars
+        if len(symbol) > 5:
+            symbol = symbol[:3] if symbol[:3] in ["BTC", "ETH", "SOL", "XRP", "ADA"] else symbol[:4]
+        
+        # ═══════════════════════════════════════════════════════════════════
         # FETCH MARKET CONTEXT for professional message format
         # ═══════════════════════════════════════════════════════════════════
         
@@ -3121,6 +3135,7 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         
         # Prepare data for template
         data = {
+            "symbol": symbol,  # Base symbol (e.g., BTC, ETH)
             "direction": direction,
             "direction_emoji": "📈" if direction == "LONG" else "📉",
             "price": current_price or setup_data.get("entry_price", 0),
@@ -21674,6 +21689,7 @@ async def send_private_v3_signal(
 @api_router.post("/telegram/test-v3-format")
 async def test_v3_message_format(
     direction: str = Query(default="LONG", description="LONG or SHORT"),
+    symbol: str = Query(default="BTC", description="Trading symbol (e.g., BTC, ETH, SOL)"),
     _: bool = Depends(verify_admin_access)
 ):
     """
@@ -21683,7 +21699,15 @@ async def test_v3_message_format(
     # Sample data with full context
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     
+    # Clean symbol (remove any quote currency suffix)
+    clean_symbol = symbol.upper()
+    for quote in ["USDT", "USD", "USDC", "BUSD", "EUR", "PERP"]:
+        if clean_symbol.endswith(quote):
+            clean_symbol = clean_symbol[:-len(quote)]
+            break
+    
     sample_data = {
+        "symbol": clean_symbol,
         "direction": direction,
         "direction_emoji": "📈" if direction == "LONG" else "📉",
         "entry_low": 73400,
@@ -21709,7 +21733,7 @@ async def test_v3_message_format(
         "sample_data": sample_data,
         "message_preview": f"""🚨 CryptoRadar V3 Signal
 
-{sample_data['direction_emoji']} {direction}
+{sample_data['direction_emoji']} {clean_symbol} {direction}
 ━━━━━━━━━━━━━━━━━━━━
 
 📍 Entry: ${sample_data['entry_low']:,.0f} - ${sample_data['entry_high']:,.0f}
@@ -21727,7 +21751,9 @@ Context:
 📊 Quality: {sample_data['quality']}/100
 ⚡ Setup: {sample_data['setup_type']}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+
+#CryptoRadar #V3 #{clean_symbol} #{direction}"""
     }
 
 
