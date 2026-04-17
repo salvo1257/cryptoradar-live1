@@ -215,10 +215,15 @@ export function V3MonitoringPanel({ language = 'it' }) {
                 {language === 'it' ? 'Monitoraggio V3' : 'V3 Monitoring'}
               </h2>
               <Badge className="bg-purple-500/30 text-purple-400 border-purple-500/50 text-[10px]">
-                MTF ENGINE
+                {language === 'it' ? 'MOTORE MTF' : 'MTF ENGINE'}
               </Badge>
               <Badge className={cn("text-[10px]", getSignificanceColor(statistical_significance?.status))}>
-                {statistical_significance?.status || 'COLLECTING'}
+                {language === 'it' 
+                  ? (statistical_significance?.status === 'COLLECTING' ? 'RACCOLTA DATI' 
+                    : statistical_significance?.status === 'PRELIMINARY' ? 'PRELIMINARE'
+                    : statistical_significance?.status === 'RELIABLE' ? 'AFFIDABILE'
+                    : statistical_significance?.status || 'RACCOLTA DATI')
+                  : (statistical_significance?.status || 'COLLECTING')}
               </Badge>
             </div>
             <p className="text-xs text-zinc-500">

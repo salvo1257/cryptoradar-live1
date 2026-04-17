@@ -38,10 +38,10 @@ export function MentorCard() {
         setMarketSnapshot(response.data.market_snapshot);
         setLastUpdate(new Date());
       } else {
-        setError(response.data.error || 'Failed to get analysis');
+        setError(response.data.error || 'Errore nel recupero analisi');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Connection error');
+      setError(err.response?.data?.detail || err.message || 'Errore di connessione');
     } finally {
       setIsLoading(false);
     }
@@ -128,7 +128,11 @@ export function MentorCard() {
               marketSnapshot.regime === "COMPRESSION" && "text-orange-400",
               marketSnapshot.regime === "EXPANSION" && "text-purple-400"
             )}>
-              {marketSnapshot.regime}
+              {marketSnapshot.regime === "COMPRESSION" ? "COMPRESSIONE" :
+               marketSnapshot.regime === "TREND" ? "TREND" :
+               marketSnapshot.regime === "RANGE" ? "RANGE" :
+               marketSnapshot.regime === "EXPANSION" ? "ESPANSIONE" :
+               marketSnapshot.regime}
             </span>
             <span className="text-zinc-600">|</span>
             <span className="text-zinc-500">Energia:</span>

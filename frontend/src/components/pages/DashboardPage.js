@@ -108,8 +108,8 @@ export function DashboardPage() {
               <Lock className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <h3 className="font-heading font-bold text-white">Market Overview</h3>
-              <p className="text-xs text-zinc-400">Public view - Trade signals require admin access</p>
+              <h3 className="font-heading font-bold text-white">Panoramica Mercato</h3>
+              <p className="text-xs text-zinc-400">Vista pubblica - I segnali di trading richiedono accesso admin</p>
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@ export function DashboardPage() {
             <div className="bg-crypto-card/60 border border-zinc-700/50 rounded-sm p-6 h-full flex items-center justify-center">
               <div className="text-center">
                 <Lock className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-                <p className="text-zinc-500 text-sm">V3 Signal - Admin Only</p>
+                <p className="text-zinc-500 text-sm">Segnale V3 - Solo Admin</p>
               </div>
             </div>
           )}

@@ -8475,7 +8475,7 @@ def detect_market_regime(
     # Strong directional bias
     if bias_strong:
         trend_score += 25
-        signals.append(f"Strong {bias_direction} bias ({bias_confidence:.0f}%)")
+        signals.append(f"Forte bias {bias_direction} ({bias_confidence:.0f}%)")
     
     # Whales aligned with direction
     whale_bias_aligned = (
@@ -8484,7 +8484,7 @@ def detect_market_regime(
     )
     if whale_bias_aligned and whale_strength >= 40:
         trend_score += 20
-        signals.append(f"Whales aligned ({whale_direction})")
+        signals.append(f"Whale allineate ({whale_direction})")
     
     # Liquidity aligned (clear path in trend direction)
     liq_bias_aligned = (
@@ -8493,7 +8493,7 @@ def detect_market_regime(
     )
     if liq_bias_aligned:
         trend_score += 20
-        signals.append(f"Liquidity path aligned ({magnet_direction})")
+        signals.append(f"Percorso liquidità allineato ({magnet_direction})")
     
     # OI supportive (rising in trend)
     if oi_rising and bias_strong:
@@ -8511,7 +8511,7 @@ def detect_market_regime(
     # Neutral or mixed bias
     if bias_direction == "NEUTRAL" or bias_confidence < 55:
         range_score += 25
-        signals.append("Neutral/mixed market bias")
+        signals.append("Bias neutro/misto del mercato")
     
     # Moderate/low energy
     if compression_level in ["LOW", "MEDIUM"] and breakout_prob == "LOW":
@@ -8520,12 +8520,12 @@ def detect_market_regime(
     # Unclear magnet direction
     if magnet_direction == "BALANCED" or liq_balanced:
         range_score += 20
-        signals.append("Balanced liquidity (no clear direction)")
+        signals.append("Liquidità bilanciata (nessuna direzione chiara)")
     
     # Price between S/R
     if price_in_middle:
         range_score += 20
-        signals.append(f"Price in range ({dist_to_support:.1f}% from support, {dist_to_resistance:.1f}% from resistance)")
+        signals.append(f"Prezzo nel range ({dist_to_support:.1f}% dal supporto, {dist_to_resistance:.1f}% dalla resistenza)")
     
     # No clean breakout
     if breakout_prob == "LOW":
@@ -8535,12 +8535,12 @@ def detect_market_regime(
     # Low/medium volatility with energy building
     if compression_level == "LOW" or (compression_level == "MEDIUM" and expansion_ready in ["MEDIUM", "HIGH"]):
         compression_score += 25
-        signals.append(f"Compression detected ({compression_level})")
+        signals.append(f"Compressione rilevata ({compression_level})")
     
     # OI increasing (positions building)
     if oi_rising:
         compression_score += 20
-        signals.append(f"OI rising (+{oi_change_24h:.1f}% 24h)")
+        signals.append(f"OI in aumento (+{oi_change_24h:.1f}% 24h)")
     
     # Whales active (preparing for move)
     if whale_strength >= 30:
@@ -8549,28 +8549,28 @@ def detect_market_regime(
     # Liquidity above AND below (both sides loaded)
     if liq_above > 0 and liq_below > 0 and liq_balanced:
         compression_score += 20
-        signals.append("Liquidity loaded both sides")
+        signals.append("Liquidità caricata su entrambi i lati")
     
     # Price trapped before breakout
     if near_sr and breakout_prob in ["MEDIUM", "HIGH"]:
         compression_score += 20
-        signals.append("Price near key level, breakout likely")
+        signals.append("Prezzo vicino a livello chiave, breakout probabile")
     
     # ----- EXPANSION Score -----
     # High energy
     if energy_score >= 65 or compression_level == "HIGH":
         expansion_score += 25
-        signals.append(f"High market energy ({energy_score:.0f})")
+        signals.append(f"Alta energia di mercato ({energy_score:.0f})")
     
     # Strong expected move
     if abs(expected_move) >= 1.0:
         expansion_score += 20
-        signals.append(f"Strong expected move ({expected_move:.2f}%)")
+        signals.append(f"Forte movimento atteso ({expected_move:.2f}%)")
     
     # Dominant liquidity direction
     if magnet_direction in ["UP", "DOWN"] and magnet_score >= 60:
         expansion_score += 20
-        signals.append(f"Dominant liquidity direction ({magnet_direction})")
+        signals.append(f"Direzione liquidità dominante ({magnet_direction})")
     
     # Whales confirm
     if whale_aligned:
@@ -12253,11 +12253,11 @@ async def validate_v3_signal_quality(
     elif rr_ratio >= 0.5:
         quality_score += 5
         score_breakdown["rr"] = 5
-        warnings.append(f"Low R:R ({rr_ratio:.2f})")
+        warnings.append(f"R:R basso ({rr_ratio:.2f})")
     else:
         quality_score += 2
         score_breakdown["rr"] = 2
-        warnings.append(f"Very low R:R ({rr_ratio:.2f})")
+        warnings.append(f"R:R molto basso ({rr_ratio:.2f})")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # METRIC 2: LIQUIDITY CLUSTERS (max +15 points)
@@ -12274,7 +12274,7 @@ async def validate_v3_signal_quality(
     else:
         quality_score += 8
         score_breakdown["liquidity"] = 8
-        warnings.append("Clusters not fully validated")
+        warnings.append("Cluster non completamente validati")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # METRIC 3: MAGNET ALIGNMENT (max +15 points)
@@ -12293,7 +12293,7 @@ async def validate_v3_signal_quality(
             # (Sometimes price moves against magnet before following it)
             quality_score -= 5
             score_breakdown["magnet"] = -5
-            warnings.append(f"Magnet conflict: {direction} vs magnet {liquidity_magnet_direction}")
+            warnings.append(f"Conflitto magnete: {direction} vs magnete {liquidity_magnet_direction}")
     else:
         # Balanced/neutral magnet - slight positive
         quality_score += 5
@@ -12314,7 +12314,7 @@ async def validate_v3_signal_quality(
         else:
             quality_score -= 8
             score_breakdown["bias"] = -8
-            warnings.append(f"Conflicts with strong {market_bias} bias ({bias_confidence}%)")
+            warnings.append(f"Conflitto con forte bias {market_bias} ({bias_confidence}%)")
     elif bias_confidence >= 55:
         if bias_aligned:
             quality_score += 6
@@ -12322,7 +12322,7 @@ async def validate_v3_signal_quality(
         else:
             quality_score -= 3
             score_breakdown["bias"] = -3
-            warnings.append(f"Conflicts with moderate {market_bias} bias")
+            warnings.append(f"Conflitto con bias moderato {market_bias}")
     else:
         # Neutral bias - no adjustment
         score_breakdown["bias"] = 0
@@ -12341,11 +12341,11 @@ async def validate_v3_signal_quality(
         elif fuel_score >= 30:
             quality_score += 3
             score_breakdown["energy"] = 3
-            warnings.append("Moderate energy - may limit move")
+            warnings.append("Energia moderata - può limitare il movimento")
         else:
             quality_score -= 5
             score_breakdown["energy"] = -5
-            warnings.append("Low energy - breakout may fail")
+            warnings.append("Energia bassa - breakout potrebbe fallire")
     elif energy_state:
         if energy_state == "HIGH":
             quality_score += 8
@@ -12356,7 +12356,7 @@ async def validate_v3_signal_quality(
         else:
             quality_score -= 3
             score_breakdown["energy"] = -3
-            warnings.append("Low energy state")
+            warnings.append("Stato energia basso")
     else:
         score_breakdown["energy"] = 0
     
@@ -12373,11 +12373,11 @@ async def validate_v3_signal_quality(
     elif market_regime == "COMPRESSION":
         quality_score += 2
         score_breakdown["regime"] = 2
-        warnings.append("COMPRESSION - breakout timing uncertain")
+        warnings.append("COMPRESSIONE - breakout timing incerto")
     elif market_regime == "RANGE":
         quality_score -= 10
         score_breakdown["regime"] = -10
-        warnings.append("RANGE regime - bounded targets only")
+        warnings.append("Regime RANGE - solo target limitati")
     else:
         score_breakdown["regime"] = 0
     
@@ -12401,19 +12401,19 @@ async def validate_v3_signal_quality(
             if direction == "SHORT" and (shorts_overcrowded or extreme_negative_funding):
                 quality_score -= 15
                 score_breakdown["derivatives"] = -15
-                warnings.append(f"⚠️ SQUEEZE RISK: Shorts overcrowded (ratio={global_ratio:.2f})")
+                warnings.append(f"⚠️ RISCHIO SQUEEZE: Short sovraffollati (ratio={global_ratio:.2f})")
             elif direction == "LONG" and (longs_overcrowded or extreme_positive_funding):
                 quality_score -= 15
                 score_breakdown["derivatives"] = -15
-                warnings.append(f"⚠️ SQUEEZE RISK: Longs overcrowded (ratio={global_ratio:.2f})")
+                warnings.append(f"⚠️ RISCHIO SQUEEZE: Long sovraffollati (ratio={global_ratio:.2f})")
             elif direction == "SHORT" and global_ratio > 1.3:
                 quality_score -= 5
                 score_breakdown["derivatives"] = -5
-                warnings.append("Shorts getting crowded")
+                warnings.append("Short in aumento")
             elif direction == "LONG" and global_ratio < 0.77:
                 quality_score -= 5
                 score_breakdown["derivatives"] = -5
-                warnings.append("Longs getting crowded")
+                warnings.append("Long in aumento")
             else:
                 # Healthy positioning
                 quality_score += 10
@@ -12424,7 +12424,7 @@ async def validate_v3_signal_quality(
         # Missing derivatives data - slight penalty
         quality_score -= 3
         score_breakdown["derivatives"] = -3
-        warnings.append("Derivatives data unavailable")
+        warnings.append("Dati derivati non disponibili")
     
     # ═══════════════════════════════════════════════════════════════════════════
     # FINAL SCORE & RECOMMENDATION

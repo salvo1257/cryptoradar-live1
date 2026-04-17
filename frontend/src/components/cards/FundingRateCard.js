@@ -120,7 +120,7 @@ export function FundingRateCard() {
           )}>
             <AlertTriangle className={cn("w-4 h-4", overcrowded === 'longs' ? "text-bearish" : "text-bullish")} />
             <span className="text-xs font-medium">
-              {overcrowded === 'longs' ? 'Longs overcrowded - squeeze risk!' : 'Shorts overcrowded - squeeze risk!'}
+              {overcrowded === 'longs' ? 'Long sovraffollati - rischio squeeze!' : 'Short sovraffollati - rischio squeeze!'}
             </span>
           </div>
         )}

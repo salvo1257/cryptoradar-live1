@@ -690,8 +690,8 @@ export function AlertHistoryPage() {
         ) : signals.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
             <History className="w-12 h-12 mb-3 opacity-30" />
-            <p>No signals recorded yet</p>
-            <p className="text-xs mt-1">Click "Record Current Signal" to start tracking</p>
+            <p>Nessun segnale registrato</p>
+            <p className="text-xs mt-1">Clicca "Registra Segnale Attuale" per iniziare il tracking</p>
           </div>
         ) : (
           <div className="divide-y divide-crypto-border">

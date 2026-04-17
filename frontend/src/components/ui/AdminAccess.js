@@ -36,8 +36,8 @@ export function AdminLoginModal({ isOpen, onClose }) {
               <ShieldCheck className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <h2 className="font-heading font-bold text-white">Admin Access</h2>
-              <p className="text-xs text-zinc-400">Enter admin key to unlock</p>
+              <h2 className="font-heading font-bold text-white">Accesso Admin</h2>
+              <p className="text-xs text-zinc-400">Inserisci la chiave per sbloccare</p>
             </div>
           </div>
           <button 
@@ -51,13 +51,13 @@ export function AdminLoginModal({ isOpen, onClose }) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div className="space-y-2">
-            <label className="text-sm text-zinc-300 font-medium">Secret Key</label>
+            <label className="text-sm text-zinc-300 font-medium">Chiave Segreta</label>
             <div className="relative">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={secretKey}
                 onChange={(e) => setSecretKey(e.target.value)}
-                placeholder="Enter admin secret key..."
+                placeholder="Inserisci la chiave segreta admin..."
                 className={cn(
                   "w-full bg-zinc-900/60 border rounded-sm px-4 py-2.5 pr-10",
                   "text-white placeholder:text-zinc-500",
@@ -88,12 +88,12 @@ export function AdminLoginModal({ isOpen, onClose }) {
             {isLoading ? (
               <span className="flex items-center gap-2">
                 <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-                Verifying...
+                Verifica in corso...
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <Unlock className="w-4 h-4" />
-                Unlock Admin Access
+                Sblocca Accesso Admin
               </span>
             )}
           </Button>
@@ -102,7 +102,7 @@ export function AdminLoginModal({ isOpen, onClose }) {
         {/* Footer */}
         <div className="px-5 py-3 border-t border-zinc-700/50 bg-zinc-900/30">
           <p className="text-xs text-zinc-500 text-center">
-            Admin access unlocks V3 signals, backtest, settings, and analytics.
+            L'accesso Admin sblocca segnali V3, backtest, impostazioni e analytics.
           </p>
         </div>
       </div>

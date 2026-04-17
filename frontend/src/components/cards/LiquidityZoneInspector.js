@@ -49,7 +49,7 @@ const ZoneBar = ({ zone, currentPrice, maxStrength, isPrimary }) => {
         <div className={`absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold ${
           isAbove ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
         }`}>
-          PRIMARY
+          PRIMARIA
         </div>
       )}
       
@@ -62,28 +62,28 @@ const ZoneBar = ({ zone, currentPrice, maxStrength, isPrimary }) => {
             <TrendingDown className="w-4 h-4 text-red-400" />
           )}
           <span className={`font-semibold ${isAbove ? 'text-emerald-400' : 'text-red-400'}`}>
-            {isAbove ? 'ABOVE' : 'BELOW'}
+            {isAbove ? 'SOPRA' : 'SOTTO'}
           </span>
         </div>
         <span className="text-sm text-slate-400">
-          {zone.num_levels} levels
+          {zone.num_levels} livelli
         </span>
       </div>
       
       {/* Zone range */}
       <div className="grid grid-cols-3 gap-2 mb-2 text-sm">
         <div className="text-center">
-          <div className="text-slate-500 text-xs">Top</div>
+          <div className="text-slate-500 text-xs">Alto</div>
           <div className="text-slate-200 font-mono">{formatPrice(zone.zone_top)}</div>
         </div>
         <div className="text-center">
-          <div className="text-slate-500 text-xs">Center</div>
+          <div className="text-slate-500 text-xs">Centro</div>
           <div className={`font-mono font-bold ${isAbove ? 'text-emerald-400' : 'text-red-400'}`}>
             {formatPrice(zone.zone_center)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-slate-500 text-xs">Bottom</div>
+          <div className="text-slate-500 text-xs">Basso</div>
           <div className="text-slate-200 font-mono">{formatPrice(zone.zone_bottom)}</div>
         </div>
       </div>
@@ -91,7 +91,7 @@ const ZoneBar = ({ zone, currentPrice, maxStrength, isPrimary }) => {
       {/* Strength bar */}
       <div className="mb-2">
         <div className="flex justify-between text-xs mb-1">
-          <span className="text-slate-400">Zone Strength</span>
+          <span className="text-slate-400">Forza Zona</span>
           <span className={`font-bold ${isAbove ? 'text-emerald-400' : 'text-red-400'}`}>
             {formatUSD(zone.zone_strength)}
           </span>
@@ -109,7 +109,7 @@ const ZoneBar = ({ zone, currentPrice, maxStrength, isPrimary }) => {
       {/* Metrics row */}
       <div className="flex justify-between text-xs">
         <div>
-          <span className="text-slate-500">Distance: </span>
+          <span className="text-slate-500">Distanza: </span>
           <span className={`font-mono ${
             zone.distance_pct >= 0.5 && zone.distance_pct <= 2.5 
               ? 'text-emerald-400' 
@@ -119,7 +119,7 @@ const ZoneBar = ({ zone, currentPrice, maxStrength, isPrimary }) => {
           </span>
         </div>
         <div>
-          <span className="text-slate-500">Score: </span>
+          <span className="text-slate-500">Punteggio: </span>
           <span className={`font-bold ${
             zone.score >= 60 ? 'text-emerald-400' : 
             zone.score >= 40 ? 'text-amber-400' : 
@@ -143,38 +143,38 @@ const ComparisonPanel = ({ legacy, zone }) => {
     <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700" data-testid="comparison-panel">
       <h4 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
         <Activity className="w-4 h-4" />
-        Legacy vs Zone Comparison
+        Confronto Punto vs Zona
       </h4>
       
       <div className="grid grid-cols-2 gap-4 text-sm">
         {/* Legacy */}
         <div className="space-y-2">
-          <div className="text-xs text-slate-500 uppercase tracking-wide">Point-Based (Legacy)</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Basato su Punto (Legacy)</div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Direction:</span> {legacy.direction}
+            <span className="text-slate-500">Direzione:</span> {legacy.direction}
           </div>
           <div className="text-slate-300">
             <span className="text-slate-500">Target:</span> {formatPrice(legacy.target_price)}
           </div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Distance:</span> {legacy.distance_pct?.toFixed(2)}%
+            <span className="text-slate-500">Distanza:</span> {legacy.distance_pct?.toFixed(2)}%
           </div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Value:</span> {formatUSD(legacy.value_usd || 0)}
+            <span className="text-slate-500">Valore:</span> {formatUSD(legacy.value_usd || 0)}
           </div>
         </div>
         
         {/* Zone */}
         <div className="space-y-2">
-          <div className="text-xs text-slate-500 uppercase tracking-wide">Zone-Based (New)</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Basato su Zona (Nuovo)</div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Direction:</span> {zone.direction}
+            <span className="text-slate-500">Direzione:</span> {zone.direction}
           </div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Zone:</span> {formatPrice(zone.zone_bottom)} - {formatPrice(zone.zone_top)}
+            <span className="text-slate-500">Zona:</span> {formatPrice(zone.zone_bottom)} - {formatPrice(zone.zone_top)}
           </div>
           <div className="text-slate-300">
-            <span className="text-slate-500">Distance:</span> {zone.distance_pct?.toFixed(2)}%
+            <span className="text-slate-500">Distanza:</span> {zone.distance_pct?.toFixed(2)}%
           </div>
           <div className="text-slate-300">
             <span className="text-slate-500">Cluster:</span> {formatUSD(zone.zone_strength_usd || 0)}
@@ -189,12 +189,12 @@ const ComparisonPanel = ({ legacy, zone }) => {
         {directionsMatch ? (
           <>
             <div className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs">Directions aligned</span>
+            <span className="text-xs">Direzioni allineate</span>
           </>
         ) : (
           <>
             <AlertTriangle className="w-4 h-4" />
-            <span className="text-xs">Direction conflict - review zones</span>
+            <span className="text-xs">Conflitto direzione - verificare zone</span>
           </>
         )}
       </div>
@@ -232,7 +232,7 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
         setError(null);
       } catch (err) {
         console.error('Error fetching zone data:', err);
-        setError('Failed to load liquidity zones');
+        setError('Errore caricamento zone liquidità');
       } finally {
         setLoading(false);
       }
@@ -248,7 +248,7 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
       <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700" data-testid="zone-inspector-loading">
         <div className="flex items-center gap-3">
           <div className="animate-spin w-5 h-5 border-2 border-cyan-500 border-t-transparent rounded-full" />
-          <span className="text-slate-400">Loading Liquidity Zones...</span>
+          <span className="text-slate-400">Caricamento Zone Liquidità...</span>
         </div>
       </div>
     );
@@ -296,13 +296,13 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
           </div>
           <div>
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              Liquidity Zone Engine
+              Motore Zone Liquidità
               <span className="text-xs px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded-full">
-                PREVIEW
+                ANTEPRIMA
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Zone-based detection | {zonesData?.zones_detected_count || 0} zones detected
+              Rilevamento basato su zone | {zonesData?.zones_detected_count || 0} zone rilevate
             </p>
           </div>
         </div>
@@ -318,7 +318,7 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
           }`}>
             {zonesData?.dominant_direction === 'UP' && <TrendingUp className="w-4 h-4" />}
             {zonesData?.dominant_direction === 'DOWN' && <TrendingDown className="w-4 h-4" />}
-            {zonesData?.dominant_direction || 'BALANCED'}
+            {zonesData?.dominant_direction === 'UP' ? 'SU' : zonesData?.dominant_direction === 'DOWN' ? 'GIÙ' : 'BILANCIATO'}
           </div>
           
           {expanded ? (
@@ -336,9 +336,9 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
             <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400">
               <AlertTriangle className="w-5 h-5 flex-shrink-0" />
               <div className="text-sm">
-                <span className="font-semibold">Liquidity data unavailable</span>
+                <span className="font-semibold">Dati liquidità non disponibili</span>
                 <p className="text-amber-400/70 text-xs mt-1">
-                  CoinGlass heatmap not accessible. Showing orderbook/cluster data only.
+                  Heatmap CoinGlass non accessibile. Visualizzazione solo dati orderbook/cluster.
                 </p>
               </div>
             </div>
@@ -347,7 +347,7 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
           {/* Current Price */}
           <div className="flex items-center justify-center gap-2 py-2 bg-slate-700/30 rounded-lg">
             <Target className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-400 text-sm">Current Price:</span>
+            <span className="text-slate-400 text-sm">Prezzo Attuale:</span>
             <span className="text-white font-bold font-mono">
               {formatPrice(zonesData?.current_price)}
             </span>
@@ -374,21 +374,21 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
           {/* Liquidity totals */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
-              <div className="text-xs text-emerald-400 uppercase tracking-wide mb-1">Total Above</div>
+              <div className="text-xs text-emerald-400 uppercase tracking-wide mb-1">TOTALE SOPRA</div>
               <div className="text-lg font-bold text-emerald-400">
                 {formatUSD(zonesData?.total_liquidity_above || 0)}
               </div>
               <div className="text-xs text-slate-400">
-                {zonesData?.zones_above?.length || 0} zones
+                {zonesData?.zones_above?.length || 0} zone
               </div>
             </div>
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Total Below</div>
+              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">TOTALE SOTTO</div>
               <div className="text-lg font-bold text-red-400">
                 {formatUSD(zonesData?.total_liquidity_below || 0)}
               </div>
               <div className="text-xs text-slate-400">
-                {zonesData?.zones_below?.length || 0} zones
+                {zonesData?.zones_below?.length || 0} zone
               </div>
             </div>
           </div>
@@ -411,12 +411,12 @@ const LiquidityZoneInspector = ({ lang = 'en' }) => {
               {showAllZones ? (
                 <>
                   <ChevronUp className="w-4 h-4" />
-                  Hide {allZones.length - 2} additional zones
+                  Nascondi {allZones.length - 2} zone aggiuntive
                 </>
               ) : (
                 <>
                   <ChevronDown className="w-4 h-4" />
-                  Show all {allZones.length} zones
+                  Mostra tutte le {allZones.length} zone
                 </>
               )}
             </button>
