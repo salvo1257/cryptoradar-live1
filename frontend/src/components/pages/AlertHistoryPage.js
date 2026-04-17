@@ -10,6 +10,7 @@ import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 import { V3MonitoringPanel } from '../cards/V3MonitoringPanel';
 import { ShadowTargetInspector } from '../cards/ShadowTargetInspector';
 import LiquidityZoneInspector from '../cards/LiquidityZoneInspector';
@@ -18,6 +19,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function AlertHistoryPage() {
   const { language } = useApp();
+  const { getAdminHeaders, isAdmin } = useAccess();
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
   const [performanceStats, setPerformanceStats] = useState(null);
@@ -57,14 +59,18 @@ export function AlertHistoryPage() {
         filterParam += `&engine_version=${versionFilter}`;
       }
       
-      const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`);
+      const response = await fetch(`${API_URL}/api/signal-history?page=${page}&page_size=15${filterParam}`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setSignals(data.signals || []);
       setTotalPages(data.total_pages || 1);
       setTotalCount(data.total_count || 0);
       
       // Also fetch full count (without filters) for reference
-      const fullResponse = await fetch(`${API_URL}/api/signal-history?page=1&page_size=1`);
+      const fullResponse = await fetch(`${API_URL}/api/signal-history?page=1&page_size=1`, {
+        headers: getAdminHeaders()
+      });
       const fullData = await fullResponse.json();
       setFullTotalCount(fullData.total_count || 0);
     } catch (error) {
@@ -72,42 +78,51 @@ export function AlertHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, viewMode, directionFilter, outcomeFilter, versionFilter]);
+  }, [page, viewMode, directionFilter, outcomeFilter, versionFilter, getAdminHeaders]);
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/signal-history/stats`);
+      const response = await fetch(`${API_URL}/api/signal-history/stats`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setStats(data);
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   const fetchPerformanceStats = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/signal-history/statistics`);
+      const response = await fetch(`${API_URL}/api/signal-history/statistics`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setPerformanceStats(data);
     } catch (error) {
       console.error('Error fetching performance stats:', error);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   const fetchSchedulerStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/signal-history/scheduler-status`);
+      const response = await fetch(`${API_URL}/api/signal-history/scheduler-status`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setSchedulerStatus(data);
     } catch (error) {
       console.error('Error fetching scheduler status:', error);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   const recordCurrentSignal = async () => {
     try {
       setRecording(true);
-      const response = await fetch(`${API_URL}/api/signal-history/record`, { method: 'POST' });
+      const response = await fetch(`${API_URL}/api/signal-history/record`, { 
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       if (data.recorded) {
         fetchHistory();
@@ -124,7 +139,10 @@ export function AlertHistoryPage() {
   const checkOutcomes = async () => {
     try {
       setCheckingOutcomes(true);
-      const response = await fetch(`${API_URL}/api/signal-history/check-outcomes`, { method: 'POST' });
+      const response = await fetch(`${API_URL}/api/signal-history/check-outcomes`, { 
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       if (data.updated > 0) {
         fetchHistory();
@@ -139,15 +157,18 @@ export function AlertHistoryPage() {
   };
 
   useEffect(() => {
-    fetchHistory();
-    fetchStats();
-    fetchPerformanceStats();
-    fetchSchedulerStatus();
+    // Only fetch data when admin is authenticated
+    if (isAdmin) {
+      fetchHistory();
+      fetchStats();
+      fetchPerformanceStats();
+      fetchSchedulerStatus();
+    }
     
     // Refresh scheduler status every 5 minutes
     const schedulerInterval = setInterval(fetchSchedulerStatus, 300000);
     return () => clearInterval(schedulerInterval);
-  }, [fetchHistory, fetchStats, fetchPerformanceStats, fetchSchedulerStatus]);
+  }, [fetchHistory, fetchStats, fetchPerformanceStats, fetchSchedulerStatus, isAdmin]);
 
   const getDirectionConfig = (direction) => {
     switch (direction) {

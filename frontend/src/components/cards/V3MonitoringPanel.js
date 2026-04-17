@@ -18,7 +18,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function V3MonitoringPanel({ language = 'it' }) {
   const { learnMode } = useApp();
-  const { getAdminHeaders } = useAccess();
+  const { getAdminHeaders, isAdmin } = useAccess();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -134,11 +134,13 @@ export function V3MonitoringPanel({ language = 'it' }) {
   }, [getAdminHeaders]);
 
   useEffect(() => {
-    fetchMetrics();
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(fetchMetrics, 300000);
-    return () => clearInterval(interval);
-  }, [fetchMetrics]);
+    if (isAdmin) {
+      fetchMetrics();
+      // Auto-refresh every 5 minutes
+      const interval = setInterval(fetchMetrics, 300000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchMetrics, isAdmin]);
 
   if (loading && !metrics) {
     return (

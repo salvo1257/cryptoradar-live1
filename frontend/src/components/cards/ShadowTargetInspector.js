@@ -23,7 +23,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function ShadowTargetInspector({ language = 'it' }) {
   const { learnMode } = useApp();
-  const { getAdminHeaders } = useAccess();
+  const { getAdminHeaders, isAdmin } = useAccess();
   const [shadowData, setShadowData] = useState(null);
   const [performanceData, setPerformanceData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -159,10 +159,12 @@ export function ShadowTargetInspector({ language = 'it' }) {
   }, [getAdminHeaders]);
 
   useEffect(() => {
-    fetchShadowData();
-    const interval = setInterval(fetchShadowData, 60000); // Refresh every minute
-    return () => clearInterval(interval);
-  }, [fetchShadowData]);
+    if (isAdmin) {
+      fetchShadowData();
+      const interval = setInterval(fetchShadowData, 60000); // Refresh every minute
+      return () => clearInterval(interval);
+    }
+  }, [fetchShadowData, isAdmin]);
 
   const getQualityColor = (quality) => {
     if (quality >= 70) return 'text-bullish';
