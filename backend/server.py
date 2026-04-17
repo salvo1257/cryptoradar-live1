@@ -170,9 +170,13 @@ db = client[os.environ['DB_NAME']]
 signal_history_collection = db["signal_history"]
 telegram_settings_collection = db["telegram_settings"]
 setup_events_collection = db["setup_events_v3"]  # V3 Multi-Timeframe Setup Events
+mentor_analysis_collection = db["mentor_analysis"]  # Mentor analysis cache
+
+# Import Mentor Engine (isolated module)
+from mentor_engine import get_mentor_analysis, mentor_engine
 
 # Create the main app
-app = FastAPI(title="CryptoRadar API", version="2.3.0")
+app = FastAPI(title="CryptoRadar API", version="2.4.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -17361,6 +17365,44 @@ async def get_trade_signal(lang: str = Query(default="it", description="Language
 
 # ============== V3 MULTI-TIMEFRAME SIGNAL ENGINE ENDPOINT ==============
 
+async def get_v3_trade_signal_internal(lang: str = "it") -> Optional[Dict[str, Any]]:
+    """
+    Internal function to get V3 signal without admin check.
+    Used by Mentor Engine and other internal services.
+    """
+    try:
+        # Simplified version - just get the current state
+        setups = await get_active_setups()
+        
+        if not setups:
+            return {"signal": "NO_SIGNAL", "direction": None, "phase": None}
+        
+        # Find the best setup
+        entry_ready = [s for s in setups if s.get("phase") == "ENTRY_READY"]
+        if entry_ready:
+            setup = entry_ready[0]
+            return {
+                "signal": "ENTRY",
+                "direction": setup.get("direction"),
+                "phase": "ENTRY_READY"
+            }
+        
+        monitoring = [s for s in setups if s.get("phase") in ["SETUP_DETECTED", "WAITING_FOR_RETEST"]]
+        if monitoring:
+            setup = monitoring[0]
+            return {
+                "signal": "MONITORING",
+                "direction": setup.get("direction"),
+                "phase": setup.get("phase")
+            }
+        
+        return {"signal": "NO_SIGNAL", "direction": None, "phase": None}
+        
+    except Exception as e:
+        logger.error(f"[V3 Internal] Error: {e}")
+        return None
+
+
 @api_router.get("/v3/trade-signal")
 async def get_v3_trade_signal(
     lang: str = Query(default="it", description="Language: it, en, de, pl"),
@@ -21846,6 +21888,177 @@ async def get_private_distribution_status(_: bool = Depends(verify_admin_access)
             "auto_subscribe": False,
             "broadcast_enabled": False,
             "whitelist_only": True
+        }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RADAR MENTOR - AI-POWERED TRADING EDUCATOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/mentor/analyze")
+async def get_mentor_market_analysis(
+    force_refresh: bool = Query(default=False, description="Bypass cache and generate fresh analysis"),
+    is_admin: bool = Depends(optional_admin_check)
+):
+    """
+    Get AI-powered educational market analysis from the Radar Mentor.
+    
+    PUBLIC users see: Context + Mentor's Tip (teaser)
+    ADMIN users see: Full analysis (Context + Logic + Lesson + Tip)
+    
+    Analysis is cached for 5 minutes to reduce API costs.
+    """
+    try:
+        # Gather current market data from various sources
+        market_data = {}
+        
+        # Get BTC price
+        price_data = get_cached_price()
+        market_data["btc_price"] = price_data.get("price", 0) if price_data else 0
+        
+        # Get market regime
+        try:
+            regime_data = await analyze_market_regime()
+            market_data["market_regime"] = regime_data.get("regime", "UNKNOWN")
+            market_data["regime_confidence"] = regime_data.get("confidence", 0)
+        except:
+            market_data["market_regime"] = "UNKNOWN"
+            market_data["regime_confidence"] = 0
+        
+        # Get market bias
+        try:
+            bias_data = await analyze_market_bias()
+            market_data["market_bias"] = bias_data.get("bias", "NEUTRAL")
+            market_data["bias_percentage"] = bias_data.get("bias_percentage", 50)
+        except:
+            market_data["market_bias"] = "NEUTRAL"
+            market_data["bias_percentage"] = 50
+        
+        # Get market energy
+        try:
+            energy_data = await analyze_market_energy()
+            market_data["energy_score"] = energy_data.get("energy_score", 50)
+            market_data["energy_level"] = energy_data.get("energy_level", "MEDIUM")
+        except:
+            market_data["energy_score"] = 50
+            market_data["energy_level"] = "MEDIUM"
+        
+        # Get liquidity magnet
+        try:
+            liquidity_data = await analyze_liquidity_magnet()
+            market_data["liquidity_direction"] = liquidity_data.get("target_direction", "BALANCED")
+            market_data["magnet_score"] = liquidity_data.get("magnet_score", 50)
+            market_data["magnet_price"] = liquidity_data.get("nearest_magnet_price", 0)
+            market_data["magnet_distance_percent"] = liquidity_data.get("nearest_magnet_distance_percent", 0)
+        except:
+            market_data["liquidity_direction"] = "BALANCED"
+            market_data["magnet_score"] = 50
+        
+        # Get OI data
+        try:
+            oi_data = await analyze_open_interest()
+            market_data["oi_change_percent"] = oi_data.get("oi_change_percent", 0)
+            market_data["oi_trend"] = oi_data.get("trend", "STABLE")
+        except:
+            market_data["oi_change_percent"] = 0
+            market_data["oi_trend"] = "STABLE"
+        
+        # Get funding rate
+        try:
+            funding_data = await get_funding_rate()
+            market_data["funding_rate"] = funding_data.get("rate", 0)
+            market_data["funding_status"] = funding_data.get("status", "NEUTRAL")
+        except:
+            market_data["funding_rate"] = 0
+            market_data["funding_status"] = "NEUTRAL"
+        
+        # Get V3 signal status (if active)
+        try:
+            v3_signal = await get_v3_trade_signal_internal()
+            if v3_signal and v3_signal.get("signal") not in ["NO_SIGNAL", "WAITING"]:
+                market_data["v3_signal"] = v3_signal.get("signal")
+                market_data["v3_direction"] = v3_signal.get("direction")
+                market_data["v3_phase"] = v3_signal.get("phase")
+        except:
+            pass
+        
+        # Generate analysis
+        analysis = await get_mentor_analysis(
+            market_data=market_data,
+            is_admin=is_admin,
+            force_refresh=force_refresh
+        )
+        
+        return {
+            "success": analysis.get("success", False),
+            "access_level": "admin" if is_admin else "public",
+            "analysis": analysis,
+            "market_snapshot": {
+                "btc_price": market_data.get("btc_price"),
+                "regime": market_data.get("market_regime"),
+                "bias": market_data.get("market_bias"),
+                "energy": market_data.get("energy_score")
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"[MENTOR] Error in analysis endpoint: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "analysis": None
+        }
+
+
+@api_router.get("/mentor/latest")
+async def get_latest_mentor_analysis(is_admin: bool = Depends(optional_admin_check)):
+    """
+    Get the latest cached mentor analysis without generating a new one.
+    Useful for quick UI updates without API cost.
+    """
+    if mentor_engine.last_analysis:
+        if is_admin:
+            return {
+                "success": True,
+                "cached": True,
+                "analysis": mentor_engine.get_full_analysis({
+                    "success": True,
+                    **mentor_engine.last_analysis
+                })
+            }
+        else:
+            return {
+                "success": True,
+                "cached": True,
+                "analysis": mentor_engine.get_public_analysis({
+                    "success": True,
+                    **mentor_engine.last_analysis
+                })
+            }
+    else:
+        return {
+            "success": False,
+            "cached": False,
+            "analysis": None,
+            "message": "No cached analysis available. Call /mentor/analyze first."
+        }
+
+
+@api_router.get("/mentor/status")
+async def get_mentor_status():
+    """
+    Get the status of the Mentor Engine (no auth required).
+    """
+    return {
+        "enabled": bool(mentor_engine.api_key),
+        "model": "claude-sonnet-4-5",
+        "cache_duration_seconds": mentor_engine.cache_duration_seconds,
+        "has_cached_analysis": mentor_engine.last_analysis is not None,
+        "last_analysis_time": mentor_engine.last_analysis_time.isoformat() if mentor_engine.last_analysis_time else None,
+        "freemium_model": {
+            "public": ["context", "tip"],
+            "admin": ["context", "logic", "lesson", "tip", "full_analysis"]
         }
     }
 
