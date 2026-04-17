@@ -1,8 +1,8 @@
-# CryptoRadar v3.5.4 - Product Requirements Document
-**Last Updated:** 2026-04-16 (PUBLIC vs ADMIN Access Control System)
+# CryptoRadar v3.5.5 - Product Requirements Document
+**Last Updated:** 2026-04-17 (Telegram Private Distribution System)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.4
+- **Current Version:** v3.5.5
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -10,8 +10,61 @@
 - **V3.5.2 Feature:** V3 Backtest/Replay Engine (backend complete)
 - **V3.5.3 Feature:** Liquidity Zone Engine added to main dashboard
 - **V3.5.4 Feature:** PUBLIC vs ADMIN access control system
+- **V3.5.5 Feature:** Telegram Private Distribution System with whitelist
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## TELEGRAM PRIVATE DISTRIBUTION SYSTEM (v3.5.5 - 2026-04-17)
+
+### Overview
+Private signal distribution system for V3 signals. ONLY whitelisted users receive signals.
+- NO public bot interaction
+- NO automatic subscriptions
+- NO broadcast to groups
+
+### How Chat IDs Are Stored
+| Source | Description | Persistence |
+|--------|-------------|-------------|
+| Environment Variable | `TELEGRAM_AUTHORIZED_CHAT_IDS` (comma-separated) | Static |
+| MongoDB Collection | `telegram_whitelist` | Dynamic |
+
+Both sources are combined at runtime for the complete whitelist.
+
+### How Messages Are Filtered
+1. When a V3 signal is generated, `send_private_signal_to_whitelist()` is called
+2. Function fetches all authorized chat IDs from env + database
+3. Message is sent ONLY to those IDs
+4. Unauthorized chat IDs never receive signals
+
+### Security Rules
+- ✅ Whitelist-only distribution
+- ✅ No public access
+- ✅ No auto-subscribe
+- ✅ Admin-only whitelist management
+- ✅ All endpoints protected with `X-Admin-Key`
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/telegram/whitelist` | GET | Get all authorized chat IDs |
+| `/api/telegram/whitelist/add` | POST | Add chat ID to whitelist |
+| `/api/telegram/whitelist/remove` | DELETE | Remove chat ID from whitelist |
+| `/api/telegram/whitelist/test-broadcast` | POST | Send test message to all authorized users |
+| `/api/telegram/send-private-v3-signal` | POST | Manually send signal to whitelist |
+| `/api/telegram/private-distribution-status` | GET | System status overview |
+
+### Configuration
+```bash
+# In backend/.env
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_AUTHORIZED_CHAT_IDS=123456789,987654321,555555555
+```
+
+### Future Extensibility
+- Dynamic add/remove via API (DONE)
+- Database storage for persistence (DONE)
+- Ready for subscription system integration
+- Soft delete (status: removed) for audit trail
 
 ## ACCESS CONTROL SYSTEM (v3.5.4 - 2026-04-16)
 

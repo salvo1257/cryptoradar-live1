@@ -1,6 +1,45 @@
 # CryptoRadar Changelog
 
 
+## v3.5.5 - 2026-04-17
+
+### Telegram Private Distribution System
+
+**Purpose:** Implement private signal distribution. V3 signals sent ONLY to whitelisted Telegram users. No public bot interaction.
+
+#### Storage System
+| Source | Location | Use Case |
+|--------|----------|----------|
+| Environment | `TELEGRAM_AUTHORIZED_CHAT_IDS` | Static initial list |
+| MongoDB | `telegram_whitelist` collection | Dynamic management |
+
+#### Message Filtering
+- `send_private_signal_to_whitelist()` sends to ALL authorized IDs
+- Combines env + database IDs at runtime
+- Unauthorized users never receive signals
+
+#### Security
+- ✅ Whitelist-only (no public access)
+- ✅ No auto-subscribe
+- ✅ Admin-only management
+- ✅ All endpoints protected
+
+#### API Endpoints Added
+- `GET /api/telegram/whitelist` - View authorized users
+- `POST /api/telegram/whitelist/add` - Add user
+- `DELETE /api/telegram/whitelist/remove` - Remove user
+- `POST /api/telegram/whitelist/test-broadcast` - Test distribution
+- `POST /api/telegram/send-private-v3-signal` - Manual signal send
+- `GET /api/telegram/private-distribution-status` - System status
+
+#### Configuration
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_AUTHORIZED_CHAT_IDS=123456789,987654321
+```
+
+---
+
 ## v3.5.4 - 2026-04-16
 
 ### PUBLIC vs ADMIN Access Control System

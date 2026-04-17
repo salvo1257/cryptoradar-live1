@@ -894,6 +894,133 @@ class Settings(BaseModel):
 class TelegramMessage(BaseModel):
     message: str
 
+# ============== TELEGRAM PRIVATE DISTRIBUTION SYSTEM ==============
+# 
+# This is a PRIVATE signal distribution system, NOT a public bot.
+# - Only whitelisted chat IDs receive signals
+# - No public bot interaction allowed
+# - No automatic subscriptions
+#
+# ═══════════════════════════════════════════════════════════════════
+
+# Load authorized chat IDs from environment (comma-separated)
+# Example: TELEGRAM_AUTHORIZED_CHAT_IDS=123456789,987654321,555555555
+def load_authorized_chat_ids():
+    """Load authorized Telegram chat IDs from environment variable."""
+    env_ids = os.environ.get("TELEGRAM_AUTHORIZED_CHAT_IDS", "")
+    if not env_ids:
+        return set()
+    # Parse comma-separated IDs, strip whitespace, filter empty
+    return set(id.strip() for id in env_ids.split(",") if id.strip())
+
+# Initialize from environment
+TELEGRAM_AUTHORIZED_CHAT_IDS = load_authorized_chat_ids()
+
+# MongoDB collection for dynamic whitelist management
+telegram_whitelist_collection = db["telegram_whitelist"]
+
+async def get_authorized_chat_ids() -> set:
+    """
+    Get all authorized Telegram chat IDs.
+    Combines environment variable IDs with database-stored IDs.
+    Returns a set of authorized chat_id strings.
+    """
+    # Start with env-based IDs
+    authorized = set(TELEGRAM_AUTHORIZED_CHAT_IDS)
+    
+    # Add database-stored IDs
+    try:
+        cursor = telegram_whitelist_collection.find(
+            {"status": "active"},
+            {"chat_id": 1, "_id": 0}
+        )
+        async for doc in cursor:
+            if doc.get("chat_id"):
+                authorized.add(str(doc["chat_id"]))
+    except Exception as e:
+        logger.error(f"[TELEGRAM WHITELIST] Error loading from DB: {e}")
+    
+    return authorized
+
+async def is_chat_authorized(chat_id: str) -> bool:
+    """Check if a chat_id is in the whitelist."""
+    authorized = await get_authorized_chat_ids()
+    return str(chat_id) in authorized
+
+async def add_authorized_chat(chat_id: str, label: str = "", added_by: str = "admin"):
+    """
+    Add a chat_id to the authorized whitelist.
+    Stores in MongoDB for persistence and dynamic management.
+    """
+    chat_id = str(chat_id).strip()
+    if not chat_id:
+        return {"success": False, "error": "Invalid chat_id"}
+    
+    try:
+        await telegram_whitelist_collection.update_one(
+            {"chat_id": chat_id},
+            {
+                "$set": {
+                    "chat_id": chat_id,
+                    "label": label,
+                    "status": "active",
+                    "added_by": added_by,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+            },
+            upsert=True
+        )
+        logger.info(f"[TELEGRAM WHITELIST] Added chat_id: {chat_id} (label: {label})")
+        return {"success": True, "chat_id": chat_id}
+    except Exception as e:
+        logger.error(f"[TELEGRAM WHITELIST] Error adding chat_id {chat_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+async def remove_authorized_chat(chat_id: str):
+    """Remove a chat_id from the authorized whitelist (soft delete)."""
+    chat_id = str(chat_id).strip()
+    try:
+        result = await telegram_whitelist_collection.update_one(
+            {"chat_id": chat_id},
+            {"$set": {"status": "removed", "removed_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        if result.modified_count > 0:
+            logger.info(f"[TELEGRAM WHITELIST] Removed chat_id: {chat_id}")
+            return {"success": True, "chat_id": chat_id}
+        return {"success": False, "error": "Chat ID not found"}
+    except Exception as e:
+        logger.error(f"[TELEGRAM WHITELIST] Error removing chat_id {chat_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+async def get_whitelist_status():
+    """Get current whitelist status and all authorized users."""
+    try:
+        # Get env-based IDs
+        env_ids = list(TELEGRAM_AUTHORIZED_CHAT_IDS)
+        
+        # Get DB-stored IDs
+        db_users = []
+        cursor = telegram_whitelist_collection.find({"status": "active"}, {"_id": 0})
+        async for doc in cursor:
+            db_users.append(doc)
+        
+        # Combined unique IDs
+        all_ids = await get_authorized_chat_ids()
+        
+        return {
+            "total_authorized": len(all_ids),
+            "env_based_ids": env_ids,
+            "db_based_users": db_users,
+            "all_authorized_ids": list(all_ids)
+        }
+    except Exception as e:
+        logger.error(f"[TELEGRAM WHITELIST] Error getting status: {e}")
+        return {"error": str(e)}
+
+
 # ============== TELEGRAM NOTIFICATION SYSTEM ==============
 
 # Telegram notification templates (multilingual)
@@ -2644,6 +2771,103 @@ async def send_telegram_notification(template_key: str, data: dict, force_lang: 
     except Exception as e:
         logger.error(f"Error sending Telegram notification: {e}")
         return False
+
+
+async def send_private_signal_to_whitelist(template_key: str, data: dict, force_lang: str = None):
+    """
+    ═══════════════════════════════════════════════════════════════════════════
+    PRIVATE SIGNAL DISTRIBUTION - Sends to ALL authorized users in whitelist
+    ═══════════════════════════════════════════════════════════════════════════
+    
+    This function sends V3 signals ONLY to whitelisted chat IDs.
+    - No public broadcast
+    - No automatic subscriptions
+    - Private distribution only
+    
+    Args:
+        template_key: Key from TELEGRAM_TEMPLATES
+        data: Dictionary with placeholders for the template
+        force_lang: Force a specific language
+    
+    Returns:
+        dict with success status and delivery report
+    """
+    try:
+        # Get bot token from settings
+        tg_settings = await get_telegram_settings()
+        
+        if not tg_settings or not tg_settings.get("bot_token"):
+            logger.warning("[PRIVATE SIGNAL] Bot token not configured")
+            return {"success": False, "error": "Bot token not configured", "sent_to": []}
+        
+        bot_token = tg_settings["bot_token"]
+        
+        # Get all authorized chat IDs
+        authorized_ids = await get_authorized_chat_ids()
+        
+        if not authorized_ids:
+            logger.warning("[PRIVATE SIGNAL] No authorized chat IDs configured")
+            return {"success": False, "error": "No authorized recipients", "sent_to": []}
+        
+        # Get template in appropriate language
+        lang = force_lang or tg_settings.get("language", "en")
+        if lang not in TELEGRAM_TEMPLATES.get(template_key, {}):
+            lang = "en"
+        
+        template = TELEGRAM_TEMPLATES.get(template_key, {}).get(lang)
+        if not template:
+            logger.error(f"[PRIVATE SIGNAL] Template {template_key} not found for language {lang}")
+            return {"success": False, "error": f"Template not found: {template_key}", "sent_to": []}
+        
+        # Format message
+        try:
+            message = template.format(**data)
+        except KeyError as e:
+            logger.error(f"[PRIVATE SIGNAL] Missing placeholder: {e}")
+            return {"success": False, "error": f"Missing data: {e}", "sent_to": []}
+        
+        # Send to ALL authorized chat IDs
+        sent_to = []
+        failed = []
+        
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            for chat_id in authorized_ids:
+                try:
+                    response = await http_client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={
+                            "chat_id": chat_id,
+                            "text": message,
+                            "parse_mode": "HTML",
+                            "disable_web_page_preview": True
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        sent_to.append(chat_id)
+                        logger.info(f"[PRIVATE SIGNAL] ✅ Sent to {chat_id}")
+                    else:
+                        failed.append({"chat_id": chat_id, "error": response.text})
+                        logger.warning(f"[PRIVATE SIGNAL] ❌ Failed for {chat_id}: {response.status_code}")
+                        
+                except Exception as e:
+                    failed.append({"chat_id": chat_id, "error": str(e)})
+                    logger.error(f"[PRIVATE SIGNAL] ❌ Error for {chat_id}: {e}")
+        
+        success = len(sent_to) > 0
+        logger.info(f"[PRIVATE SIGNAL] Distribution complete: {len(sent_to)}/{len(authorized_ids)} delivered")
+        
+        return {
+            "success": success,
+            "template": template_key,
+            "total_recipients": len(authorized_ids),
+            "sent_to": sent_to,
+            "failed": failed
+        }
+        
+    except Exception as e:
+        logger.error(f"[PRIVATE SIGNAL] Distribution error: {e}")
+        return {"success": False, "error": str(e), "sent_to": []}
 
 
 async def notify_operational_signal(signal_data: dict):
@@ -21228,6 +21452,176 @@ async def get_v3_alerts_status(_: bool = Depends(verify_admin_access)):
         ],
         "alert_triggers": ["V3 ENTRY_READY only"],
         "deduplication": "1 hour cooldown per setup"
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TELEGRAM PRIVATE DISTRIBUTION - WHITELIST MANAGEMENT ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/telegram/whitelist")
+async def get_telegram_whitelist(_: bool = Depends(verify_admin_access)):
+    """
+    Get the current Telegram whitelist status.
+    Shows all authorized chat IDs from both env and database.
+    """
+    status = await get_whitelist_status()
+    return status
+
+
+@api_router.post("/telegram/whitelist/add")
+async def add_to_whitelist(
+    chat_id: str = Query(..., description="Telegram chat ID to authorize"),
+    label: str = Query(default="", description="Optional label (e.g., user name)"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Add a chat ID to the authorized whitelist.
+    This user will receive private V3 signal distributions.
+    """
+    result = await add_authorized_chat(chat_id, label, added_by="admin_api")
+    return result
+
+
+@api_router.delete("/telegram/whitelist/remove")
+async def remove_from_whitelist(
+    chat_id: str = Query(..., description="Telegram chat ID to remove"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Remove a chat ID from the authorized whitelist.
+    This user will no longer receive signals.
+    """
+    result = await remove_authorized_chat(chat_id)
+    return result
+
+
+@api_router.post("/telegram/whitelist/test-broadcast")
+async def test_whitelist_broadcast(_: bool = Depends(verify_admin_access)):
+    """
+    Send a test message to ALL authorized users in the whitelist.
+    Verifies the private distribution system is working.
+    """
+    # Get bot token
+    tg_settings = await get_telegram_settings()
+    if not tg_settings or not tg_settings.get("bot_token"):
+        raise HTTPException(status_code=400, detail="Telegram bot token not configured")
+    
+    bot_token = tg_settings["bot_token"]
+    authorized_ids = await get_authorized_chat_ids()
+    
+    if not authorized_ids:
+        raise HTTPException(status_code=400, detail="No authorized chat IDs configured")
+    
+    # Test message
+    test_message = """🔐 <b>CRYPTORADAR - TEST DISTRIBUZIONE PRIVATA</b>
+
+✅ Sei nella whitelist autorizzata.
+📡 Riceverai i segnali V3 operativi.
+
+<i>Questo è un messaggio di test.</i>
+
+#CryptoRadar #Test"""
+    
+    sent_to = []
+    failed = []
+    
+    async with httpx.AsyncClient(timeout=15.0) as http_client:
+        for chat_id in authorized_ids:
+            try:
+                response = await http_client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": test_message,
+                        "parse_mode": "HTML"
+                    }
+                )
+                if response.status_code == 200:
+                    sent_to.append(chat_id)
+                else:
+                    failed.append({"chat_id": chat_id, "error": response.text[:100]})
+            except Exception as e:
+                failed.append({"chat_id": chat_id, "error": str(e)[:100]})
+    
+    return {
+        "success": len(sent_to) > 0,
+        "total_authorized": len(authorized_ids),
+        "sent_to": sent_to,
+        "sent_count": len(sent_to),
+        "failed": failed,
+        "failed_count": len(failed)
+    }
+
+
+@api_router.post("/telegram/send-private-v3-signal")
+async def send_private_v3_signal(
+    direction: str = Query(..., description="LONG or SHORT"),
+    entry_low: float = Query(...),
+    entry_high: float = Query(...),
+    stop_loss: float = Query(...),
+    target_1: float = Query(...),
+    target_2: float = Query(default=None),
+    btc_price: float = Query(default=None),
+    confidence: float = Query(default=75),
+    setup_type: str = Query(default="V3 Multi-Timeframe"),
+    reasoning: str = Query(default=""),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Manually send a V3 signal to all whitelisted users.
+    For testing or manual signal distribution.
+    """
+    # Calculate R:R
+    if direction == "LONG":
+        risk = entry_high - stop_loss
+        reward = target_1 - entry_high
+    else:
+        risk = stop_loss - entry_low
+        reward = entry_low - target_1
+    
+    rr = reward / risk if risk > 0 else 0
+    
+    data = {
+        "direction": direction,
+        "btc_price": btc_price or entry_high,
+        "confidence": confidence,
+        "entry_low": entry_low,
+        "entry_high": entry_high,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+        "target_2": target_2 or (target_1 * 1.02 if direction == "LONG" else target_1 * 0.98),
+        "rr": rr,
+        "urgency": "MEDIUM",
+        "valid_for": 60,
+        "setup_type": setup_type,
+        "reasoning": reasoning or f"Segnale V3 {direction} manuale"
+    }
+    
+    result = await send_private_signal_to_whitelist("operational_signal", data)
+    return result
+
+
+@api_router.get("/telegram/private-distribution-status")
+async def get_private_distribution_status(_: bool = Depends(verify_admin_access)):
+    """
+    Get complete status of the private signal distribution system.
+    """
+    tg_settings = await get_telegram_settings()
+    whitelist_status = await get_whitelist_status()
+    
+    return {
+        "system": "PRIVATE_DISTRIBUTION",
+        "description": "V3 signals sent only to whitelisted users",
+        "bot_configured": bool(tg_settings and tg_settings.get("bot_token")),
+        "bot_token_masked": tg_settings["bot_token"][:10] + "..." if tg_settings and tg_settings.get("bot_token") else None,
+        "whitelist": whitelist_status,
+        "security": {
+            "public_access": False,
+            "auto_subscribe": False,
+            "broadcast_enabled": False,
+            "whitelist_only": True
+        }
     }
 
 
