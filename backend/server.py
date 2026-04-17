@@ -6388,6 +6388,68 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None, derivativ
         elif derivatives_bias != "NEUTRAL" and bias != "NEUTRAL" and derivatives_bias != bias:
             confidence = max(30, confidence - 15)  # Conflicting - reduce confidence
     
+    # ══════════════════════════════════════════════════════════════════════
+    # V3.5.7: LIQUIDITY IMBALANCE OVERRIDE
+    # If liquidity imbalance is extreme (> 2x ratio), it becomes the PRIMARY
+    # driver for market bias regardless of other indicators.
+    # 
+    # LOGIC: Market makers and smart money position liquidity where they
+    # expect price to go. A 2.5x+ imbalance is a clear signal.
+    # ══════════════════════════════════════════════════════════════════════
+    liquidity_override_applied = False
+    liquidity_override_reason = None
+    
+    # This requires liquidity data to be passed - will be populated when called
+    # from contexts that have access to liquidity_clusters
+    # For now, we'll use orderbook imbalance as a proxy
+    if orderbook:
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        # Calculate extended depth (top 50 levels = more significant)
+        if len(bids) >= 20 and len(asks) >= 20:
+            # Calculate total liquidity on each side
+            bid_liquidity = sum([float(b[0]) * float(b[1]) for b in bids[:50]])
+            ask_liquidity = sum([float(a[0]) * float(a[1]) for a in asks[:50]])
+            
+            total_liquidity = bid_liquidity + ask_liquidity
+            
+            if total_liquidity > 0:
+                # Calculate imbalance ratio
+                if ask_liquidity > 0:
+                    liq_ratio_above = ask_liquidity / bid_liquidity if bid_liquidity > 0 else 10
+                else:
+                    liq_ratio_above = 0
+                    
+                if bid_liquidity > 0:
+                    liq_ratio_below = bid_liquidity / ask_liquidity if ask_liquidity > 0 else 10
+                else:
+                    liq_ratio_below = 0
+                
+                # OVERRIDE LOGIC: If ratio > 2.0, liquidity direction dominates
+                # More liquidity ABOVE = Price will hunt it = BULLISH
+                # More liquidity BELOW = Price will hunt it = BEARISH
+                
+                if liq_ratio_above >= 2.0:
+                    # Much more liquidity above - price attracted upward
+                    if bias != "BULLISH":
+                        liquidity_override_applied = True
+                        liquidity_override_reason = f"Liquidity Override: {liq_ratio_above:.1f}x more above (${ask_liquidity/1e6:.1f}M vs ${bid_liquidity/1e6:.1f}M)"
+                        bias = "BULLISH"
+                        confidence = max(confidence, 65)  # Minimum 65% on override
+                        analysis_text = liquidity_override_reason + ". " + analysis_text
+                        logger.info(f"[BIAS] LIQUIDITY OVERRIDE: Forcing BULLISH due to {liq_ratio_above:.1f}x imbalance above")
+                
+                elif liq_ratio_below >= 2.0:
+                    # Much more liquidity below - price attracted downward
+                    if bias != "BEARISH":
+                        liquidity_override_applied = True
+                        liquidity_override_reason = f"Liquidity Override: {liq_ratio_below:.1f}x more below (${bid_liquidity/1e6:.1f}M vs ${ask_liquidity/1e6:.1f}M)"
+                        bias = "BEARISH"
+                        confidence = max(confidence, 65)  # Minimum 65% on override
+                        analysis_text = liquidity_override_reason + ". " + analysis_text
+                        logger.info(f"[BIAS] LIQUIDITY OVERRIDE: Forcing BEARISH due to {liq_ratio_below:.1f}x imbalance below")
+    
     return MarketBias(
         bias=bias,
         confidence=round(confidence, 1),
@@ -6403,7 +6465,9 @@ def calculate_market_bias(candles: List[dict], orderbook: dict = None, derivativ
             "momentum_score": momentum_score,
             "orderbook_score": ob_score,
             "rsi": round(rsi, 1),
-            "orderbook_imbalance": round(ob_imbalance, 2)
+            "orderbook_imbalance": round(ob_imbalance, 2),
+            "liquidity_override": liquidity_override_applied,
+            "liquidity_override_reason": liquidity_override_reason
         },
         exchange_consensus=exchange_consensus,
         # V3.3: Derivatives positioning
@@ -22186,87 +22250,146 @@ async def get_mentor_market_analysis(
     """
     Get AI-powered educational market analysis from the Radar Mentor.
     
+    V3.5.7: Now uses the SAME data pipeline as the V3 Signal Engine to ensure
+    perfect synchronization between Mentor analysis and Dashboard widgets.
+    
     PUBLIC users see: Context + Mentor's Tip (teaser)
     ADMIN users see: Full analysis (Context + Logic + Lesson + Tip)
     
     Analysis is cached for 5 minutes to reduce API costs.
     """
     try:
-        # Gather current market data from various sources
-        market_data = {}
+        # ═══════════════════════════════════════════════════════════════════════════
+        # FETCH DATA USING SAME PIPELINE AS V3 SIGNAL ENGINE
+        # This ensures Mentor sees EXACTLY what the Dashboard sees
+        # ═══════════════════════════════════════════════════════════════════════════
         
-        # Get BTC price from Kraken
-        try:
-            ticker = await fetch_kraken_ticker()
-            market_data["btc_price"] = ticker.get("price", 0) if ticker else 0
-        except:
-            market_data["btc_price"] = 0
+        # 1. Get price and candles
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker.get("price", 0) if ticker else 0
         
-        # Get market regime
-        try:
-            regime_data = await analyze_market_regime()
-            market_data["market_regime"] = regime_data.get("regime", "UNKNOWN")
-            market_data["regime_confidence"] = regime_data.get("confidence", 0)
-        except:
-            market_data["market_regime"] = "UNKNOWN"
-            market_data["regime_confidence"] = 0
+        if current_price == 0:
+            return {
+                "success": False,
+                "error": "Price data unavailable",
+                "analysis": None
+            }
         
-        # Get market bias
-        try:
-            bias_data = await analyze_market_bias()
-            market_data["market_bias"] = bias_data.get("bias", "NEUTRAL")
-            market_data["bias_percentage"] = bias_data.get("bias_percentage", 50)
-        except:
-            market_data["market_bias"] = "NEUTRAL"
-            market_data["bias_percentage"] = 50
+        candles_4h = await fetch_kraken_ohlc(240)  # 4H candles
+        aggregated_orderbook = await get_aggregated_orderbook()
         
-        # Get market energy
-        try:
-            energy_data = await analyze_market_energy()
-            market_data["energy_score"] = energy_data.get("energy_score", 50)
-            market_data["energy_level"] = energy_data.get("energy_level", "MEDIUM")
-        except:
-            market_data["energy_score"] = 50
-            market_data["energy_level"] = "MEDIUM"
+        # 2. Fetch derivatives context (same as V3)
+        derivatives_context = await fetch_coinglass_derivatives_context()
         
-        # Get liquidity magnet
-        try:
-            liquidity_data = await analyze_liquidity_magnet()
-            market_data["liquidity_direction"] = liquidity_data.get("target_direction", "BALANCED")
-            market_data["magnet_score"] = liquidity_data.get("magnet_score", 50)
-            market_data["magnet_price"] = liquidity_data.get("nearest_magnet_price", 0)
-            market_data["magnet_distance_percent"] = liquidity_data.get("nearest_magnet_distance_percent", 0)
-        except:
-            market_data["liquidity_direction"] = "BALANCED"
-            market_data["magnet_score"] = 50
+        # 3. Calculate S/R levels
+        sr_levels = calculate_support_resistance_enhanced(candles_4h, current_price, aggregated_orderbook)
+        supports = [l for l in sr_levels if l.level_type == "support"]
+        resistances = [l for l in sr_levels if l.level_type == "resistance"]
         
-        # Get OI data
-        try:
-            oi_data = await analyze_open_interest()
-            market_data["oi_change_percent"] = oi_data.get("oi_change_percent", 0)
-            market_data["oi_trend"] = oi_data.get("trend", "STABLE")
-        except:
-            market_data["oi_change_percent"] = 0
-            market_data["oi_trend"] = "STABLE"
+        # 4. Calculate Market Bias (same as V3)
+        market_bias = calculate_market_bias(candles_4h, aggregated_orderbook, derivatives_context)
         
-        # Get funding rate
-        try:
-            funding_data = await get_funding_rate()
-            market_data["funding_rate"] = funding_data.get("rate", 0)
-            market_data["funding_status"] = funding_data.get("status", "NEUTRAL")
-        except:
-            market_data["funding_rate"] = 0
-            market_data["funding_status"] = "NEUTRAL"
+        # 5. Generate Liquidity Clusters
+        clusters, liquidity_direction = generate_liquidity_clusters_enhanced(
+            candles_4h, current_price, aggregated_orderbook, "it"
+        )
+        liquidity_above = sum(c.estimated_value for c in clusters if c.side == "above")
+        liquidity_below = sum(c.estimated_value for c in clusters if c.side == "below")
         
-        # Get V3 signal status (if active)
-        try:
-            v3_signal = await get_v3_trade_signal_internal()
-            if v3_signal and v3_signal.get("signal") not in ["NO_SIGNAL", "WAITING"]:
-                market_data["v3_signal"] = v3_signal.get("signal")
-                market_data["v3_direction"] = v3_signal.get("direction")
-                market_data["v3_phase"] = v3_signal.get("phase")
-        except:
-            pass
+        # 6. Get OI data
+        oi_data = await fetch_coinglass_open_interest()
+        oi_data_dict = {
+            "change_1h": oi_data.get("change_1h", 0) if oi_data else 0,
+            "change_24h": oi_data.get("change_24h", 0) if oi_data else 0
+        }
+        
+        # 7. Get funding rate
+        funding_rate = await generate_funding_rate(aggregated_orderbook, None, "it")
+        
+        # 8. Calculate Market Energy (same as V3)
+        market_energy = analyze_market_energy(
+            candles=candles_4h,
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            open_interest_data=oi_data_dict,
+            liquidity_clusters=clusters,
+            derivatives_context=derivatives_context,
+            lang="it"
+        )
+        
+        # 9. Calculate Liquidity Magnet (same as V3)
+        liquidity_magnet = analyze_liquidity_magnet(
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            liquidity_clusters=clusters,
+            liquidation_data=derivatives_context.get("liquidation") if derivatives_context else None,
+            open_interest_data=oi_data_dict,
+            derivatives_context=derivatives_context,
+            lang="it"
+        )
+        
+        # 10. Analyze Whale Activity
+        whale_activity = analyze_whale_activity(
+            candles=candles_4h,
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            liquidation_data=None,
+            open_interest_data=oi_data_dict,
+            lang="it"
+        )
+        
+        # 11. Build Liquidity Ladder
+        liquidity_ladder = build_liquidity_ladder(
+            current_price=current_price,
+            sr_levels=sr_levels,
+            liquidity_clusters=clusters,
+            aggregated_orderbook=aggregated_orderbook,
+            lang="it"
+        )
+        
+        # 12. DETECT MARKET REGIME (same as V3 - this is the key!)
+        market_regime = detect_market_regime(
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liquidity_magnet,
+            liquidity_ladder=liquidity_ladder,
+            whale_activity=whale_activity,
+            open_interest_data=oi_data_dict,
+            expected_move=0.5,
+            trap_risk_detected=False,
+            current_price=current_price,
+            supports=supports,
+            resistances=resistances,
+            lang="it"
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════════════
+        # BUILD MARKET DATA FOR MENTOR
+        # ═══════════════════════════════════════════════════════════════════════════
+        market_data = {
+            "btc_price": current_price,
+            "market_regime": market_regime.regime,
+            "regime_confidence": market_regime.regime_strength,
+            "market_bias": market_bias.bias if market_bias else "NEUTRAL",
+            "bias_percentage": market_bias.confidence if market_bias else 50,
+            "energy_score": market_energy.energy_score if market_energy else 50,
+            "energy_level": market_energy.compression_level if market_energy else "MEDIUM",
+            "liquidity_direction": liquidity_magnet.target_direction if liquidity_magnet else "BALANCED",
+            "magnet_score": liquidity_magnet.magnet_score if liquidity_magnet else 50,
+            "magnet_price": liquidity_magnet.nearest_magnet_price if liquidity_magnet else 0,
+            "magnet_distance_percent": liquidity_magnet.nearest_magnet_distance_percent if liquidity_magnet else 0,
+            "oi_change_percent": oi_data_dict.get("change_24h", 0),
+            "oi_trend": "RISING" if oi_data_dict.get("change_24h", 0) > 2 else "FALLING" if oi_data_dict.get("change_24h", 0) < -2 else "STABLE",
+            "funding_rate": funding_rate.current_rate if funding_rate else 0,
+            "funding_status": funding_rate.sentiment if funding_rate else "NEUTRAL",
+            # Add liquidity imbalance data
+            "liquidity_above": liquidity_above,
+            "liquidity_below": liquidity_below,
+            "liquidity_imbalance_ratio": liquidity_above / max(liquidity_below, 1),
+            # Add whale data
+            "whale_direction": whale_activity.direction if whale_activity else "NEUTRAL",
+            "whale_strength": whale_activity.strength if whale_activity else 0,
+        }
         
         # Generate analysis
         analysis = await get_mentor_analysis(
@@ -22282,13 +22405,20 @@ async def get_mentor_market_analysis(
             "market_snapshot": {
                 "btc_price": market_data.get("btc_price"),
                 "regime": market_data.get("market_regime"),
+                "regime_strength": market_data.get("regime_confidence"),
                 "bias": market_data.get("market_bias"),
-                "energy": market_data.get("energy_score")
+                "energy": market_data.get("energy_score"),
+                "liquidity_above_m": round(liquidity_above / 1_000_000, 1),
+                "liquidity_below_m": round(liquidity_below / 1_000_000, 1),
+                "whale_direction": market_data.get("whale_direction"),
+                "whale_strength": market_data.get("whale_strength"),
             }
         }
         
     except Exception as e:
         logger.error(f"[MENTOR] Error in analysis endpoint: {e}")
+        import traceback
+        logger.error(f"[MENTOR] Traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e),

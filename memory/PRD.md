@@ -1,8 +1,8 @@
-# CryptoRadar v3.5.7 - Product Requirements Document
-**Last Updated:** 2026-04-17 (V3 Engine Optimization & Quality Score System)
+# CryptoRadar v3.5.8 - Product Requirements Document
+**Last Updated:** 2026-04-17 (Golden Record Sync Complete)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.7
+- **Current Version:** v3.5.8 - GOLDEN RECORD READY FOR LIVE VALIDATION
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -13,8 +13,31 @@
 - **V3.5.5 Feature:** Telegram Private Distribution System with whitelist
 - **V3.5.6 Feature:** Radar Mentor AI (Claude Sonnet 4.5) with Freemium model
 - **V3.5.7 Feature:** Probabilistic Quality Score + Smart Stop Loss + CoinGlass Cache
+- **V3.5.8 Fix:** Golden Record Sync (Regime/Mentor/Liquidity Alignment)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3.5.8 GOLDEN RECORD SYNC (2026-04-17)
+
+### Issues Fixed
+1. **Regime Sync**: Mentor now uses SAME data pipeline as V3 Signal Engine
+   - Before: Mentor showed "UNKNOWN" while Dashboard showed "COMPRESSION"
+   - After: Both show "COMPRESSION 85%" consistently
+
+2. **Whale Data Stability**: Data Freshness now shows 7/7 (was 6/7)
+   - Added whale_activity tracking to data freshness system
+   - Whale direction/strength now included in Mentor analysis
+
+3. **Liquidity Bias Override**: 
+   - If liquidity imbalance >= 2x, it OVERRIDES other bias indicators
+   - Logic: More liquidity above = BULLISH (price hunts it)
+   - Logic: More liquidity below = BEARISH (price hunts it)
+
+### Technical Changes
+- Rewrote `/api/mentor/analyze` to use same data pipeline as V3 engine
+- Added `detect_market_regime()` call to mentor endpoint
+- Added liquidity imbalance + whale data to mentor prompt
+- Added liquidity override logic to `calculate_market_bias()`
 
 ## V3.5.7 ENGINE OPTIMIZATION (2026-04-17)
 

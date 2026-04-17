@@ -131,6 +131,15 @@ class MentorEngine:
         magnet_price = market_data.get("magnet_price", 0)
         magnet_distance = market_data.get("magnet_distance_percent", 0)
         
+        # Liquidity imbalance (new)
+        liquidity_above = market_data.get("liquidity_above", 0)
+        liquidity_below = market_data.get("liquidity_below", 0)
+        liquidity_imbalance = market_data.get("liquidity_imbalance_ratio", 1)
+        
+        # Whale data (new)
+        whale_direction = market_data.get("whale_direction", "NEUTRAL")
+        whale_strength = market_data.get("whale_strength", 0)
+        
         # OI and Funding
         oi_change = market_data.get("oi_change_percent", 0)
         oi_trend = market_data.get("oi_trend", "STABLE")
@@ -158,6 +167,13 @@ class MentorEngine:
 - Direzione Magnete: {liquidity_direction}
 - Forza Attrazione: {magnet_score}/100
 - Target Magnete: ${magnet_price:,.0f} ({magnet_distance:+.2f}% dal prezzo)
+- Liquidità SOPRA prezzo: ${liquidity_above/1_000_000:.1f}M
+- Liquidità SOTTO prezzo: ${liquidity_below/1_000_000:.1f}M
+- Rapporto imbalance: {liquidity_imbalance:.1f}x
+
+🐋 ATTIVITÀ WHALE:
+- Direzione: {whale_direction}
+- Forza: {whale_strength}/100
 
 📈 DERIVATI:
 - Variazione OI: {oi_change:+.2f}% ({oi_trend})
