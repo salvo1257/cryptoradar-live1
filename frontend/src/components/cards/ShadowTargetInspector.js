@@ -11,6 +11,7 @@ import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
 import { HelpOverlay } from '../ui/HelpOverlay';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 import {
   Tooltip,
   TooltipContent,
@@ -22,6 +23,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function ShadowTargetInspector({ language = 'it' }) {
   const { learnMode } = useApp();
+  const { getAdminHeaders } = useAccess();
   const [shadowData, setShadowData] = useState(null);
   const [performanceData, setPerformanceData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -129,15 +131,17 @@ export function ShadowTargetInspector({ language = 'it' }) {
       setLoading(true);
       setError(null);
       
+      const headers = getAdminHeaders();
+      
       // Fetch shadow targets
-      const response = await fetch(`${API_URL}/api/v3/shadow-targets?limit=50`);
+      const response = await fetch(`${API_URL}/api/v3/shadow-targets?limit=50`, { headers });
       if (!response.ok) throw new Error('Failed to fetch shadow targets');
       const data = await response.json();
       setShadowData(data);
       
       // Fetch performance comparison
       try {
-        const perfResponse = await fetch(`${API_URL}/api/v3/shadow-performance`);
+        const perfResponse = await fetch(`${API_URL}/api/v3/shadow-performance`, { headers });
         if (perfResponse.ok) {
           const perfData = await perfResponse.json();
           setPerformanceData(perfData);
@@ -152,7 +156,7 @@ export function ShadowTargetInspector({ language = 'it' }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   useEffect(() => {
     fetchShadowData();

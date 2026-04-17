@@ -12,11 +12,13 @@ import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { HelpOverlay } from '../ui/HelpOverlay';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function V3MonitoringPanel({ language = 'it' }) {
   const { learnMode } = useApp();
+  const { getAdminHeaders } = useAccess();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -117,7 +119,9 @@ export function V3MonitoringPanel({ language = 'it' }) {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/api/v3/monitoring-metrics`);
+      const response = await fetch(`${API_URL}/api/v3/monitoring-metrics`, {
+        headers: getAdminHeaders()
+      });
       if (!response.ok) throw new Error('Failed to fetch V3 metrics');
       const data = await response.json();
       setMetrics(data);
@@ -127,7 +131,7 @@ export function V3MonitoringPanel({ language = 'it' }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   useEffect(() => {
     fetchMetrics();

@@ -11,11 +11,13 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function ReliabilityAnalyticsPage() {
   const { t, language } = useApp();
+  const { getAdminHeaders } = useAccess();
   const [analytics, setAnalytics] = useState(null);
   const [clusterValidation, setClusterValidation] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,7 +26,9 @@ export function ReliabilityAnalyticsPage() {
   const fetchAnalytics = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/signal-history/reliability-analytics`);
+      const response = await fetch(`${API_URL}/api/signal-history/reliability-analytics`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setAnalytics(data);
     } catch (error) {
@@ -32,17 +36,19 @@ export function ReliabilityAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   const fetchClusterValidation = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v3/cluster-validation-summary`);
+      const response = await fetch(`${API_URL}/api/v3/cluster-validation-summary`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setClusterValidation(data);
     } catch (error) {
       console.error('Error fetching cluster validation:', error);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   useEffect(() => {
     fetchAnalytics();

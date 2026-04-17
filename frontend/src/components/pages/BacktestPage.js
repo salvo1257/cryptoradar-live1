@@ -9,11 +9,13 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function BacktestPage() {
   const { language } = useApp();
+  const { getAdminHeaders } = useAccess();
   const [runs, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [signals, setSignals] = useState([]);
@@ -38,7 +40,9 @@ export function BacktestPage() {
   const fetchRuns = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/backtest/runs?limit=20`);
+      const response = await fetch(`${API_URL}/api/backtest/runs?limit=20`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setRuns(data.runs || []);
     } catch (error) {
@@ -46,18 +50,20 @@ export function BacktestPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   const fetchSignals = useCallback(async (runId) => {
     try {
-      const response = await fetch(`${API_URL}/api/backtest/run/${runId}/signals`);
+      const response = await fetch(`${API_URL}/api/backtest/run/${runId}/signals`, {
+        headers: getAdminHeaders()
+      });
       const data = await response.json();
       setSignals(data.signals || []);
       setSelectedRun(runId);
     } catch (error) {
       console.error('Error fetching signals:', error);
     }
-  }, []);
+  }, [getAdminHeaders]);
 
   useEffect(() => {
     fetchRuns();
@@ -75,7 +81,8 @@ export function BacktestPage() {
       });
       
       const response = await fetch(`${API_URL}/api/backtest/launch?${params}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: getAdminHeaders()
       });
       const data = await response.json();
       

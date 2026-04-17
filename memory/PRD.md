@@ -1,8 +1,8 @@
-# CryptoRadar v3.5.8 - Product Requirements Document
-**Last Updated:** 2026-04-17 (Golden Record Sync Complete)
+# CryptoRadar v3.5.9 - Product Requirements Document
+**Last Updated:** 2026-04-17 (Statistical Modules Repaired)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.8 - GOLDEN RECORD READY FOR LIVE VALIDATION
+- **Current Version:** v3.5.9 - FULLY OPERATIONAL FOR LIVE VALIDATION
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -14,8 +14,31 @@
 - **V3.5.6 Feature:** Radar Mentor AI (Claude Sonnet 4.5) with Freemium model
 - **V3.5.7 Feature:** Probabilistic Quality Score + Smart Stop Loss + CoinGlass Cache
 - **V3.5.8 Fix:** Golden Record Sync (Regime/Mentor/Liquidity Alignment)
+- **V3.5.9 Fix:** Statistical Modules Repaired (History, Analytics, Backtest)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
+
+### Issue
+Frontend components were not passing Admin authentication headers to protected backend endpoints, causing:
+- "Errore caricamento metriche V3" on Storico Segnali page
+- "Failed to fetch shadow targets" error
+- "Errore nel caricamento analytics" on Analisi Affidabilità page
+
+### Fix Applied
+Added `useAccess` context and `getAdminHeaders()` to all protected API calls in:
+- `/app/frontend/src/components/cards/V3MonitoringPanel.js`
+- `/app/frontend/src/components/cards/ShadowTargetInspector.js`
+- `/app/frontend/src/components/pages/ReliabilityAnalyticsPage.js`
+- `/app/frontend/src/components/pages/BacktestPage.js`
+
+### Pages Now Working
+| Page | Status | Data Displayed |
+|------|--------|----------------|
+| Storico Segnali | ✅ FIXED | V3 Monitoring, Outcomes, Win Rate |
+| Analisi Affidabilità | ✅ FIXED | Reliability Heatmap, Per-Direction Stats |
+| Backtest | ✅ FIXED | 20 historical runs, Win Rates up to 97.5% |
 
 ## V3.5.8 GOLDEN RECORD SYNC (2026-04-17)
 
