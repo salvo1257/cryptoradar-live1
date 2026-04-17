@@ -1,8 +1,8 @@
-# CryptoRadar v3.5.5 - Product Requirements Document
-**Last Updated:** 2026-04-17 (Telegram Private Distribution System)
+# CryptoRadar v3.5.6 - Product Requirements Document
+**Last Updated:** 2026-04-17 (Radar Mentor AI Integration)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.5
+- **Current Version:** v3.5.6
 - **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -11,6 +11,7 @@
 - **V3.5.3 Feature:** Liquidity Zone Engine added to main dashboard
 - **V3.5.4 Feature:** PUBLIC vs ADMIN access control system
 - **V3.5.5 Feature:** Telegram Private Distribution System with whitelist
+- **V3.5.6 Feature:** Radar Mentor AI (Claude Sonnet 4.5) with Freemium model
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
@@ -21,6 +22,45 @@ Private signal distribution system for V3 signals. ONLY whitelisted users receiv
 - NO public bot interaction
 - NO automatic subscriptions
 - NO broadcast to groups
+
+## RADAR MENTOR AI (v3.5.6 - 2026-04-17)
+
+### Overview
+AI-powered trading educator that interprets live market data and explains it to beginner traders.
+Uses **Claude Sonnet 4.5** via Emergent LLM Key for natural, educational responses.
+
+### Freemium Model
+| Access Level | Content Visible |
+|--------------|-----------------|
+| PUBLIC | Context + Mentor's Tip (teaser) |
+| ADMIN | Context + Logic + Lesson + Tip (full analysis) |
+
+### Features
+- Event-driven analysis (on regime change, V3 signal)
+- On-demand analysis (user request)
+- 5-minute caching to reduce API costs
+- Market snapshot display (BTC price, Regime, Energy)
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mentor/analyze` | GET | Generate AI analysis (cached 5min) |
+| `/api/mentor/latest` | GET | Get latest cached analysis |
+| `/api/mentor/status` | GET | Check Mentor engine status |
+
+### Files
+| File | Purpose |
+|------|---------|
+| `/app/backend/mentor_engine.py` | Claude 4.5 integration logic |
+| `/app/frontend/src/components/cards/MentorCard.js` | React UI widget |
+
+### Configuration
+```bash
+# In backend/.env
+EMERGENT_LLM_KEY=your_emergent_key_here
+```
+
+---
 
 ### How Chat IDs Are Stored
 | Source | Description | Persistence |

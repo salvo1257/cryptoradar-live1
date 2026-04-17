@@ -21913,9 +21913,12 @@ async def get_mentor_market_analysis(
         # Gather current market data from various sources
         market_data = {}
         
-        # Get BTC price
-        price_data = get_cached_price()
-        market_data["btc_price"] = price_data.get("price", 0) if price_data else 0
+        # Get BTC price from Kraken
+        try:
+            ticker = await fetch_kraken_ticker()
+            market_data["btc_price"] = ticker.get("price", 0) if ticker else 0
+        except:
+            market_data["btc_price"] = 0
         
         # Get market regime
         try:

@@ -21,6 +21,7 @@ import {
 import MarketRegimeCard from '../cards/MarketRegimeCard';
 import { DataFreshnessIndicator } from '../cards/DataFreshnessIndicator';
 import LiquidityZoneInspector from '../cards/LiquidityZoneInspector';
+import { MentorCard } from '../cards/MentorCard';
 import { Badge } from '../ui/badge';
 
 export function DashboardPage() {
@@ -143,6 +144,12 @@ export function DashboardPage() {
           <MarketRegimeCard language={language} />
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          RADAR MENTOR - AI Trading Educator (Freemium)
+          PUBLIC: Context + Tip | ADMIN: Full Analysis (Logic + Lesson)
+      ═══════════════════════════════════════════════════════════════════ */}
+      <MentorCard />
 
       {/* ═══════════════════════════════════════════════════════════════════
           LIQUIDITY CONTEXT: Magnet + Zones (PUBLIC - Full Decision Context)
