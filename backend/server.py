@@ -1353,89 +1353,101 @@ Sygnał wygasł bez trafienia celów lub stopu.
 #CryptoRadar #Wygasł #BTC"""
     },
     
-    # V3 ENTRY_READY Template - High-quality alerts only
+    # V3 ENTRY_READY Template - Professional format with full context
     "v3_entry_ready": {
-        "en": """🎯 <b>V3 ENTRY READY</b>
+        "en": """🚨 <b>CryptoRadar V3 Signal</b>
 
-{direction_emoji} Direction: <b>{direction}</b>
-💰 Price: ${price:,.0f}
+{direction_emoji} <b>{direction}</b>
+━━━━━━━━━━━━━━━━━━━━
 
-📍 Entry Zone: ${entry_low:,.0f} - ${entry_high:,.0f}
-🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
-🎯 Target 1: ${target_1:,.0f}
-🎯 Target 2: ${target_2:,.0f}
+📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop: ${stop_loss:,.0f}
+🎯 T1: ${target_1:,.0f}
+🎯 T2: ${target_2:,.0f}
+⚖️ R:R {rr:.1f}:1
 
-📊 Confidence: {confidence:.0f}%
-⚠️ Risk: {risk_level}
-⚖️ R:R: {rr:.2f}:1
-📈 Quality: {quality}/100
+<b>Context:</b>
+• Regime: {regime}
+• Bias: {bias} ({bias_pct}%)
+• Energy: {energy}
+• Liquidity: {liquidity_direction}
 
+📊 Quality: {quality}/100
 ⚡ Setup: {setup_type}
-🔄 Regime: {regime}
-✅ 5M Confirmation: {confirmation}
+
+⏰ {timestamp}
 
 #CryptoRadar #V3 #{direction}""",
         
-        "it": """🎯 <b>V3 ENTRY PRONTO</b>
+        "it": """🚨 <b>CryptoRadar V3 Segnale</b>
 
-{direction_emoji} Direzione: <b>{direction}</b>
-💰 Prezzo: ${price:,.0f}
+{direction_emoji} <b>{direction}</b>
+━━━━━━━━━━━━━━━━━━━━
 
-📍 Zona Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
-🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
-🎯 Target 1: ${target_1:,.0f}
-🎯 Target 2: ${target_2:,.0f}
+📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop: ${stop_loss:,.0f}
+🎯 T1: ${target_1:,.0f}
+🎯 T2: ${target_2:,.0f}
+⚖️ R:R {rr:.1f}:1
 
-📊 Confidenza: {confidence:.0f}%
-⚠️ Rischio: {risk_level}
-⚖️ R:R: {rr:.2f}:1
-📈 Qualità: {quality}/100
+<b>Contesto:</b>
+• Regime: {regime}
+• Bias: {bias} ({bias_pct}%)
+• Energia: {energy}
+• Liquidità: {liquidity_direction}
 
+📊 Qualità: {quality}/100
 ⚡ Setup: {setup_type}
-🔄 Regime: {regime}
-✅ Conferma 5M: {confirmation}
+
+⏰ {timestamp}
 
 #CryptoRadar #V3 #{direction}""",
         
-        "de": """🎯 <b>V3 EINSTIEG BEREIT</b>
+        "de": """🚨 <b>CryptoRadar V3 Signal</b>
 
-{direction_emoji} Richtung: <b>{direction}</b>
-💰 Preis: ${price:,.0f}
+{direction_emoji} <b>{direction}</b>
+━━━━━━━━━━━━━━━━━━━━
 
-📍 Einstiegszone: ${entry_low:,.0f} - ${entry_high:,.0f}
-🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
-🎯 Ziel 1: ${target_1:,.0f}
-🎯 Ziel 2: ${target_2:,.0f}
+📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop: ${stop_loss:,.0f}
+🎯 T1: ${target_1:,.0f}
+🎯 T2: ${target_2:,.0f}
+⚖️ R:R {rr:.1f}:1
 
-📊 Konfidenz: {confidence:.0f}%
-⚠️ Risiko: {risk_level}
-⚖️ R:R: {rr:.2f}:1
-📈 Qualität: {quality}/100
+<b>Kontext:</b>
+• Regime: {regime}
+• Bias: {bias} ({bias_pct}%)
+• Energie: {energy}
+• Liquidität: {liquidity_direction}
 
+📊 Qualität: {quality}/100
 ⚡ Setup: {setup_type}
-🔄 Regime: {regime}
-✅ 5M Bestätigung: {confirmation}
+
+⏰ {timestamp}
 
 #CryptoRadar #V3 #{direction}""",
 
-        "pl": """🎯 <b>V3 GOTOWY DO WEJŚCIA</b>
+        "pl": """🚨 <b>CryptoRadar V3 Sygnał</b>
 
-{direction_emoji} Kierunek: <b>{direction}</b>
-💰 Cena: ${price:,.0f}
+{direction_emoji} <b>{direction}</b>
+━━━━━━━━━━━━━━━━━━━━
 
-📍 Strefa Wejścia: ${entry_low:,.0f} - ${entry_high:,.0f}
-🛑 Stop Loss: ${stop_loss:,.0f} ({stop_type})
-🎯 Cel 1: ${target_1:,.0f}
-🎯 Cel 2: ${target_2:,.0f}
+📍 Entry: ${entry_low:,.0f} - ${entry_high:,.0f}
+🛑 Stop: ${stop_loss:,.0f}
+🎯 T1: ${target_1:,.0f}
+🎯 T2: ${target_2:,.0f}
+⚖️ R:R {rr:.1f}:1
 
-📊 Pewność: {confidence:.0f}%
-⚠️ Ryzyko: {risk_level}
-⚖️ R:R: {rr:.2f}:1
-📈 Jakość: {quality}/100
+<b>Kontekst:</b>
+• Regime: {regime}
+• Bias: {bias} ({bias_pct}%)
+• Energia: {energy}
+• Płynność: {liquidity_direction}
 
+📊 Jakość: {quality}/100
 ⚡ Setup: {setup_type}
-🔄 Regime: {regime}
-✅ Potwierdzenie 5M: {confirmation}
+
+⏰ {timestamp}
 
 #CryptoRadar #V3 #{direction}"""
     }
@@ -3056,6 +3068,57 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
         }
         setup_display = setup_labels.get(event_type, event_type.replace("_", " ").title())
         
+        # ═══════════════════════════════════════════════════════════════════
+        # FETCH MARKET CONTEXT for professional message format
+        # ═══════════════════════════════════════════════════════════════════
+        
+        # Get market regime
+        regime = setup_data.get("market_regime", "UNKNOWN")
+        regime_labels = {
+            "TREND": "TREND",
+            "RANGE": "RANGE", 
+            "COMPRESSION": "COMPRESSION",
+            "EXPANSION": "EXPANSION",
+            "UNKNOWN": "N/A"
+        }
+        regime_display = regime_labels.get(regime, regime)
+        
+        # Get market bias (try from setup_data or fetch)
+        bias = setup_data.get("market_bias", "NEUTRAL")
+        bias_pct = setup_data.get("bias_percentage", 50)
+        bias_labels = {
+            "BULLISH": "BULLISH",
+            "BEARISH": "BEARISH",
+            "NEUTRAL": "NEUTRAL"
+        }
+        bias_display = bias_labels.get(bias, bias)
+        
+        # Get energy level
+        energy = setup_data.get("energy_level", "MEDIUM")
+        energy_pct = setup_data.get("energy_percentage", 50)
+        if isinstance(energy_pct, (int, float)):
+            if energy_pct >= 70:
+                energy_display = "HIGH"
+            elif energy_pct >= 40:
+                energy_display = "MEDIUM"
+            else:
+                energy_display = "LOW"
+        else:
+            energy_display = energy
+        
+        # Get liquidity magnet direction
+        liquidity_dir = setup_data.get("liquidity_direction", "")
+        liquidity_strength = setup_data.get("liquidity_strength", "")
+        if liquidity_dir and liquidity_strength:
+            liquidity_display = f"{liquidity_strength} {liquidity_dir}".strip()
+        elif liquidity_dir:
+            liquidity_display = f"Attraction {liquidity_dir}"
+        else:
+            liquidity_display = "N/A"
+        
+        # Format timestamp
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        
         # Prepare data for template
         data = {
             "direction": direction,
@@ -3067,13 +3130,19 @@ async def send_v3_entry_alert(setup_data: dict, current_price: float = 0) -> boo
             "stop_type": setup_data.get("stop_type", "structure").title(),
             "target_1": setup_data.get("target_1", 0),
             "target_2": setup_data.get("target_2", 0),
-            "confidence": setup_data.get("confidence", quality),  # Use quality as confidence proxy
+            "confidence": setup_data.get("confidence", quality),
             "risk_level": risk_level,
             "rr": rr,
             "quality": quality,
             "setup_type": setup_display,
-            "regime": setup_data.get("market_regime", "UNKNOWN"),
-            "confirmation": confirmation_display
+            "regime": regime_display,
+            "confirmation": confirmation_display,
+            # New context fields
+            "bias": bias_display,
+            "bias_pct": int(bias_pct),
+            "energy": energy_display,
+            "liquidity_direction": liquidity_display,
+            "timestamp": timestamp
         }
         
         # Send notification
@@ -21600,6 +21669,66 @@ async def send_private_v3_signal(
     
     result = await send_private_signal_to_whitelist("operational_signal", data)
     return result
+
+
+@api_router.post("/telegram/test-v3-format")
+async def test_v3_message_format(
+    direction: str = Query(default="LONG", description="LONG or SHORT"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Test the new professional V3 message format.
+    Sends a sample signal with full market context to all whitelisted users.
+    """
+    # Sample data with full context
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    
+    sample_data = {
+        "direction": direction,
+        "direction_emoji": "📈" if direction == "LONG" else "📉",
+        "entry_low": 73400,
+        "entry_high": 73700,
+        "stop_loss": 72900 if direction == "LONG" else 74200,
+        "target_1": 74500 if direction == "LONG" else 72500,
+        "target_2": 75200 if direction == "LONG" else 71800,
+        "rr": 1.6,
+        "quality": 78,
+        "setup_type": "Sweep Low" if direction == "LONG" else "Sweep High",
+        "regime": "COMPRESSION",
+        "bias": "BULLISH" if direction == "LONG" else "BEARISH",
+        "bias_pct": 71,
+        "energy": "MEDIUM",
+        "liquidity_direction": "Strong Attraction Up" if direction == "LONG" else "Strong Attraction Down",
+        "timestamp": timestamp
+    }
+    
+    result = await send_private_signal_to_whitelist("v3_entry_ready", sample_data)
+    
+    return {
+        **result,
+        "sample_data": sample_data,
+        "message_preview": f"""🚨 CryptoRadar V3 Signal
+
+{sample_data['direction_emoji']} {direction}
+━━━━━━━━━━━━━━━━━━━━
+
+📍 Entry: ${sample_data['entry_low']:,.0f} - ${sample_data['entry_high']:,.0f}
+🛑 Stop: ${sample_data['stop_loss']:,.0f}
+🎯 T1: ${sample_data['target_1']:,.0f}
+🎯 T2: ${sample_data['target_2']:,.0f}
+⚖️ R:R {sample_data['rr']:.1f}:1
+
+Context:
+• Regime: {sample_data['regime']}
+• Bias: {sample_data['bias']} ({sample_data['bias_pct']}%)
+• Energy: {sample_data['energy']}
+• Liquidity: {sample_data['liquidity_direction']}
+
+📊 Quality: {sample_data['quality']}/100
+⚡ Setup: {sample_data['setup_type']}
+
+⏰ {timestamp}"""
+    }
 
 
 @api_router.get("/telegram/private-distribution-status")
