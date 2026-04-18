@@ -323,11 +323,11 @@ export function TradeSignalCard({ compact = false }) {
           <div className="flex items-center gap-2">
             <Zap className={cn("w-4 h-4", compact ? "text-zinc-500" : "text-whale")} />
             <h3 className={cn("font-heading font-semibold uppercase tracking-wider", compact ? "text-xs text-zinc-400" : "text-sm font-bold")}>
-              {compact ? (language === 'it' ? 'V2 Diagnostica' : 'V2 Diagnostic') : t('tradeSignal')}
+              {compact ? (language === 'it' ? 'V2 Non Operativo' : 'V2 Not Operational') : t('tradeSignal')}
             </h3>
             {compact && (
-              <Badge variant="outline" className="text-[8px] text-zinc-500 border-zinc-600">
-                {language === 'it' ? 'Secondario' : 'Secondary'}
+              <Badge variant="outline" className="text-[8px] text-amber-500 border-amber-600 bg-amber-500/10">
+                {language === 'it' ? 'Solo Diagnostica' : 'Diagnostic Only'}
               </Badge>
             )}
             {!compact && signal.setup_type && getSetupTypeBadge(signal.setup_type)}

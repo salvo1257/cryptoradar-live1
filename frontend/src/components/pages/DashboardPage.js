@@ -33,8 +33,8 @@ export function DashboardPage() {
   // Section labels with improved wording
   const labels = {
     it: {
-      diagnostic: 'V2 Confronto / Diagnostica',
-      comparison: 'Confronto',
+      diagnostic: 'V2 DIAGNOSTICA - NON OPERATIVO',
+      comparison: 'Solo Confronto',
       primaryIntelligence: 'Intelligence Primaria',
       marketDynamics: 'Dinamiche Mercato',
       liquidityZones: 'Zone Liquidità',
@@ -44,8 +44,8 @@ export function DashboardPage() {
       liveAnalysis: 'Analisi Live'
     },
     en: {
-      diagnostic: 'V2 Comparison / Diagnostic',
-      comparison: 'Comparison',
+      diagnostic: 'V2 DIAGNOSTIC - NOT OPERATIONAL',
+      comparison: 'Compare Only',
       primaryIntelligence: 'Primary Intelligence',
       marketDynamics: 'Market Dynamics',
       liquidityZones: 'Liquidity Zones',
@@ -55,8 +55,8 @@ export function DashboardPage() {
       liveAnalysis: 'Live Analysis'
     },
     de: {
-      diagnostic: 'V2 Vergleich / Diagnose',
-      comparison: 'Vergleich',
+      diagnostic: 'V2 DIAGNOSE - NICHT OPERATIV',
+      comparison: 'Nur Vergleich',
       primaryIntelligence: 'Primäre Intelligenz',
       marketDynamics: 'Marktdynamik',
       liquidityZones: 'Liquiditätszonen',
@@ -66,8 +66,8 @@ export function DashboardPage() {
       liveAnalysis: 'Live-Analyse'
     },
     pl: {
-      diagnostic: 'V2 Porównanie / Diagnostyka',
-      comparison: 'Porównanie',
+      diagnostic: 'V2 DIAGNOSTYKA - NIEOPERACYJNY',
+      comparison: 'Tylko Porównanie',
       primaryIntelligence: 'Podstawowe Dane',
       marketDynamics: 'Dynamika Rynku',
       liquidityZones: 'Strefy Płynności',

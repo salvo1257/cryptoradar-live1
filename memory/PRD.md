@@ -1,9 +1,9 @@
-# CryptoRadar v3.5.9 - Product Requirements Document
-**Last Updated:** 2026-04-17 (Statistical Modules Repaired)
+# CryptoRadar v3.6.0 - Product Requirements Document
+**Last Updated:** 2026-04-18 (V2 Engine Downgrade Complete)
 
 ## QUICK STATUS
-- **Current Version:** v3.5.9 - FULLY OPERATIONAL FOR LIVE VALIDATION
-- **Phase:** V3-ONLY OPERATIONAL MODE + BACKTEST ENGINE + LIVE PRODUCTION
+- **Current Version:** v3.6.0 - V3-ONLY PRODUCTION MODE
+- **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
 - **V3.5.1 Adjustment:** Stricter contrarian conditions (<5% activation)
@@ -15,8 +15,43 @@
 - **V3.5.7 Feature:** Probabilistic Quality Score + Smart Stop Loss + CoinGlass Cache
 - **V3.5.8 Fix:** Golden Record Sync (Regime/Mentor/Liquidity Alignment)
 - **V3.5.9 Fix:** Statistical Modules Repaired (History, Analytics, Backtest)
-- **V3-Only Reset:** Completed 2026-04-15 (340 signals archived)
+- **V3.6.0 Feature:** V2 Engine Downgraded to Diagnostic-Only Mode
+- **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3.6.0 V2 ENGINE DOWNGRADE (2026-04-18)
+
+### Summary
+V2 Engine is now in **"DIAGNOSTIC ONLY"** mode. It runs in the background for comparison purposes but:
+- ❌ V2 signals are NOT saved to MongoDB
+- ❌ V2 signals do NOT trigger Telegram alerts
+- ❌ V2 signals are NOT included in performance metrics
+- ✅ V2 runs for visual comparison only (Admin panel)
+
+### Changes Made
+
+#### Backend (server.py)
+- `V3_ONLY_OPERATIONAL_MODE = True` (line 15032) - already enabled
+- `auto_record_signal_change()` blocks V1/V2 signals from DB insertion (lines 19702-19712)
+- Telegram notifications only fire for V3+ signals
+
+#### Database Cleanup
+- **Deleted 3 legacy V2 signals** from `signal_history` collection
+- **Remaining: 1 V3 signal** for clean validation baseline
+- Query used: `{"signal_engine_version": {"$in": ["v1", "v2"]}}`
+
+#### Frontend UI Updates
+| File | Change |
+|------|--------|
+| `DashboardPage.js` | Label: "V2 DIAGNOSTICA - NON OPERATIVO" |
+| `DashboardPage.js` | Badge: "Solo Confronto" |
+| `TradeSignalCard.js` | Header: "V2 Non Operativo" |
+| `TradeSignalCard.js` | Badge: "Solo Diagnostica" (amber color) |
+
+### Verification
+- Signal History page shows only V3 signals
+- V2 panel clearly labeled as diagnostic/non-operational
+- API `/api/signal-history` returns only V3 records
 
 ## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
 
