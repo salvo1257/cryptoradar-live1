@@ -14,6 +14,7 @@ import {
   LiquidityPage,
   PatternsPage,
   CandlesticksPage,
+  ElliottWavesPage,
   NewsPage,
   AlertsPage,
   AlertHistoryPage,
@@ -84,6 +85,7 @@ function App() {
               <Route path="/liquidity" element={<LiquidityPage />} />
               <Route path="/patterns" element={<PatternsPage />} />
               <Route path="/candlesticks" element={<CandlesticksPage />} />
+              <Route path="/elliott-waves" element={<ElliottWavesPage />} />
               <Route path="/news" element={<NewsPage />} />
               <Route path="/manual" element={<ManualPage />} />
               

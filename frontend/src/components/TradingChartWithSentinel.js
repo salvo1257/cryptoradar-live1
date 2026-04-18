@@ -78,7 +78,12 @@ const ELLIOTT_COLORS = {
   fractal_complete: "#FFD700",  // Gold for complete fractals
 };
 
-export function TradingChartWithSentinel({ height = 400 }) {
+export function TradingChartWithSentinel({ 
+  height = 400, 
+  filterCategory = null,  // 'chart_patterns', 'candlestick_patterns', 'elliott_waves', or null for all
+  filteredAnchoredPatterns = null,  // Optional pre-filtered patterns from parent
+  showFractals = true  // Toggle for fractals in Elliott page
+}) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -86,12 +91,13 @@ export function TradingChartWithSentinel({ height = 400 }) {
   const priceLinesRef = useRef([]);
   const { candles, supportResistance, marketStatus } = useApp();
   
-  // Anchored patterns context
-  const { anchoredPatterns, removeAnchor, clearAllAnchors, anchorCount } = useAnchoredPatterns();
+  // Anchored patterns context - use filtered if provided
+  const { anchoredPatterns: contextAnchoredPatterns, removeAnchor, clearAllAnchors, anchorCount } = useAnchoredPatterns();
+  const anchoredPatterns = filteredAnchoredPatterns || contextAnchoredPatterns;
   
   // Sentinel state
   const [overlayEnabled, setOverlayEnabled] = useState(true);
-  const [subwavesEnabled, setSubwavesEnabled] = useState(true);  // Toggle for sub-waves
+  const [subwavesEnabled, setSubwavesEnabled] = useState(showFractals);  // Toggle for sub-waves
   const [overlayData, setOverlayData] = useState(null);
   const [hoveredElement, setHoveredElement] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });

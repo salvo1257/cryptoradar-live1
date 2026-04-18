@@ -22563,6 +22563,121 @@ async def get_sentinel_patterns(lang: str = Query(default="it")):
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PATTERN CATEGORY DEFINITIONS for filtered pages
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CHART_PATTERN_TYPES = [
+    "head_and_shoulders", "inverse_head_and_shoulders",
+    "double_top", "double_bottom", "triple_top", "triple_bottom",
+    "symmetrical_triangle", "ascending_triangle", "descending_triangle",
+    "rising_wedge", "falling_wedge", "bull_flag", "bear_flag", "pennant",
+    "support_line", "resistance_line", "trendline_up", "trendline_down"
+]
+
+CANDLESTICK_PATTERN_TYPES = [
+    "bullish_engulfing", "bearish_engulfing", "doji", "hammer",
+    "shooting_star", "morning_star", "evening_star"
+]
+
+ELLIOTT_WAVE_TYPES = [
+    "elliott_wave_1", "elliott_wave_2", "elliott_wave_3", "elliott_wave_4", "elliott_wave_5",
+    "elliott_wave_a", "elliott_wave_b", "elliott_wave_c",
+    "elliott_impulse", "elliott_corrective",
+    "elliott_subwave_1", "elliott_subwave_2", "elliott_subwave_3", "elliott_subwave_4", "elliott_subwave_5",
+    "elliott_subwave_a", "elliott_subwave_b", "elliott_subwave_c",
+    "elliott_fractal_complete", "elliott_fractal_insight"
+]
+
+
+@api_router.get("/sentinel/patterns/chart")
+async def get_chart_patterns(lang: str = Query(default="it")):
+    """
+    Get ONLY chart patterns (triangles, wedges, H&S, etc.) - filtered for Pattern Page.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    all_patterns = sentinel_scanner.get_all_patterns()
+    
+    # Filter to chart patterns only
+    filtered = [p for p in all_patterns if p.get("type") in CHART_PATTERN_TYPES]
+    
+    # Get confluences for these patterns (confluences is a list of dicts with 'type' key)
+    all_confluences = sentinel_scanner.get_confluences()
+    filtered_confluences = [c for c in all_confluences if c.get("type") in CHART_PATTERN_TYPES]
+    
+    return {
+        "patterns": filtered,
+        "patterns_count": len(filtered),
+        "confluences": filtered_confluences,
+        "confluences_count": len(filtered_confluences),
+        "category": "chart_patterns",
+        "category_label": "Pattern Grafici" if lang == "it" else "Chart Patterns",
+        "current_price": sentinel_scanner.current_price
+    }
+
+
+@api_router.get("/sentinel/patterns/candlestick")
+async def get_candlestick_patterns(lang: str = Query(default="it")):
+    """
+    Get ONLY candlestick patterns (engulfing, doji, hammer, etc.) - filtered for Candele Page.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    all_patterns = sentinel_scanner.get_all_patterns()
+    
+    # Filter to candlestick patterns only
+    filtered = [p for p in all_patterns if p.get("type") in CANDLESTICK_PATTERN_TYPES]
+    
+    # Get confluences for these patterns (confluences is a list of dicts)
+    all_confluences = sentinel_scanner.get_confluences()
+    filtered_confluences = [c for c in all_confluences if c.get("type") in CANDLESTICK_PATTERN_TYPES]
+    
+    return {
+        "patterns": filtered,
+        "patterns_count": len(filtered),
+        "confluences": filtered_confluences,
+        "confluences_count": len(filtered_confluences),
+        "category": "candlestick_patterns",
+        "category_label": "Pattern Candele" if lang == "it" else "Candlestick Patterns",
+        "current_price": sentinel_scanner.current_price
+    }
+
+
+@api_router.get("/sentinel/patterns/elliott")
+async def get_elliott_patterns(lang: str = Query(default="it")):
+    """
+    Get ONLY Elliott Wave patterns (1-5, A-B-C, fractals) - filtered for Elliott Page.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    all_patterns = sentinel_scanner.get_all_patterns()
+    
+    # Filter to Elliott patterns only
+    filtered = [p for p in all_patterns if p.get("type") in ELLIOTT_WAVE_TYPES]
+    
+    # Get confluences for these patterns (confluences is a list of dicts)
+    all_confluences = sentinel_scanner.get_confluences()
+    filtered_confluences = [c for c in all_confluences if c.get("type") in ELLIOTT_WAVE_TYPES]
+    
+    # Get fractal insights if available
+    fractals = sentinel_scanner.get_fractal_data() if hasattr(sentinel_scanner, 'get_fractal_data') else {}
+    
+    return {
+        "patterns": filtered,
+        "patterns_count": len(filtered),
+        "confluences": filtered_confluences,
+        "confluences_count": len(filtered_confluences),
+        "category": "elliott_waves",
+        "category_label": "Onde di Elliott" if lang == "it" else "Elliott Waves",
+        "current_price": sentinel_scanner.current_price,
+        "fractals": fractals
+    }
+
+
 @api_router.get("/sentinel/chart-overlay")
 async def get_sentinel_chart_overlay():
     """

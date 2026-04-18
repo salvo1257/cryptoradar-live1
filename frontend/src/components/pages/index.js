@@ -4,6 +4,7 @@ export { WhaleAlertsPage } from './WhaleAlertsPage';
 export { LiquidityPage } from './LiquidityPage';
 export { PatternsPage } from './PatternsPage';
 export { CandlesticksPage } from './CandlesticksPage';
+export { ElliottWavesPage } from './ElliottWavesPage';
 export { NewsPage } from './NewsPage';
 export { AlertsPage } from './AlertsPage';
 export { AlertHistoryPage } from './AlertHistoryPage';

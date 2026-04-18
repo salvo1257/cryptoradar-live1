@@ -81,3 +81,31 @@ Build a professional BTC market intelligence dashboard with multi-timeframe sign
 - Binance Global API blocked (451) - using Binance.US
 - Bybit API blocked (403) - using KuCoin instead
 - CoinGlass rate limits occasionally (403)
+
+---
+## Update: April 18, 2025 - Structural Sidebar Separation
+
+### ✅ Completed - Three Dedicated Pages
+1. **Pattern Page** (`/patterns`)
+   - Displays ONLY chart patterns (Triangles, Wedges, H&S, Double/Triple Tops)
+   - 21 patterns filtered from Sentinel
+   - Chart + Feed layout
+
+2. **Candele Page** (`/candlesticks`)  
+   - Displays ONLY Japanese candlestick patterns (Engulfing, Doji, Hammer, Stars)
+   - 728 patterns filtered
+   - Legend included
+
+3. **Onde di Elliott Page** (`/elliott-waves`)
+   - Displays ONLY Elliott Wave counts (1-5, A-B-C, Fractals)
+   - 64 waves detected
+   - Impulse/Corrective sections separated
+   - Fractal toggle
+
+### Backend Endpoints Added
+- `/api/sentinel/patterns/chart` - Chart patterns only
+- `/api/sentinel/patterns/candlestick` - Candlestick patterns only
+- `/api/sentinel/patterns/elliott` - Elliott waves only
+
+### Sidebar Updated
+- Added "Onde di Elliott" with TrendingUp icon after "Candele"

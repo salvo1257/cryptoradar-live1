@@ -16,7 +16,8 @@ import {
   X,
   BarChart3,
   FlaskConical,
-  Lock
+  Lock,
+  TrendingUp
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAccess } from '../contexts/AccessContext';
@@ -30,6 +31,7 @@ const publicNavItems = [
   { path: '/liquidity', icon: Waves, label: 'liquidity' },
   { path: '/patterns', icon: Search, label: 'patterns' },
   { path: '/candlesticks', icon: CandlestickChart, label: 'candlesticks' },
+  { path: '/elliott-waves', icon: TrendingUp, label: 'elliottWaves' },
   { path: '/news', icon: Newspaper, label: 'news' },
   { path: '/manual', icon: BookOpen, label: 'manual' },
 ];
