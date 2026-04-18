@@ -80,19 +80,19 @@ export function MentorCard() {
 
   return (
     <div 
-      className="bg-crypto-card border border-zinc-700/60 rounded-sm overflow-hidden"
+      className="premium-card rounded-lg overflow-hidden glow-whale"
       data-testid="mentor-card"
     >
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-700/50 bg-gradient-to-r from-purple-900/20 to-transparent">
+      {/* Header - Premium gradient */}
+      <div className="px-5 py-4 border-b border-white/5 bg-gradient-to-r from-purple-900/30 via-purple-900/10 to-transparent">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/20 rounded">
-              <GraduationCap className="w-5 h-5 text-purple-400" />
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-500/20 rounded-lg shadow-neon-whale">
+              <GraduationCap className="w-6 h-6 text-purple-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-heading font-bold text-white">Radar Mentor</h3>
+                <h3 className="font-heading font-bold text-xl text-white">Radar Mentor</h3>
                 <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                 <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">AI</span>
               </div>

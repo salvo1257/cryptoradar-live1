@@ -5,31 +5,36 @@
 @tailwind utilities;
 
 :root {
-    --background: 240 6% 4%;
+    --background: 210 20% 3%;
     --foreground: 0 0% 98%;
-    --card: 240 4% 7%;
+    --card: 210 18% 5%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 4% 7%;
+    --popover: 210 18% 5%;
     --popover-foreground: 0 0% 98%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
-    --secondary: 240 4% 14%;
+    --secondary: 210 15% 10%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 14%;
-    --muted-foreground: 240 5% 64%;
-    --accent: 240 4% 14%;
+    --muted: 210 15% 10%;
+    --muted-foreground: 210 10% 55%;
+    --accent: 210 15% 10%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 84% 60%;
+    --destructive: 350 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
-    --ring: 240 5% 64%;
-    --radius: 0.25rem;
-    --chart-1: 142 70% 45%;
-    --chart-2: 0 84% 60%;
+    --border: 210 15% 15%;
+    --input: 210 15% 15%;
+    --ring: 210 10% 55%;
+    --radius: 0.5rem;
+    --chart-1: 160 100% 50%;
+    --chart-2: 350 100% 56%;
     --chart-3: 262 80% 60%;
-    --chart-4: 210 70% 50%;
+    --chart-4: 187 100% 50%;
     --chart-5: 30 80% 55%;
+    
+    /* Premium Signal Colors */
+    --bullish: 160 100% 50%;
+    --bearish: 350 100% 56%;
+    --cyber: 187 100% 50%;
 }
 
 * {
@@ -46,7 +51,7 @@ body {
     font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #09090b;
+    background-color: #06080A;
     color: #fafafa;
     overflow-x: hidden;
 }
@@ -96,22 +101,47 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 /* Glass effect */
 .glass {
-    background: rgba(18, 18, 20, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(12, 16, 21, 0.8);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
 }
 
-/* Glow effects */
+/* Premium Glassmorphism Sidebar */
+.glass-sidebar {
+    background: rgba(6, 8, 10, 0.85);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Glow effects - Premium */
 .glow-bullish {
-    box-shadow: 0 0 15px rgba(0, 220, 130, 0.3);
+    box-shadow: 0 0 30px rgba(0, 255, 157, 0.25), inset 0 1px 0 rgba(0, 255, 157, 0.1);
 }
 
 .glow-bearish {
-    box-shadow: 0 0 15px rgba(255, 59, 48, 0.3);
+    box-shadow: 0 0 30px rgba(255, 30, 86, 0.25), inset 0 1px 0 rgba(255, 30, 86, 0.1);
 }
 
 .glow-whale {
-    box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 30px rgba(139, 92, 246, 0.25), inset 0 1px 0 rgba(139, 92, 246, 0.1);
+}
+
+.glow-cyber {
+    box-shadow: 0 0 30px rgba(0, 240, 255, 0.25), inset 0 1px 0 rgba(0, 240, 255, 0.1);
+}
+
+/* Neon text glow */
+.text-glow-bullish {
+    text-shadow: 0 0 20px rgba(0, 255, 157, 0.5);
+}
+
+.text-glow-bearish {
+    text-shadow: 0 0 20px rgba(255, 30, 86, 0.5);
+}
+
+.text-glow-cyber {
+    text-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
 }
 
 /* Status indicators */
@@ -119,30 +149,62 @@ h1, h2, h3, h4, h5, h6, .font-heading {
     animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* Grid background pattern */
+/* Grid background pattern - Premium */
 .grid-pattern {
     background-image: 
-        linear-gradient(to right, rgba(39, 39, 42, 0.3) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(39, 39, 42, 0.3) 1px, transparent 1px);
-    background-size: 40px 40px;
+        linear-gradient(to right, rgba(28, 35, 45, 0.4) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(28, 35, 45, 0.4) 1px, transparent 1px);
+    background-size: 64px 64px;
 }
 
-/* Card hover effects */
+/* Card hover effects - Premium */
 .tech-card {
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 .tech-card:hover {
-    border-color: #3f3f46;
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
 }
 
-/* Number formatting */
+/* Premium Card Base */
+.premium-card {
+    background: rgba(12, 16, 21, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(28, 35, 45, 0.8);
+    transition: all 0.3s ease;
+}
+
+.premium-card:hover {
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Premium Card Active States */
+.premium-card-bullish {
+    border-color: rgba(0, 255, 157, 0.3);
+    box-shadow: 0 0 40px rgba(0, 255, 157, 0.15);
+}
+
+.premium-card-bearish {
+    border-color: rgba(255, 30, 86, 0.3);
+    box-shadow: 0 0 40px rgba(255, 30, 86, 0.15);
+}
+
+/* Heat Bar Segments */
+.heat-segment {
+    transition: width 0.5s ease-out;
+}
+
+/* Number formatting - Premium */
 .price-up {
-    color: #00dc82;
+    color: #00FF9D;
+    text-shadow: 0 0 10px rgba(0, 255, 157, 0.3);
 }
 
 .price-down {
-    color: #ff3b30;
+    color: #FF1E56;
+    text-shadow: 0 0 10px rgba(255, 30, 86, 0.3);
 }
 
 /* Mobile responsiveness */

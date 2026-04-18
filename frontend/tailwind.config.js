@@ -58,13 +58,26 @@ module.exports = {
                                 '4': 'hsl(var(--chart-4))',
                                 '5': 'hsl(var(--chart-5))'
                         },
-                        bullish: '#00dc82',
-                        bearish: '#ff3b30',
+                        // Premium Trading Terminal Colors
+                        bullish: '#00FF9D',
+                        bearish: '#FF1E56',
                         whale: '#8b5cf6',
-                        'crypto-bg': '#09090b',
-                        'crypto-card': '#121214',
-                        'crypto-border': '#27272a',
-                        'crypto-surface': '#18181b',
+                        cyber: '#00F0FF',
+                        'crypto-bg': '#06080A',
+                        'crypto-card': '#0C1015',
+                        'crypto-border': '#1C232D',
+                        'crypto-surface': '#11161D',
+                },
+                boxShadow: {
+                        'neon-bullish': '0 0 30px rgba(0, 255, 157, 0.2)',
+                        'neon-bearish': '0 0 30px rgba(255, 30, 86, 0.2)',
+                        'neon-cyber': '0 0 30px rgba(0, 240, 255, 0.2)',
+                        'neon-whale': '0 0 30px rgba(139, 92, 246, 0.2)',
+                },
+                dropShadow: {
+                        'glow-bullish': '0 0 15px rgba(0, 255, 157, 0.5)',
+                        'glow-bearish': '0 0 15px rgba(255, 30, 86, 0.5)',
+                        'glow-cyber': '0 0 15px rgba(0, 240, 255, 0.5)',
                 },
                 keyframes: {
                         'accordion-down': {
@@ -82,13 +95,18 @@ module.exports = {
                         'slide-in': {
                                 from: { transform: 'translateX(-100%)' },
                                 to: { transform: 'translateX(0)' }
+                        },
+                        'shimmer': {
+                                '0%': { backgroundPosition: '-200% 0' },
+                                '100%': { backgroundPosition: '200% 0' }
                         }
                 },
                 animation: {
                         'accordion-down': 'accordion-down 0.2s ease-out',
                         'accordion-up': 'accordion-up 0.2s ease-out',
                         'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
-                        'slide-in': 'slide-in 0.3s ease-out'
+                        'slide-in': 'slide-in 0.3s ease-out',
+                        'shimmer': 'shimmer 2s linear infinite'
                 }
         }
   },

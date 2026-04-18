@@ -7,7 +7,8 @@ import {
   MarketBiasCard, 
   SupportResistanceCard, 
   LiquidityCard, 
-  WhaleAlertCard, 
+  WhaleAlertCard,
+  WhaleFlowCard,
   OrderBookCard,
   OpenInterestCard,
   FundingRateCard,
@@ -94,7 +95,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-8" data-testid="dashboard-page">
+    <div className="p-6 md:p-8 space-y-8" data-testid="dashboard-page">
       
       {/* ═══════════════════════════════════════════════════════════════════
           DECISION ENGINE - ADMIN ONLY - Aggregates all signals
@@ -102,14 +103,14 @@ export function DashboardPage() {
       {isAdmin ? (
         <DecisionEngineCard language={language} />
       ) : (
-        <div className="bg-crypto-card/60 border border-zinc-700/50 rounded-sm p-6 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500/20 rounded">
-              <Lock className="w-5 h-5 text-amber-400" />
+        <div className="premium-card rounded-lg p-8 backdrop-blur-sm">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-amber-500/20 rounded-lg">
+              <Lock className="w-6 h-6 text-amber-400" />
             </div>
             <div>
-              <h3 className="font-heading font-bold text-white">Panoramica Mercato</h3>
-              <p className="text-xs text-zinc-400">Vista pubblica - I segnali di trading richiedono accesso admin</p>
+              <h3 className="font-heading font-bold text-xl text-white">Panoramica Mercato</h3>
+              <p className="text-sm text-zinc-400">Vista pubblica - I segnali di trading richiedono accesso admin</p>
             </div>
           </div>
         </div>
@@ -130,10 +131,10 @@ export function DashboardPage() {
           {isAdmin ? (
             <V3SignalCard language={language} />
           ) : (
-            <div className="bg-crypto-card/60 border border-zinc-700/50 rounded-sm p-6 h-full flex items-center justify-center">
+            <div className="premium-card rounded-lg p-8 h-full flex items-center justify-center min-h-[280px]">
               <div className="text-center">
-                <Lock className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-                <p className="text-zinc-500 text-sm">Segnale V3 - Solo Admin</p>
+                <Lock className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
+                <p className="text-zinc-500 text-base">Segnale V3 - Solo Admin</p>
               </div>
             </div>
           )}
@@ -148,12 +149,14 @@ export function DashboardPage() {
       {/* ═══════════════════════════════════════════════════════════════════
           RADAR MENTOR - AI Trading Educator (Freemium)
           PUBLIC: Context + Tip | ADMIN: Full Analysis (Logic + Lesson)
+          PROMINENT - Main value proposition
       ═══════════════════════════════════════════════════════════════════ */}
       <MentorCard />
 
       {/* ═══════════════════════════════════════════════════════════════════
           LIQUIDITY CONTEXT: Magnet + Zones (PUBLIC - Full Decision Context)
           Where price wants to go AND where liquidity is located
+          FOCAL POINTS - Premium layout
       ═══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Magnet Liquidity - PUBLIC - Directional Target */}
@@ -162,6 +165,12 @@ export function DashboardPage() {
         {/* Liquidity Zone Engine - PUBLIC - Structural Zones */}
         <LiquidityZoneInspector lang={language} />
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          WHALE FLOW 2.0 - Real-Time Capital Tracker
+          Shows institutional momentum across all 5 exchanges
+      ═══════════════════════════════════════════════════════════════════ */}
+      <WhaleFlowCard />
       
       {/* ═══════════════════════════════════════════════════════════════════
           V2 Diagnostic Section - ADMIN ONLY

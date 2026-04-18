@@ -1,8 +1,8 @@
-# CryptoRadar v3.6.2 - Product Requirements Document
-**Last Updated:** 2026-04-18 (Big Five Exchange Integration)
+# CryptoRadar v3.7.0 - Product Requirements Document
+**Last Updated:** 2026-04-18 (Premium UI + Whale Flow 2.0)
 
 ## QUICK STATUS
-- **Current Version:** v3.6.2 - V3-ONLY PRODUCTION MODE
+- **Current Version:** v3.7.0 - V3-ONLY PRODUCTION MODE + PREMIUM UI
 - **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -18,43 +18,71 @@
 - **V3.6.0 Feature:** V2 Engine Downgraded to Diagnostic-Only Mode
 - **V3.6.1 Cleanup:** Shadow Target Inspector Removed (deprecated)
 - **V3.6.2 Feature:** Big Five Exchange Integration (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)
+- **V3.7.0 Feature:** Premium UI Overhaul + Whale Flow 2.0
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
-## V3.6.2 BIG FIVE EXCHANGE INTEGRATION (2026-04-18)
+## V3.7.0 PREMIUM UI + WHALE FLOW 2.0 (2026-04-18)
 
-### Summary
-Order book data is now aggregated from 5 exchanges instead of 3, providing a more comprehensive view of market liquidity.
+### Premium UI Overhaul
 
-### New Exchange Connectors
-| Exchange | API URL | Status | Notes |
-|----------|---------|--------|-------|
-| Kraken | api.kraken.com | ✅ Active | Primary price source |
-| Coinbase | api.exchange.coinbase.com | ✅ Active | High liquidity |
-| Bitstamp | bitstamp.net/api/v2 | ✅ Active | Deep orderbook |
-| Binance.US | api.binance.us/api/v3 | ✅ NEW | Uses BTC/USD pair |
-| KuCoin | api.kucoin.com/api/v1 | ✅ NEW | High volume |
+#### New Color Palette (Trading Terminal Aesthetic)
+| Color | Old Value | New Value | Usage |
+|-------|-----------|-----------|-------|
+| Bullish | #00dc82 | #00FF9D | Long signals, buying pressure |
+| Bearish | #ff3b30 | #FF1E56 | Short signals, selling pressure |
+| Cyber | N/A | #00F0FF | Neutral/intelligence data |
+| Background | #09090b | #06080A | Main app background |
+| Card | #121214 | #0C1015 | Card backgrounds |
+| Border | #27272a | #1C232D | Borders and dividers |
 
-### Implementation Details
-- All 5 exchanges fetched in parallel using `asyncio.gather()`
-- Cache TTL maintained at 60 seconds for orderbooks
-- Data freshness tracker updated for new sources
-- Consensus logic updated for 3/5 majority (was 2/3)
+#### Visual Effects Added
+- **Glassmorphism Sidebar**: `backdrop-filter: blur(24px)` with subtle border
+- **Neon Glow Shadows**: `shadow-neon-bullish`, `shadow-neon-bearish`, `shadow-neon-whale`
+- **Text Glow Effects**: `.text-glow-bullish`, `.text-glow-bearish`, `.text-glow-cyber`
+- **Premium Card Class**: `.premium-card` with hover effects and blur backdrop
+- **Active State Borders**: Green/Red glow borders for active signals
 
-### UI Updates
-All "Aggregated" labels now show:
-`Aggregated (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)`
+#### Layout Changes
+- Increased padding: `p-6` → `p-8` on dashboard
+- Larger card headers with icons in rounded-lg containers
+- Bolder fonts for primary metrics
+- Rounded corners: `rounded-sm` → `rounded-lg`
 
-Affected pages:
-- Dashboard: Liquidity Magnet
-- Supporti e Resistenze: Support/Resistance levels
-- Liquidità: Order Book, Direction, Clusters
-- Manuale: Data source descriptions
+### Whale Flow 2.0 (New Component)
 
-### Performance
-- Total market depth now ~$10M+ combined (was ~$5M)
-- Async fetching ensures no slowdown
-- Exchange breakdown visible in UI (per-exchange imbalance %)
+#### Features
+| Feature | Description |
+|---------|-------------|
+| **Institutional Momentum** | Aggregated score 0-100 from all 5 exchanges |
+| **Heat Bar Visualization** | Per-exchange buying/selling pressure |
+| **Consensus Indicator** | Shows X/5 exchange agreement |
+| **Direction Label** | "Pressione Acquisto" or "Pressione Vendita" |
+| **Real-Time Updates** | Refreshes every 30 seconds |
+
+#### Heat Bar Logic
+- **Green segments**: Buying pressure (bid > ask)
+- **Red segments**: Selling pressure (ask > bid)
+- **Gray segments**: Neutral/balanced
+- **Imbalance %**: Per-exchange deviation from 50/50
+
+#### Data Source
+Uses `/api/orderbook` `exchange_comparison` data:
+- Bid depth vs Ask depth per exchange
+- Calculates directional imbalance
+- Aggregates into single momentum score
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `tailwind.config.js` | New colors, shadows, animations |
+| `index.css` | Premium CSS classes, glassmorphism, glow effects |
+| `Sidebar.js` | Glass-sidebar class, neon active states |
+| `DashboardPage.js` | WhaleFlowCard integration, premium padding |
+| `V3SignalCard.js` | Premium styling with active state borders |
+| `MentorCard.js` | Purple glow, premium header gradient |
+| `WhaleFlowCard.js` | **NEW** - Complete Whale Flow 2.0 component |
+| `cards/index.js` | Export WhaleFlowCard |
 
 ## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
 

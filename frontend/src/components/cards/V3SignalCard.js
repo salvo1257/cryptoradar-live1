@@ -671,34 +671,40 @@ export function V3SignalCard({ language = 'it' }) {
   return (
     <TooltipProvider>
       <div 
-        className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden"
+        className={cn(
+          "premium-card rounded-lg overflow-hidden",
+          hasSetup && setup?.direction === 'LONG' && "premium-card-bullish",
+          hasSetup && setup?.direction === 'SHORT' && "premium-card-bearish"
+        )}
         data-testid="v3-signal-card"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-purple-400" />
-            <span className="font-heading font-semibold text-sm uppercase tracking-wider">
+        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-purple-500/20 shadow-neon-whale">
+              <Layers className="w-5 h-5 text-purple-400" />
+            </div>
+            <span className="font-heading font-bold text-lg uppercase tracking-wider">
               {t('v3Engine')}
             </span>
-            <Badge variant="outline" className="text-[10px] text-purple-400 border-purple-400/50">
+            <Badge variant="outline" className="text-xs text-purple-400 border-purple-400/50 px-2">
               MTF
             </Badge>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {renderDirectionBadge()}
             <button 
               onClick={fetchV3Signal}
-              className="p-1 hover:bg-white/5 rounded-sm transition-colors"
+              className="p-2 hover:bg-white/5 rounded-lg transition-colors"
               title={t('refreshing')}
             >
-              <RefreshCw className={cn("w-3 h-3 text-zinc-500", loading && "animate-spin")} />
+              <RefreshCw className={cn("w-4 h-4 text-zinc-500", loading && "animate-spin")} />
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-4">
+        <div className="p-5">
           {/* Phase Badge - Most Prominent */}
           {renderPhaseBadge()}
           
