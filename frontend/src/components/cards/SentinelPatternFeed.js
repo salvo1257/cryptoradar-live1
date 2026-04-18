@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../contexts/AppContext';
-import { Eye, Target, TrendingUp, TrendingDown, AlertTriangle, Clock, ChevronRight, Lightbulb, Activity, Layers } from 'lucide-react';
+import { useAnchoredPatterns } from '../../contexts/AnchoredPatternsContext';
+import { Eye, EyeOff, Target, TrendingUp, TrendingDown, AlertTriangle, Clock, ChevronRight, Lightbulb, Activity, Layers, Anchor, X, Trash2, PenTool } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
+import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -51,9 +53,25 @@ const PATTERN_NAMES = {
 
 function PatternCard({ pattern, isHighProbability = false }) {
   const [showPsychology, setShowPsychology] = useState(false);
+  const { anchorPattern, removeAnchor, isPatternAnchored } = useAnchoredPatterns();
   const patternInfo = PATTERN_NAMES[pattern.type] || { it: pattern.type_display, icon: "📊" };
   const tfColor = TIMEFRAME_COLORS[pattern.timeframe] || "#8B5CF6";
   const psychology = pattern.psychology || {};
+  
+  const isAnchored = isPatternAnchored(pattern);
+  
+  const handleAnchorToggle = (e) => {
+    e.stopPropagation();
+    if (isAnchored) {
+      // Generate the same ID used for anchoring
+      const patternId = `${pattern.type}_${pattern.timeframe}_${pattern.start?.price || pattern.draw_data?.start?.price || 0}_${pattern.end?.price || pattern.draw_data?.end?.price || 0}_${pattern.label || pattern.draw_data?.label || ''}`;
+      removeAnchor(patternId);
+      toast.info('Pattern rimosso dal chart', { duration: 2000 });
+    } else {
+      anchorPattern(pattern);
+      toast.success('Pattern ancorato al chart!', { duration: 2000 });
+    }
+  };
   
   return (
     <div 
@@ -61,7 +79,8 @@ function PatternCard({ pattern, isHighProbability = false }) {
         "relative bg-zinc-900/60 border rounded-lg p-4 transition-all duration-300",
         isHighProbability 
           ? "border-amber-500/50 shadow-lg shadow-amber-500/10" 
-          : "border-zinc-700/50 hover:border-zinc-600/50"
+          : "border-zinc-700/50 hover:border-zinc-600/50",
+        isAnchored && "ring-1 ring-cyan-500/50 border-cyan-500/30"
       )}
     >
       {/* High probability badge */}
@@ -70,6 +89,15 @@ function PatternCard({ pattern, isHighProbability = false }) {
           <Badge className="bg-amber-500 text-black text-[10px] font-bold px-1.5 py-0.5 animate-pulse">
             HIGH PROB
           </Badge>
+        </div>
+      )}
+      
+      {/* Anchored indicator */}
+      {isAnchored && (
+        <div className="absolute -top-2 -left-2">
+          <div className="w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center shadow-lg shadow-cyan-500/30">
+            <Anchor className="w-3 h-3 text-black" />
+          </div>
         </div>
       )}
       
@@ -93,19 +121,41 @@ function PatternCard({ pattern, isHighProbability = false }) {
           </div>
         </div>
         
-        {/* Bias badge */}
-        <Badge 
-          className={cn(
-            "text-[10px] font-bold px-2 py-0.5",
-            pattern.bias === "BULLISH" 
-              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-              : pattern.bias === "BEARISH"
-              ? "bg-red-500/20 text-red-400 border-red-500/30"
-              : "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
-          )}
-        >
-          {pattern.bias === "BULLISH" ? "LONG" : pattern.bias === "BEARISH" ? "SHORT" : "NEUTRAL"}
-        </Badge>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5">
+          {/* Draw/Anchor button */}
+          <button
+            onClick={handleAnchorToggle}
+            className={cn(
+              "p-1.5 rounded-lg transition-all duration-200",
+              isAnchored 
+                ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
+                : "bg-zinc-700/50 text-zinc-400 hover:bg-purple-500/20 hover:text-purple-400"
+            )}
+            title={isAnchored ? "Rimuovi dal chart" : "Disegna sul chart"}
+            data-testid={`anchor-pattern-${pattern.type}`}
+          >
+            {isAnchored ? (
+              <EyeOff className="w-3.5 h-3.5" />
+            ) : (
+              <PenTool className="w-3.5 h-3.5" />
+            )}
+          </button>
+          
+          {/* Bias badge */}
+          <Badge 
+            className={cn(
+              "text-[10px] font-bold px-2 py-0.5",
+              pattern.bias === "BULLISH" 
+                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                : pattern.bias === "BEARISH"
+                ? "bg-red-500/20 text-red-400 border-red-500/30"
+                : "bg-zinc-500/20 text-zinc-400 border-zinc-500/30"
+            )}
+          >
+            {pattern.bias === "BULLISH" ? "LONG" : pattern.bias === "BEARISH" ? "SHORT" : "NEUTRAL"}
+          </Badge>
+        </div>
       </div>
       
       {/* Completion bar */}
@@ -284,6 +334,7 @@ function ConfluenceAlert({ confluence }) {
 
 export function SentinelPatternFeed() {
   const { language } = useApp();
+  const { anchoredPatterns, clearAllAnchors, anchorCount, draftMode, toggleDraftMode } = useAnchoredPatterns();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -338,8 +389,28 @@ export function SentinelPatternFeed() {
             </div>
           </div>
           
-          {/* Stats badges */}
+          {/* Stats badges and controls */}
           <div className="flex items-center gap-2">
+            {/* Anchored patterns count */}
+            {anchorCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 text-xs">
+                  <Anchor className="w-3 h-3 mr-1" />
+                  {anchorCount} Ancorati
+                </Badge>
+                <button
+                  onClick={() => {
+                    clearAllAnchors();
+                    toast.info('Tutti i pattern rimossi dal chart', { duration: 2000 });
+                  }}
+                  className="p-1 rounded bg-zinc-700/50 text-zinc-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                  title="Rimuovi tutti gli ancoraggi"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            
             {highProbSetups.length > 0 && (
               <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
                 <AlertTriangle className="w-3 h-3 mr-1" />
@@ -349,6 +420,21 @@ export function SentinelPatternFeed() {
             <Badge variant="outline" className="text-zinc-400 text-xs">
               {data?.patterns_count || 0} Pattern
             </Badge>
+          </div>
+        </div>
+        
+        {/* Draft Mode notice */}
+        <div className="mt-3 flex items-center justify-between bg-zinc-800/50 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <PenTool className="w-3.5 h-3.5 text-purple-400" />
+            <span>Clicca <strong className="text-purple-400">✏️</strong> su un pattern per disegnarlo sul chart</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {anchorCount > 0 && (
+              <span className="text-[10px] text-cyan-400">
+                {anchorCount} pattern visibili sul chart
+              </span>
+            )}
           </div>
         </div>
       </div>

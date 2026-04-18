@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import { useApp } from '../contexts/AppContext';
-import { Eye, EyeOff, Layers } from 'lucide-react';
+import { useAnchoredPatterns } from '../contexts/AnchoredPatternsContext';
+import { Eye, EyeOff, Layers, Anchor, Trash2, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -83,6 +85,9 @@ export function TradingChartWithSentinel({ height = 400 }) {
   const volumeSeriesRef = useRef(null);
   const priceLinesRef = useRef([]);
   const { candles, supportResistance, marketStatus } = useApp();
+  
+  // Anchored patterns context
+  const { anchoredPatterns, removeAnchor, clearAllAnchors, anchorCount } = useAnchoredPatterns();
   
   // Sentinel state
   const [overlayEnabled, setOverlayEnabled] = useState(true);
@@ -355,31 +360,12 @@ export function TradingChartWithSentinel({ height = 400 }) {
   }, [supportResistance]);
 
   // Render SVG Overlay
-  const renderSentinelOverlay = () => {
-    if (!overlayEnabled || !overlayData?.chart_data) return null;
+  // Render ONLY anchored patterns (On-Demand Drawing)
+  const renderAnchoredPatterns = () => {
+    if (!overlayEnabled || anchoredPatterns.length === 0) return null;
     
-    const { chart_data, current_price } = overlayData;
     const { width, height: h } = chartDimensions;
     
-    // Group zones by price for confluence detection
-    const priceZones = {};
-    chart_data.zones?.forEach(zone => {
-      const price = zone.price;
-      if (!priceZones[price]) {
-        priceZones[price] = [];
-      }
-      priceZones[price].push(zone);
-    });
-    
-    // Find high probability zones (3+ timeframes)
-    const confluenceZones = Object.entries(priceZones)
-      .filter(([_, zones]) => zones.length >= 3)
-      .map(([price, zones]) => ({
-        price: parseFloat(price),
-        zones,
-        timeframes: zones.map(z => z.timeframe)
-      }));
-
     return (
       <svg 
         className="absolute inset-0 pointer-events-none z-10"
@@ -388,17 +374,17 @@ export function TradingChartWithSentinel({ height = 400 }) {
         preserveAspectRatio="none"
       >
         <defs>
-          {/* Glow filters for each timeframe */}
+          {/* Glow filters for anchored patterns */}
           {Object.entries(TIMEFRAME_COLORS).map(([tf, color]) => (
-            <filter key={tf} id={`glow-${tf}`} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+            <filter key={tf} id={`anchor-glow-${tf}`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
               <feColorMatrix
                 in="blur"
                 type="matrix"
                 values={`0 0 0 0 ${parseInt(color.slice(1,3), 16)/255}
                          0 0 0 0 ${parseInt(color.slice(3,5), 16)/255}
                          0 0 0 0 ${parseInt(color.slice(5,7), 16)/255}
-                         0 0 0 0.6 0`}
+                         0 0 0 0.8 0`}
               />
               <feMerge>
                 <feMergeNode />
@@ -407,717 +393,331 @@ export function TradingChartWithSentinel({ height = 400 }) {
             </filter>
           ))}
           
-          {/* Confluence glow box */}
-          <filter id="confluence-glow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+          {/* Cyan glow for anchored indicator */}
+          <filter id="anchor-indicator-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
             <feColorMatrix
               in="blur"
               type="matrix"
-              values="0 0 0 0 1
-                      0 0 0 0 0.84
-                      0 0 0 0 0
-                      0 0 0 0.8 0"
+              values="0 0 0 0 0
+                      0 0 0 0 0.94
+                      0 0 0 0 1
+                      0 0 0 0.6 0"
             />
             <feMerge>
               <feMergeNode />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          
-          {/* Gradient for zones */}
-          <linearGradient id="zone-gradient-bull" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#00FF9D" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="#00FF9D" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#00FF9D" stopOpacity="0.3" />
-          </linearGradient>
-          <linearGradient id="zone-gradient-bear" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#FF1E56" stopOpacity="0.3" />
-            <stop offset="50%" stopColor="#FF1E56" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#FF1E56" stopOpacity="0.3" />
-          </linearGradient>
         </defs>
         
-        {/* CONFLUENCE GLOW BOXES - High Probability Zones */}
-        {confluenceZones.map((conf, i) => {
-          const y = priceToY(conf.price);
-          const zoneHeight = 20;
+        {/* Render each anchored pattern */}
+        {anchoredPatterns.map((pattern, i) => {
+          const drawData = pattern.draw_data || {};
+          const shape = drawData.shape;
+          const color = pattern.color || TIMEFRAME_COLORS[pattern.timeframe] || "#8B5CF6";
+          const tf = pattern.timeframe;
           
-          return (
-            <g 
-              key={`confluence-${i}`} 
-              className="sentinel-confluence pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: 'confluence',
-                price: conf.price,
-                timeframes: conf.timeframes,
-                count: conf.zones.length
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Glow box background */}
-              <rect
-                x={0}
-                y={y - zoneHeight/2}
-                width={width}
-                height={zoneHeight}
-                fill="#FFD700"
-                fillOpacity="0.15"
-                filter="url(#confluence-glow)"
-              />
-              {/* Border lines */}
-              <line
-                x1={0} y1={y - zoneHeight/2}
-                x2={width} y2={y - zoneHeight/2}
-                stroke="#FFD700"
-                strokeWidth="1"
-                strokeDasharray="4 2"
-                opacity="0.6"
-              />
-              <line
-                x1={0} y1={y + zoneHeight/2}
-                x2={width} y2={y + zoneHeight/2}
-                stroke="#FFD700"
-                strokeWidth="1"
-                strokeDasharray="4 2"
-                opacity="0.6"
-              />
-              {/* Label */}
-              <rect
-                x={width - 140}
-                y={y - 10}
-                width={130}
-                height={20}
-                rx="4"
-                fill="#18181b"
-                stroke="#FFD700"
-                strokeWidth="1"
-              />
-              <text
-                x={width - 75}
-                y={y + 4}
-                textAnchor="middle"
-                fill="#FFD700"
-                fontSize="10"
-                fontWeight="bold"
-              >
-                CONFLUENZA {conf.zones.length}TF
-              </text>
-            </g>
-          );
-        })}
-        
-        {/* HORIZONTAL ZONES - Support/Resistance */}
-        {chart_data.zones?.map((zone, i) => {
-          const y = priceToY(zone.price);
-          const color = zone.color || BIAS_COLORS[zone.bias] || TIMEFRAME_COLORS[zone.timeframe];
-          const isSupport = zone.type?.includes('support');
+          // Get price coordinates
+          const startPrice = drawData.start?.price || pattern.start?.price;
+          const endPrice = drawData.end?.price || pattern.end?.price || drawData.price;
           
-          return (
-            <g 
-              key={`zone-${i}`} 
-              className="sentinel-zone pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: zone.type,
-                timeframe: zone.timeframe,
-                price: zone.price,
-                bias: zone.bias
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Main line with glow */}
-              <line
-                x1={0}
-                y1={y}
-                x2={width - 70}
-                y2={y}
-                stroke={color}
-                strokeWidth="2"
-                strokeDasharray={isSupport ? "none" : "8 4"}
-                opacity="0.7"
-                filter={`url(#glow-${zone.timeframe})`}
-              />
-              
-              {/* Timeframe badge */}
-              <rect
-                x={8}
-                y={y - 9}
-                width={36}
-                height={18}
-                rx="3"
-                fill="#18181b"
-                stroke={color}
-                strokeWidth="1"
-              />
-              <text
-                x={26}
-                y={y + 3}
-                textAnchor="middle"
-                fill={color}
-                fontSize="9"
-                fontWeight="bold"
-              >
-                {zone.timeframe?.toUpperCase()}
-              </text>
-              
-              {/* Type indicator */}
-              <circle
-                cx={52}
-                cy={y}
-                r={4}
-                fill={isSupport ? "#00FF9D" : "#FF1E56"}
-              />
-            </g>
-          );
-        })}
-        
-        {/* TRENDLINES - Diagonal lines */}
-        {chart_data.trendlines?.map((line, i) => {
-          if (!line.start || !line.end) return null;
-          
-          const color = line.color || BIAS_COLORS[line.bias] || TIMEFRAME_COLORS[line.timeframe];
-          
-          // Calculate line positions (using percentage of chart width for X)
-          const startX = width * 0.2;
-          const endX = width * 0.85;
-          const startY = priceToY(line.start.price);
-          const endY = priceToY(line.end.price);
-          
-          // Extend line beyond endpoints
-          const slope = (endY - startY) / (endX - startX);
-          const extendedStartX = 0;
-          const extendedStartY = startY - slope * startX;
-          const extendedEndX = width - 70;
-          const extendedEndY = endY + slope * (extendedEndX - endX);
-          
-          return (
-            <g 
-              key={`trendline-${i}`} 
-              className="sentinel-trendline pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: line.type,
-                timeframe: line.timeframe,
-                bias: line.bias,
-                start: line.start,
-                end: line.end
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Main trendline with glow */}
-              <line
-                x1={extendedStartX}
-                y1={extendedStartY}
-                x2={extendedEndX}
-                y2={extendedEndY}
-                stroke={color}
-                strokeWidth="2"
-                opacity="0.6"
-                filter={`url(#glow-${line.timeframe})`}
-              />
-              
-              {/* Start point */}
-              <circle
-                cx={startX}
-                cy={startY}
-                r={5}
-                fill={color}
-                opacity="0.8"
-              />
-              
-              {/* End point */}
-              <circle
-                cx={endX}
-                cy={endY}
-                r={5}
-                fill={color}
-                opacity="0.8"
-              />
-              
-              {/* Label at midpoint */}
-              <rect
-                x={(startX + endX) / 2 - 25}
-                y={(startY + endY) / 2 - 10}
-                width={50}
-                height={20}
-                rx="3"
-                fill="#18181b"
-                stroke={color}
-                strokeWidth="1"
-                opacity="0.9"
-              />
-              <text
-                x={(startX + endX) / 2}
-                y={(startY + endY) / 2 + 3}
-                textAnchor="middle"
-                fill={color}
-                fontSize="8"
-                fontWeight="bold"
-              >
-                {line.timeframe?.toUpperCase()}
-              </text>
-            </g>
-          );
-        })}
-        
-        {/* PATTERN SHAPES - Triangles, Wedges */}
-        {chart_data.patterns?.map((pattern, i) => {
-          const color = pattern.color || BIAS_COLORS[pattern.bias] || TIMEFRAME_COLORS[pattern.timeframe];
-          
-          if (pattern.upper_line && pattern.lower_line) {
-            // Converging lines (triangles, wedges)
-            const startX = width * 0.25;
-            const endX = width * 0.75;
-            
-            const upperStartY = priceToY(pattern.resistance || overlayData.current_price * 1.02);
-            const upperEndY = priceToY(pattern.resistance || overlayData.current_price * 1.01);
-            const lowerStartY = priceToY(pattern.support || overlayData.current_price * 0.98);
-            const lowerEndY = priceToY(pattern.support || overlayData.current_price * 0.99);
-            
-            return (
-              <g 
-                key={`pattern-${i}`} 
-                className="sentinel-pattern pointer-events-auto cursor-pointer"
-                onMouseEnter={(e) => handleElementHover({
-                  type: pattern.type,
-                  timeframe: pattern.timeframe,
-                  bias: pattern.bias
-                }, e)}
-                onMouseLeave={() => handleElementHover(null)}
-              >
-                {/* Fill area */}
-                <polygon
-                  points={`${startX},${upperStartY} ${endX},${upperEndY} ${endX},${lowerEndY} ${startX},${lowerStartY}`}
-                  fill={pattern.bias === "BULLISH" ? "url(#zone-gradient-bull)" : "url(#zone-gradient-bear)"}
-                  opacity="0.3"
-                />
-                
-                {/* Upper line */}
-                <line
-                  x1={startX}
-                  y1={upperStartY}
-                  x2={endX}
-                  y2={upperEndY}
-                  stroke={color}
-                  strokeWidth="2"
-                  opacity="0.7"
-                  filter={`url(#glow-${pattern.timeframe})`}
-                />
-                
-                {/* Lower line */}
-                <line
-                  x1={startX}
-                  y1={lowerStartY}
-                  x2={endX}
-                  y2={lowerEndY}
-                  stroke={color}
-                  strokeWidth="2"
-                  opacity="0.7"
-                  filter={`url(#glow-${pattern.timeframe})`}
-                />
-                
-                {/* Pattern name label */}
-                <rect
-                  x={(startX + endX) / 2 - 50}
-                  y={(upperStartY + lowerStartY) / 2 - 12}
-                  width={100}
-                  height={24}
-                  rx="4"
-                  fill="#18181b"
-                  stroke={color}
-                  strokeWidth="1"
-                />
-                <text
-                  x={(startX + endX) / 2}
-                  y={(upperStartY + lowerStartY) / 2 + 3}
-                  textAnchor="middle"
-                  fill={color}
-                  fontSize="9"
-                  fontWeight="bold"
-                >
-                  {PATTERN_NAMES_IT[pattern.type] || pattern.type?.replace(/_/g, ' ')}
-                </text>
-              </g>
-            );
+          if (!startPrice && !endPrice && !drawData.price) {
+            return null;
           }
           
-          return null;
-        })}
-        
-        {/* MARKERS - Candlestick patterns */}
-        {chart_data.markers?.slice(0, 15).map((marker, i) => {
-          const color = marker.color || BIAS_COLORS[marker.bias] || TIMEFRAME_COLORS[marker.timeframe];
-          const y = priceToY(marker.price);
-          const x = width - 90 - (i * 25);
+          // Calculate Y positions
+          const startY = startPrice ? priceToY(startPrice) : priceToY(drawData.price);
+          const endY = endPrice ? priceToY(endPrice) : startY;
           
-          if (x < 100) return null;
-          
-          return (
-            <g 
-              key={`marker-${i}`} 
-              className="sentinel-marker pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: marker.type,
-                timeframe: marker.timeframe,
-                price: marker.price,
-                bias: marker.bias
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Marker icon based on bias */}
-              {marker.bias === "BULLISH" ? (
-                <polygon
-                  points={`${x},${y + 10} ${x - 7},${y - 3} ${x + 7},${y - 3}`}
-                  fill={color}
-                  opacity="0.9"
-                  filter={`url(#glow-${marker.timeframe})`}
-                />
-              ) : marker.bias === "BEARISH" ? (
-                <polygon
-                  points={`${x},${y - 10} ${x - 7},${y + 3} ${x + 7},${y + 3}`}
-                  fill={color}
-                  opacity="0.9"
-                  filter={`url(#glow-${marker.timeframe})`}
-                />
-              ) : (
-                <circle
-                  cx={x}
-                  cy={y}
-                  r="6"
-                  fill={color}
-                  opacity="0.9"
-                  filter={`url(#glow-${marker.timeframe})`}
-                />
-              )}
-            </g>
-          );
-        })}
-        
-        {/* ELLIOTT WAVES - Numbered wave segments */}
-        {chart_data.elliott_waves?.map((wave, i) => {
-          if (!wave.start || !wave.end) return null;
-          
-          const color = wave.color || ELLIOTT_COLORS.impulse;
-          const startY = priceToY(wave.start.price);
-          const endY = priceToY(wave.end.price);
-          
-          // Calculate X positions based on index
+          // Calculate X positions (simplified)
           const totalCandles = 100;
-          const startX = Math.max(50, (wave.start.index / totalCandles) * (width - 100));
-          const endX = Math.min(width - 70, (wave.end.index / totalCandles) * (width - 100));
-          
-          // Calculate midpoint for label
-          const midX = (startX + endX) / 2;
-          const midY = (startY + endY) / 2;
-          
-          // Determine if it's impulse (1-5) or corrective (A-B-C)
-          const isImpulse = ['1', '2', '3', '4', '5', '1-5'].includes(wave.label);
-          const waveColor = isImpulse ? ELLIOTT_COLORS.impulse : ELLIOTT_COLORS.corrective;
-          
-          return (
-            <g 
-              key={`elliott-${i}`} 
-              className="sentinel-elliott pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: wave.type,
-                timeframe: wave.timeframe,
-                label: wave.label,
-                direction: wave.direction,
-                start_price: wave.start?.price,
-                end_price: wave.end?.price,
-                is_extended: wave.is_extended,
-                is_truncated: wave.is_truncated
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Wave line segment */}
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                stroke={waveColor}
-                strokeWidth="3"
-                opacity="0.8"
-                strokeLinecap="round"
-              />
-              
-              {/* Glow effect */}
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                stroke={waveColor}
-                strokeWidth="6"
-                opacity="0.2"
-                strokeLinecap="round"
-              />
-              
-              {/* Wave number/letter label */}
-              <g transform={`translate(${midX}, ${midY})`}>
-                {/* Circle background */}
-                <circle
-                  r="14"
-                  fill="#18181b"
-                  stroke={waveColor}
-                  strokeWidth="2"
-                />
-                {/* Number/Letter */}
-                <text
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fill={waveColor}
-                  fontSize="12"
-                  fontWeight="bold"
-                  fontFamily="JetBrains Mono, monospace"
-                >
-                  {wave.label}
-                </text>
-              </g>
-              
-              {/* Start point marker */}
-              <circle
-                cx={startX}
-                cy={startY}
-                r="4"
-                fill={waveColor}
-              />
-              
-              {/* End point marker */}
-              <circle
-                cx={endX}
-                cy={endY}
-                r="4"
-                fill={waveColor}
-              />
-              
-              {/* Extended/Truncated indicator */}
-              {wave.is_extended && (
-                <text
-                  x={midX + 18}
-                  y={midY - 5}
-                  fill="#00FF9D"
-                  fontSize="8"
-                  fontWeight="bold"
-                >
-                  EXT
-                </text>
-              )}
-              {wave.is_truncated && (
-                <text
-                  x={midX + 18}
-                  y={midY - 5}
-                  fill="#FF1E56"
-                  fontSize="8"
-                  fontWeight="bold"
-                >
-                  TRUNC
-                </text>
-              )}
-              
-              {/* Timeframe badge for complete patterns */}
-              {wave.is_complete_pattern && (
-                <rect
-                  x={endX + 5}
-                  y={endY - 10}
-                  width={40}
-                  height={20}
-                  rx="4"
-                  fill="#18181b"
-                  stroke={waveColor}
-                  strokeWidth="1"
-                />
-              )}
-              {wave.is_complete_pattern && (
-                <text
-                  x={endX + 25}
-                  y={endY + 3}
-                  textAnchor="middle"
-                  fill={waveColor}
-                  fontSize="9"
-                  fontWeight="bold"
-                >
-                  {wave.timeframe?.toUpperCase()}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        
-        {/* FRACTAL SUB-WAVES - Smaller numbered labels for waves inside waves */}
-        {subwavesEnabled && chart_data.fractal_subwaves?.map((subwave, i) => {
-          if (!subwave.start || !subwave.end) return null;
-          
-          const color = subwave.color || ELLIOTT_COLORS.subwave;
-          const startY = priceToY(subwave.start.price);
-          const endY = priceToY(subwave.end.price);
-          
-          // Sub-waves are positioned slightly offset from main waves
-          const totalCandles = 100;
-          const startX = Math.max(30, (subwave.start.index / totalCandles) * (width - 100)) + 5;
-          const endX = Math.min(width - 50, (subwave.end.index / totalCandles) * (width - 100)) + 5;
+          const startIndex = drawData.start?.index || 20;
+          const endIndex = drawData.end?.index || 80;
+          const startX = Math.max(50, (startIndex / totalCandles) * (width - 100));
+          const endX = Math.min(width - 70, (endIndex / totalCandles) * (width - 100));
           
           const midX = (startX + endX) / 2;
           const midY = (startY + endY) / 2;
           
           return (
             <g 
-              key={`subwave-${i}`} 
-              className="sentinel-subwave pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: subwave.type,
-                label: subwave.label,
-                timeframe: subwave.timeframe,
-                parent_wave: subwave.parent_wave,
-                parent_timeframe: subwave.parent_timeframe,
-                direction: subwave.direction,
-                is_subwave: true
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
+              key={`anchored-${pattern.anchorId || i}`} 
+              className="anchored-pattern pointer-events-auto"
             >
-              {/* Dashed connecting line to show hierarchy */}
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                stroke={color}
-                strokeWidth="1.5"
-                strokeDasharray="4 2"
-                opacity="0.5"
-              />
+              {/* HORIZONTAL LINE patterns (S/R) */}
+              {(shape === "horizontal_line" || pattern.type?.includes("support") || pattern.type?.includes("resistance")) && (
+                <>
+                  <line
+                    x1={0}
+                    y1={startY}
+                    x2={width - 70}
+                    y2={startY}
+                    stroke={color}
+                    strokeWidth="2.5"
+                    strokeDasharray={pattern.type?.includes('support') ? "none" : "8 4"}
+                    opacity="0.9"
+                    filter={`url(#anchor-glow-${tf})`}
+                  />
+                  {/* Label */}
+                  <rect
+                    x={8}
+                    y={startY - 12}
+                    width={60}
+                    height={24}
+                    rx="4"
+                    fill="#18181b"
+                    stroke={color}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={38}
+                    y={startY + 3}
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize="10"
+                    fontWeight="bold"
+                  >
+                    {tf?.toUpperCase()} {pattern.type?.includes('support') ? 'S' : 'R'}
+                  </text>
+                  {/* Price label */}
+                  <rect
+                    x={width - 75}
+                    y={startY - 10}
+                    width={65}
+                    height={20}
+                    rx="3"
+                    fill="#18181b"
+                    stroke={color}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={width - 42}
+                    y={startY + 4}
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize="9"
+                  >
+                    ${drawData.price?.toLocaleString() || startPrice?.toLocaleString()}
+                  </text>
+                </>
+              )}
               
-              {/* Faint glow effect */}
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                stroke={color}
-                strokeWidth="4"
-                strokeDasharray="4 2"
-                opacity="0.15"
-              />
+              {/* DIAGONAL LINE patterns (Trendlines) */}
+              {(shape === "diagonal_line" || pattern.type?.includes("trendline")) && (
+                <>
+                  <line
+                    x1={startX}
+                    y1={startY}
+                    x2={endX}
+                    y2={endY}
+                    stroke={color}
+                    strokeWidth="2.5"
+                    opacity="0.9"
+                    filter={`url(#anchor-glow-${tf})`}
+                  />
+                  {/* Start/End markers */}
+                  <circle cx={startX} cy={startY} r="5" fill={color} />
+                  <circle cx={endX} cy={endY} r="5" fill={color} />
+                  {/* Label */}
+                  <rect
+                    x={midX - 30}
+                    y={midY - 12}
+                    width={60}
+                    height={24}
+                    rx="4"
+                    fill="#18181b"
+                    stroke={color}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={midX}
+                    y={midY + 3}
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize="9"
+                    fontWeight="bold"
+                  >
+                    {tf?.toUpperCase()} TL
+                  </text>
+                </>
+              )}
               
-              {/* Sub-wave label (smaller, offset) */}
-              <g transform={`translate(${midX}, ${midY - 15})`}>
-                {/* Small circle background */}
+              {/* ELLIOTT WAVE patterns */}
+              {(shape === "elliott_wave" || pattern.type?.includes("elliott_wave")) && (
+                <>
+                  <line
+                    x1={startX}
+                    y1={startY}
+                    x2={endX}
+                    y2={endY}
+                    stroke={ELLIOTT_COLORS.impulse}
+                    strokeWidth="3"
+                    opacity="0.9"
+                  />
+                  {/* Glow */}
+                  <line
+                    x1={startX}
+                    y1={startY}
+                    x2={endX}
+                    y2={endY}
+                    stroke={ELLIOTT_COLORS.impulse}
+                    strokeWidth="6"
+                    opacity="0.2"
+                  />
+                  {/* Wave number label */}
+                  <g transform={`translate(${midX}, ${midY})`}>
+                    <circle
+                      r="16"
+                      fill="#18181b"
+                      stroke={ELLIOTT_COLORS.impulse}
+                      strokeWidth="2"
+                    />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill={ELLIOTT_COLORS.impulse}
+                      fontSize="14"
+                      fontWeight="bold"
+                    >
+                      {drawData.label || pattern.label}
+                    </text>
+                  </g>
+                  {/* Start/End markers */}
+                  <circle cx={startX} cy={startY} r="5" fill={ELLIOTT_COLORS.impulse} />
+                  <circle cx={endX} cy={endY} r="5" fill={ELLIOTT_COLORS.impulse} />
+                </>
+              )}
+              
+              {/* TRIANGLE/WEDGE patterns */}
+              {(shape === "converging_lines" || pattern.type?.includes("triangle") || pattern.type?.includes("wedge")) && (
+                <>
+                  {/* Upper line */}
+                  <line
+                    x1={startX}
+                    y1={priceToY(drawData.resistance || startPrice * 1.02)}
+                    x2={endX}
+                    y2={priceToY(drawData.resistance || endPrice * 1.01)}
+                    stroke={color}
+                    strokeWidth="2.5"
+                    opacity="0.9"
+                  />
+                  {/* Lower line */}
+                  <line
+                    x1={startX}
+                    y1={priceToY(drawData.support || startPrice * 0.98)}
+                    x2={endX}
+                    y2={priceToY(drawData.support || endPrice * 0.99)}
+                    stroke={color}
+                    strokeWidth="2.5"
+                    opacity="0.9"
+                  />
+                  {/* Pattern name */}
+                  <rect
+                    x={midX - 55}
+                    y={midY - 12}
+                    width={110}
+                    height={24}
+                    rx="4"
+                    fill="#18181b"
+                    stroke={color}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={midX}
+                    y={midY + 3}
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize="9"
+                    fontWeight="bold"
+                  >
+                    {PATTERN_NAMES_IT[pattern.type] || pattern.type_display || pattern.type}
+                  </text>
+                </>
+              )}
+              
+              {/* Remove button for each anchored pattern */}
+              <g 
+                className="anchored-remove cursor-pointer pointer-events-auto"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeAnchor(pattern.anchorId);
+                  toast.info('Pattern rimosso dal chart', { duration: 2000 });
+                }}
+                transform={`translate(${endX + 15}, ${endY - 15})`}
+              >
                 <circle
                   r="10"
                   fill="#18181b"
-                  stroke={color}
+                  stroke="#ef4444"
                   strokeWidth="1.5"
-                  strokeDasharray="2 1"
+                  className="hover:fill-red-500/20"
                 />
-                {/* Number/Letter in parentheses style */}
-                <text
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fill={color}
-                  fontSize="9"
-                  fontWeight="bold"
-                  fontFamily="JetBrains Mono, monospace"
-                >
-                  {subwave.label}
-                </text>
+                <line x1="-4" y1="-4" x2="4" y2="4" stroke="#ef4444" strokeWidth="2" />
+                <line x1="4" y1="-4" x2="-4" y2="4" stroke="#ef4444" strokeWidth="2" />
               </g>
               
-              {/* Connection line to parent (visual hierarchy) */}
-              {subwave.parent_wave && (
-                <line
-                  x1={midX}
-                  y1={midY - 25}
-                  x2={midX}
-                  y2={midY - 15}
-                  stroke={color}
-                  strokeWidth="1"
-                  strokeDasharray="2 2"
-                  opacity="0.4"
+              {/* Anchor indicator */}
+              <g transform={`translate(${startX - 15}, ${startY})`}>
+                <circle
+                  r="8"
+                  fill="#00F0FF"
+                  fillOpacity="0.2"
+                  stroke="#00F0FF"
+                  strokeWidth="1.5"
+                  filter="url(#anchor-indicator-glow)"
                 />
-              )}
+                <path
+                  d="M0,-4 L0,4 M-3,1 L0,4 L3,1"
+                  stroke="#00F0FF"
+                  strokeWidth="1.5"
+                  fill="none"
+                />
+              </g>
             </g>
           );
         })}
         
-        {/* FRACTAL COMPLETE INDICATORS - Gold boxes for complete nested structures */}
-        {subwavesEnabled && chart_data.fractal_insights?.map((insight, i) => {
-          const parentWave = insight.parent_wave;
-          if (!parentWave) return null;
-          
-          return (
-            <g 
-              key={`fractal-insight-${i}`}
-              className="sentinel-fractal-insight pointer-events-auto cursor-pointer"
-              onMouseEnter={(e) => handleElementHover({
-                type: 'fractal_complete',
-                parent_wave: parentWave,
-                parent_timeframe: insight.parent_timeframe,
-                child_timeframe: insight.child_timeframe,
-                mentor_insight: insight.mentor_insight,
-                is_fractal_complete: true
-              }, e)}
-              onMouseLeave={() => handleElementHover(null)}
-            >
-              {/* Fractal complete badge */}
-              <rect
-                x={width - 160}
-                y={40 + (i * 35)}
-                width={150}
-                height={30}
-                rx="6"
-                fill="#18181b"
-                stroke="#FFD700"
-                strokeWidth="1.5"
-              />
-              <rect
-                x={width - 160}
-                y={40 + (i * 35)}
-                width={150}
-                height={30}
-                rx="6"
-                fill="#FFD700"
-                fillOpacity="0.1"
-              />
-              <text
-                x={width - 85}
-                y={52 + (i * 35)}
-                textAnchor="middle"
-                fill="#FFD700"
-                fontSize="8"
-                fontWeight="bold"
-              >
-                FRACTAL {parentWave.label} COMPLETE
-              </text>
-              <text
-                x={width - 85}
-                y={64 + (i * 35)}
-                textAnchor="middle"
-                fill="#a1a1aa"
-                fontSize="7"
-              >
-                {insight.parent_timeframe?.toUpperCase()} → {insight.child_timeframe?.toUpperCase()}
-              </text>
-            </g>
-          );
-        })}
-        
-        {/* Current price indicator */}
-        {current_price && (
-          <g className="current-price-line">
-            <line
-              x1={0}
-              y1={priceToY(current_price)}
-              x2={width - 70}
-              y2={priceToY(current_price)}
-              stroke="#FFFFFF"
+        {/* Info overlay when no patterns anchored */}
+        {anchoredPatterns.length === 0 && (
+          <g>
+            <rect
+              x={width/2 - 120}
+              y={h/2 - 25}
+              width={240}
+              height={50}
+              rx="8"
+              fill="#18181b"
+              fillOpacity="0.9"
+              stroke="#3f3f46"
               strokeWidth="1"
-              strokeDasharray="3 3"
-              opacity="0.4"
             />
+            <text
+              x={width/2}
+              y={h/2 - 5}
+              textAnchor="middle"
+              fill="#a1a1aa"
+              fontSize="11"
+            >
+              Nessun pattern ancorato
+            </text>
+            <text
+              x={width/2}
+              y={h/2 + 12}
+              textAnchor="middle"
+              fill="#71717a"
+              fontSize="9"
+            >
+              Clicca ✏️ su un pattern per disegnarlo qui
+            </text>
           </g>
         )}
       </svg>
     );
   };
+  
+  // Original auto-draw disabled - Draft Mode uses renderAnchoredPatterns instead
+  const renderSentinelOverlay = () => null;
 
   // Render tooltip
   const renderTooltip = () => {
@@ -1264,59 +864,46 @@ export function TradingChartWithSentinel({ height = 400 }) {
           {overlayEnabled ? (
             <>
               <Eye className="w-3.5 h-3.5" />
-              <span>Patterns ON</span>
+              <span>Anchors ON</span>
             </>
           ) : (
             <>
               <EyeOff className="w-3.5 h-3.5" />
-              <span>Patterns OFF</span>
+              <span>Anchors OFF</span>
             </>
           )}
         </button>
         
-        {/* Sub-waves Toggle */}
-        {overlayEnabled && (
-          <button
-            onClick={() => setSubwavesEnabled(!subwavesEnabled)}
-            className={cn(
-              "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-200",
-              subwavesEnabled 
-                ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
-                : "bg-zinc-800/80 text-zinc-500 border border-zinc-700/50"
-            )}
-            data-testid="sentinel-subwaves-toggle"
-          >
-            <Layers className="w-3 h-3" />
-            <span>Sub-Waves</span>
-          </button>
-        )}
-        
-        {overlayEnabled && overlayData && (
-          <>
-            <div className="flex items-center gap-1 px-2 py-1 bg-zinc-800/80 rounded-lg border border-zinc-700/50">
-              <span className="text-[10px] text-amber-400 font-medium">
-                {overlayData.patterns_total || 0}
+        {/* Anchored patterns count & clear button */}
+        {overlayEnabled && anchorCount > 0 && (
+          <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-cyan-500/20 rounded-lg border border-cyan-500/40">
+              <Anchor className="w-3 h-3 text-cyan-400" />
+              <span className="text-[10px] text-cyan-400 font-bold">
+                {anchorCount}
               </span>
             </div>
-            {overlayData.chart_data?.elliott_waves?.length > 0 && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 rounded-lg border border-purple-500/30">
-                <span className="text-[10px] text-purple-400 font-bold">
-                  ELLIOTT
-                </span>
-                <span className="w-1 h-1 rounded-full bg-purple-400 animate-pulse" />
-              </div>
-            )}
-            {overlayData.chart_data?.fractal_subwaves?.length > 0 && subwavesEnabled && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-amber-500/10 rounded-lg border border-amber-500/30">
-                <span className="text-[10px] text-amber-400 font-bold">
-                  FRACTAL
-                </span>
-                <span className="text-[9px] text-amber-300">
-                  {overlayData.chart_data.fractal_subwaves.length}
-                </span>
-              </div>
-            )}
-          </>
+            <button
+              onClick={() => {
+                clearAllAnchors();
+                toast.info('Tutti i pattern rimossi', { duration: 2000 });
+              }}
+              className="p-1.5 rounded-lg bg-zinc-800/80 text-zinc-400 hover:bg-red-500/20 hover:text-red-400 transition-colors border border-zinc-700/50"
+              title="Rimuovi tutti gli ancoraggi"
+              data-testid="clear-all-anchors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        
+        {/* Empty state hint */}
+        {overlayEnabled && anchorCount === 0 && (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-800/60 rounded-lg border border-zinc-700/30">
+            <span className="text-[10px] text-zinc-500">
+              Usa ✏️ per ancorare
+            </span>
+          </div>
         )}
       </div>
       
@@ -1327,8 +914,8 @@ export function TradingChartWithSentinel({ height = 400 }) {
         style={{ height: `${height}px` }}
         data-testid="trading-chart-with-sentinel"
       >
-        {/* SVG Overlay */}
-        {renderSentinelOverlay()}
+        {/* SVG Overlay - Now uses Anchored Patterns (On-Demand) */}
+        {renderAnchoredPatterns()}
         
         {/* Tooltip */}
         {renderTooltip()}

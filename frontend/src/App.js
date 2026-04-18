@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppProvider } from "./contexts/AppContext";
 import { AccessProvider, useAccess } from "./contexts/AccessContext";
+import { AnchoredPatternsProvider } from "./contexts/AnchoredPatternsContext";
 import { Toaster } from "./components/ui/sonner";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
@@ -72,11 +73,12 @@ function App() {
   return (
     <AccessProvider>
       <AppProvider>
-        <BrowserRouter>
-          <AppLayout>
-            <Routes>
-              {/* PUBLIC ROUTES */}
-              <Route path="/" element={<DashboardPage />} />
+        <AnchoredPatternsProvider>
+          <BrowserRouter>
+            <AppLayout>
+              <Routes>
+                {/* PUBLIC ROUTES */}
+                <Route path="/" element={<DashboardPage />} />
               <Route path="/support-resistance" element={<SupportResistancePage />} />
               <Route path="/whale-alerts" element={<WhaleAlertsPage />} />
               <Route path="/liquidity" element={<LiquidityPage />} />
@@ -96,6 +98,7 @@ function App() {
           </AppLayout>
           <Toaster position="top-right" richColors />
         </BrowserRouter>
+        </AnchoredPatternsProvider>
       </AppProvider>
     </AccessProvider>
   );
