@@ -82,16 +82,43 @@ Every pattern includes tripartite explanation:
   - Bias badges (LONG/SHORT/NEUTRAL)
   - High probability badges
   - Scanner running indicator
-- **SentinelChartOverlay.js**: SVG overlay component (P1: Not yet integrated)
+- **TradingChartWithSentinel.js**: Chart with integrated SVG AR Overlay:
+  - **Patterns ON/OFF Toggle** (top-right corner, purple button)
+  - **SVG Overlay Layer** with pattern visualizations:
+    - Horizontal S/R zones with timeframe badges
+    - Diagonal trendlines with start/end markers
+    - Triangle/Wedge pattern shapes with fill gradients
+    - Candlestick pattern markers (bullish/bearish triangles)
+  - **Confluence Glow Boxes** for high probability zones (3+ TF overlap)
+  - **Interactive Hover Tooltips** showing:
+    - Pattern name (Italian)
+    - Timeframe with color indicator
+    - Price level
+    - Bias direction
+  - **Timeframe Legend** (bottom-left)
+  - **Pattern Count Badge** (shows active patterns)
+- **Premium Color Palette**:
+  - Neon Green (#00FF9D) - Bullish patterns
+  - Electric Rose (#FF1E56) - Bearish patterns
+  - Cyan (#00F0FF) - Neutral/15M patterns
+  - Gold (#FFD700) - 1D patterns + Confluence glow
 
 ### Test Results
 - Backend: 27/27 tests passed (100%)
 - Frontend: All UI components verified
 - Test file: `/app/backend/tests/test_sentinel_engine.py`
+- SVG Overlay: Manually verified with screenshots
+
+### Files Created/Modified
+| File | Description |
+|------|-------------|
+| `/app/backend/sentinel_engine.py` | Core pattern detection + background scanner |
+| `/app/frontend/src/components/TradingChartWithSentinel.js` | Chart with SVG AR overlay |
+| `/app/frontend/src/components/cards/SentinelPatternFeed.js` | Pattern feed UI |
+| `/app/frontend/src/components/pages/DashboardPage.js` | Updated to use new chart |
 
 ### Known Limitations
 - Weekly (1W) and Monthly (1M) timeframes have limited data from Kraken API
-- SVG Chart Overlay not yet integrated with TradingChart (P1 enhancement)
 
 ## V3.7.1 PEDAGOGICAL STANDARDIZATION (2026-04-18)
 

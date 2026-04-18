@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAccess } from '../../contexts/AccessContext';
-import { TradingChart } from '../TradingChart';
+import { TradingChartWithSentinel } from '../TradingChartWithSentinel';
 import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock, Eye } from 'lucide-react';
 import { 
   MarketBiasCard, 
@@ -234,13 +234,13 @@ export function DashboardPage() {
               </div>
             </div>
             <Badge className="text-[10px] text-cyan-400 border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1">
-              TradingView
+              TradingView + Sentinel AR
             </Badge>
           </div>
         </div>
-        {/* Chart Content - Better padding */}
+        {/* Chart Content with Sentinel Overlay - AR Vision */}
         <div className="p-4 bg-zinc-950/30">
-          <TradingChart height={380} />
+          <TradingChartWithSentinel height={420} />
         </div>
       </div>
 
