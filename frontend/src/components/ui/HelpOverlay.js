@@ -251,22 +251,6 @@ function getHelpContent(cardType, language, ctx) {
     },
 
     // ═══════════════════════════════════════════════════════════════════
-    // SHADOW TARGETS - Experimental Analysis
-    // ═══════════════════════════════════════════════════════════════════
-    shadow_targets: {
-      it: {
-        whatItIs: "Target sperimentali calcolati dalla liquidità reale, non da formule teoriche.",
-        whyItHappens: "La liquidità attrae il prezzo. Questi target mostrano dove sono realmente gli stop da 'cacciare'.",
-        howToRead: "Confronta: se shadow < standard → più conservativo. Osserva quale viene raggiunto prima."
-      },
-      en: {
-        whatItIs: "Experimental targets calculated from real liquidity, not theoretical formulas.",
-        whyItHappens: "Liquidity attracts price. These targets show where stops really are to be 'hunted'.",
-        howToRead: "Compare: if shadow < standard → more conservative. Watch which gets hit first."
-      }
-    },
-
-    // ═══════════════════════════════════════════════════════════════════
     // V3 MONITORING - System Performance
     // ═══════════════════════════════════════════════════════════════════
     v3_monitoring: {

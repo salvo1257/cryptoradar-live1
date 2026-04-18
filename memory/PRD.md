@@ -1,8 +1,8 @@
-# CryptoRadar v3.6.0 - Product Requirements Document
-**Last Updated:** 2026-04-18 (V2 Engine Downgrade Complete)
+# CryptoRadar v3.6.1 - Product Requirements Document
+**Last Updated:** 2026-04-18 (Shadow Target Inspector Removed)
 
 ## QUICK STATUS
-- **Current Version:** v3.6.0 - V3-ONLY PRODUCTION MODE
+- **Current Version:** v3.6.1 - V3-ONLY PRODUCTION MODE
 - **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -16,42 +16,47 @@
 - **V3.5.8 Fix:** Golden Record Sync (Regime/Mentor/Liquidity Alignment)
 - **V3.5.9 Fix:** Statistical Modules Repaired (History, Analytics, Backtest)
 - **V3.6.0 Feature:** V2 Engine Downgraded to Diagnostic-Only Mode
+- **V3.6.1 Cleanup:** Shadow Target Inspector Removed (deprecated)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
-## V3.6.0 V2 ENGINE DOWNGRADE (2026-04-18)
+## V3.6.1 SHADOW TARGET INSPECTOR REMOVAL (2026-04-18)
 
 ### Summary
-V2 Engine is now in **"DIAGNOSTIC ONLY"** mode. It runs in the background for comparison purposes but:
-- ❌ V2 signals are NOT saved to MongoDB
-- ❌ V2 signals do NOT trigger Telegram alerts
-- ❌ V2 signals are NOT included in performance metrics
-- ✅ V2 runs for visual comparison only (Admin panel)
+The Shadow Target Inspector component has been completely removed from the platform to simplify the UI and reduce server resource usage.
 
 ### Changes Made
 
-#### Backend (server.py)
-- `V3_ONLY_OPERATIONAL_MODE = True` (line 15032) - already enabled
-- `auto_record_signal_change()` blocks V1/V2 signals from DB insertion (lines 19702-19712)
-- Telegram notifications only fire for V3+ signals
-
-#### Database Cleanup
-- **Deleted 3 legacy V2 signals** from `signal_history` collection
-- **Remaining: 1 V3 signal** for clean validation baseline
-- Query used: `{"signal_engine_version": {"$in": ["v1", "v2"]}}`
-
-#### Frontend UI Updates
+#### Frontend
 | File | Change |
 |------|--------|
-| `DashboardPage.js` | Label: "V2 DIAGNOSTICA - NON OPERATIVO" |
-| `DashboardPage.js` | Badge: "Solo Confronto" |
-| `TradeSignalCard.js` | Header: "V2 Non Operativo" |
-| `TradeSignalCard.js` | Badge: "Solo Diagnostica" (amber color) |
+| `AlertHistoryPage.js` | Removed `ShadowTargetInspector` import and component |
+| `HelpOverlay.js` | Removed `shadow_targets` help entry |
 
-### Verification
-- Signal History page shows only V3 signals
-- V2 panel clearly labeled as diagnostic/non-operational
-- API `/api/signal-history` returns only V3 records
+#### Backend (server.py)
+- `SHADOW_TRACKING_ENABLED = False` flag added
+- Shadow tracking background loop **DISABLED** at startup
+- API endpoints return deprecation messages:
+  - `/api/v3/shadow-targets` → deprecated
+  - `/api/v3/shadow-performance` → deprecated
+  - `/api/v3/shadow-validation-logs` → deprecated
+  - `/api/v3/shadow-tracking-status` → deprecated
+
+#### Database Cleanup
+- **Dropped collections:**
+  - `shadow_liquidity_targets` (11 docs)
+  - `shadow_validation_logs` (8 docs)
+
+#### Server Resources Saved
+- Background loop (10s interval) no longer runs
+- No more DB writes for shadow data
+- Reduced memory usage (active_shadow_tracking dict no longer populated)
+
+### Layout Optimization
+The Signal History page now shows:
+- Performance Trading stats (full width)
+- V3 Monitoring Panel (expands to fill space)
+- Signal table with more vertical space
 
 ## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
 

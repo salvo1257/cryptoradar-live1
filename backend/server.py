@@ -1526,10 +1526,12 @@ def register_signal_hash(signal_hash: str, signal_id: str, direction: str) -> No
     logger.info(f"[DEDUP] Registered new signal hash={signal_hash[:8]}, signal_id={signal_id[:8]}, direction={direction}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SHADOW OUTCOME TRACKING SYSTEM - Real-time outcome detection for shadow validation
+# SHADOW OUTCOME TRACKING SYSTEM - DEPRECATED (v3.6.0)
+# This system has been disabled to save resources. Shadow tracking is no longer needed.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Active shadow tracking: {signal_id: tracking_data}
+# Shadow tracking disabled - keeping minimal stubs for API compatibility
+SHADOW_TRACKING_ENABLED = False
 active_shadow_tracking = {}
 shadow_tracking_task = None  # Background task reference
 
@@ -18171,85 +18173,15 @@ async def close_v3_signal(signal_id: str, outcome: str = Query(..., description=
 @api_router.get("/v3/shadow-tracking-status")
 async def get_shadow_tracking_status(_: bool = Depends(verify_admin_access)):
     """
-    Get REAL-TIME status of shadow outcome tracking system.
-    
-    Shows:
-    - Active signals being tracked in memory
-    - Current tracking loop status
-    - Recent price checks
-    - Performance of tracking system
+    DEPRECATED (v3.6.0): Shadow tracking has been disabled.
     """
-    global active_shadow_tracking, shadow_tracking_task
-    
-    now = datetime.now(timezone.utc)
-    
-    # Get all active tracking data
-    active_signals = []
-    for sig_id, tracking in active_shadow_tracking.items():
-        created = tracking.get("created_at")
-        if created and created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        age_seconds = (now - created).total_seconds() if created else 0
-        
-        # Calculate current MFE/MAE
-        entry = tracking.get("entry_price", 0)
-        direction = tracking.get("direction", "LONG")
-        max_fav = tracking.get("max_favorable_price", entry)
-        max_adv = tracking.get("max_adverse_price", entry)
-        
-        if direction == "LONG" and entry:
-            current_mfe = ((max_fav - entry) / entry) * 100
-            current_mae = ((max_adv - entry) / entry) * 100
-        elif entry:
-            current_mfe = ((entry - max_fav) / entry) * 100
-            current_mae = ((entry - max_adv) / entry) * 100
-        else:
-            current_mfe = 0
-            current_mae = 0
-        
-        active_signals.append({
-            "signal_id": sig_id,
-            "direction": direction,
-            "entry_price": round(entry, 2),
-            "stop_loss": round(tracking.get("stop_loss", 0), 2),
-            "target_1": round(tracking.get("target_1", 0), 2),
-            "target_2": round(tracking.get("target_2", 0), 2),
-            "age_minutes": round(age_seconds / 60, 1),
-            "price_checks": tracking.get("price_checks", 0),
-            "t1_hit": tracking.get("target_1_hit", False),
-            "t2_hit": tracking.get("target_2_hit", False),
-            "stop_hit": tracking.get("stop_hit", False),
-            "current_mfe_pct": round(current_mfe, 2),
-            "current_mae_pct": round(current_mae, 2),
-            "max_favorable_price": round(max_fav, 2),
-            "max_adverse_price": round(max_adv, 2),
-            "outcome": tracking.get("outcome", "PENDING")
-        })
-    
-    # Check tracking loop status
-    loop_running = shadow_tracking_task is not None and not shadow_tracking_task.done()
-    
-    # Get validated count from DB
-    validated_count = await db["shadow_liquidity_targets"].count_documents({"validation.status": "completed"})
-    pending_count = await db["shadow_liquidity_targets"].count_documents({"validation.status": "pending"})
-    
     return {
-        "status": "ACTIVE" if loop_running else "STOPPED",
-        "tracking_loop_running": loop_running,
-        "check_interval_seconds": 10,
-        "expiry_hours": 4,
-        
-        "active_tracking": {
-            "count": len(active_signals),
-            "signals": active_signals
-        },
-        
-        "database_status": {
-            "validated_signals": validated_count,
-            "pending_signals": pending_count
-        },
-        
-        "note": "Tracking loop checks price every 10 seconds. Signals expire after 4 hours without outcome."
+        "deprecated": True,
+        "message": "Shadow Tracking è stato disabilitato in v3.6.0.",
+        "status": "DISABLED",
+        "tracking_loop_running": False,
+        "active_tracking": {"count": 0, "signals": []},
+        "database_status": {"validated_signals": 0, "pending_signals": 0}
     }
 
 
@@ -18373,224 +18305,43 @@ async def backfill_v3_signals(_: bool = Depends(verify_admin_access)):
 @api_router.get("/v3/shadow-targets")
 async def get_shadow_liquidity_targets(limit: int = Query(default=20, le=100), _: bool = Depends(verify_admin_access)):
     """
-    SHADOW MODE ANALYSIS v0.3: View shadow liquidity target data with REAL-TIME tracking.
-    
-    Returns:
-        - Recent shadow target calculations with strength-based scoring
-        - LIVE tracking status for pending signals
-        - Performance metrics: % T1 hits, % T2 hits, % SL hits, avg MFE, avg MAE
-        - Validation results (when available)
+    DEPRECATED (v3.6.0): Shadow target tracking has been disabled.
+    Returns a deprecation notice.
     """
-    try:
-        collection = db["shadow_liquidity_targets"]
-        
-        # Get recent shadow targets
-        cursor = collection.find({}).sort("created_at", -1).limit(limit)
-        shadow_targets = []
-        
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            if isinstance(doc.get("created_at"), datetime):
-                doc["created_at"] = doc["created_at"].isoformat()
-            shadow_targets.append(doc)
-        
-        # Calculate aggregate statistics
-        total_count = await collection.count_documents({})
-        validated_count = await collection.count_documents({"validation.status": "completed"})
-        pending_count = await collection.count_documents({"validation.status": "pending"})
-        
-        # TRACKING METRICS - Real performance data
-        validated_docs = await collection.find({"validation.status": "completed"}).to_list(1000)
-        
-        t1_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("standard_t1_hit"))
-        t2_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("standard_t2_hit"))
-        sl_hits = sum(1 for d in validated_docs if d.get("validation", {}).get("stop_hit"))
-        
-        mfe_values = [d.get("validation", {}).get("mfe_percent", 0) for d in validated_docs if d.get("validation", {}).get("mfe_percent") is not None]
-        mae_values = [d.get("validation", {}).get("mae_percent", 0) for d in validated_docs if d.get("validation", {}).get("mae_percent") is not None]
-        
-        avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0
-        avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0
-        
-        t1_pct = (t1_hits / validated_count * 100) if validated_count > 0 else 0
-        t2_pct = (t2_hits / validated_count * 100) if validated_count > 0 else 0
-        sl_pct = (sl_hits / validated_count * 100) if validated_count > 0 else 0
-        
-        # Outcome distribution
-        outcomes = {}
-        for d in validated_docs:
-            outcome = d.get("validation", {}).get("final_outcome", "UNKNOWN")
-            outcomes[outcome] = outcomes.get(outcome, 0) + 1
-        
-        # Active tracking status (from memory)
-        active_tracking_count = len(active_shadow_tracking)
-        active_signals = []
-        now = datetime.now(timezone.utc)
-        for sig_id, tracking in active_shadow_tracking.items():
-            created = tracking.get("created_at")
-            if created and created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            age_min = round((now - created).total_seconds() / 60, 1) if created else 0
-            
-            active_signals.append({
-                "signal_id": sig_id[:12],
-                "direction": tracking.get("direction"),
-                "entry_price": tracking.get("entry_price"),
-                "target_1": tracking.get("target_1"),
-                "target_2": tracking.get("target_2"),
-                "stop_loss": tracking.get("stop_loss"),
-                "price_checks": tracking.get("price_checks", 0),
-                "t1_hit": tracking.get("target_1_hit", False),
-                "age_minutes": age_min
-            })
-        
-        return {
-            "status": "SHADOW_MODE_ACTIVE",
-            "engine_version": "shadow_liquidity_v0.3",
-            "total_collected": total_count,
-            "total_validated": validated_count,
-            "total_pending": pending_count,
-            "showing": len(shadow_targets),
-            
-            # NEW: Live tracking status
-            "live_tracking": {
-                "active_signals": active_tracking_count,
-                "tracking_interval_seconds": 10,
-                "signals_being_tracked": active_signals[:10]  # Show first 10
-            },
-            
-            # NEW: Performance metrics (what UI needs)
-            "performance_metrics": {
-                "t1_hit_percent": round(t1_pct, 1),
-                "t2_hit_percent": round(t2_pct, 1),
-                "sl_hit_percent": round(sl_pct, 1),
-                "avg_mfe_percent": round(avg_mfe, 2),
-                "avg_mae_percent": round(avg_mae, 2),
-                "sample_size": validated_count,
-                "outcome_distribution": outcomes
-            },
-            
-            "aggregate_stats": {
-                "signals_validated": validated_count,
-                "signals_pending": pending_count,
-                "t1_hits_count": t1_hits,
-                "t2_hits_count": t2_hits,
-                "sl_hits_count": sl_hits
-            },
-            
-            "recent_targets": shadow_targets,
-            
-            "note": "LIVE TRACKING ACTIVE - Signals tracked every 10s. Metrics update in real-time."
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching shadow targets: {e}")
-        import traceback
-        return {"error": str(e), "traceback": traceback.format_exc(), "status": "ERROR"}
+    return {
+        "deprecated": True,
+        "message": "Shadow Target Inspector è stato rimosso in v3.6.0. Usare V3 Monitoring Panel per la validazione segnali.",
+        "recent_targets": [],
+        "total_collected": 0,
+        "aggregate_stats": {},
+        "data_source_coverage": {}
+    }
 
 
 @api_router.get("/v3/shadow-performance")
 async def get_shadow_performance_metrics(_: bool = Depends(verify_admin_access)):
     """
-    SHADOW MODE PERFORMANCE COMPARISON: Standard vs Shadow Target Analysis.
-    
-    Provides comprehensive metrics to determine if liquidity-based targets
-    outperform standard targets.
-    
-    Returns:
-        - Average profit comparison (standard vs shadow)
-        - Win rate comparison
-        - % of trades where shadow outperformed
-        - By-direction breakdown
-        - Recommendation for switching
-    
-    Note: Requires validated signals (signals with completed outcomes).
+    DEPRECATED (v3.6.0): Shadow performance tracking has been disabled.
     """
-    try:
-        comparison_data = await get_shadow_performance_comparison()
-        return comparison_data
-        
-    except Exception as e:
-        logger.error(f"Error fetching shadow performance: {e}")
-        return {"error": str(e), "status": "ERROR"}
+    return {
+        "deprecated": True,
+        "message": "Shadow Performance è stato rimosso in v3.6.0.",
+        "comparison": {},
+        "status": "DISABLED"
+    }
 
 
 @api_router.get("/v3/shadow-validation-logs")
 async def get_shadow_validation_logs(limit: int = Query(default=50, le=200), _: bool = Depends(verify_admin_access)):
     """
-    SHADOW VALIDATION LOGS: View all shadow validation results.
-    
-    Returns validation data including:
-    - Risk validation status (VALID / LOW_QUALITY / REJECTED)
-    - Setup classification (LOW / MID / HIGH)
-    - R:R analysis
-    - Conflict detection
-    - Data quality assessment
-    
-    Note: This is SHADOW data - does not affect live signals.
+    DEPRECATED (v3.6.0): Shadow validation logs have been disabled.
     """
-    try:
-        collection = db["shadow_validation_logs"]
-        
-        cursor = collection.find({}).sort("created_at", -1).limit(limit)
-        logs = []
-        
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            if isinstance(doc.get("created_at"), datetime):
-                doc["created_at"] = doc["created_at"].isoformat()
-            logs.append(doc)
-        
-        # Aggregate statistics
-        total_count = await collection.count_documents({})
-        
-        status_counts = {
-            "VALID": await collection.count_documents({"risk_validation.shadow_validation.status": "VALID"}),
-            "LOW_QUALITY": await collection.count_documents({"risk_validation.shadow_validation.status": "LOW_QUALITY"}),
-            "REJECTED": await collection.count_documents({"risk_validation.shadow_validation.status": "REJECTED"})
-        }
-        
-        class_counts = {
-            "HIGH": await collection.count_documents({"setup_classification.setup_class": "HIGH"}),
-            "MID": await collection.count_documents({"setup_classification.setup_class": "MID"}),
-            "LOW": await collection.count_documents({"setup_classification.setup_class": "LOW"})
-        }
-        
-        # Calculate average R:R
-        rr_values = [
-            doc.get("risk_validation", {}).get("shadow_validation", {}).get("computed_rr", 0)
-            for doc in logs if doc.get("risk_validation")
-        ]
-        avg_rr = sum(rr_values) / len(rr_values) if rr_values else 0
-        
-        # Conflict rate
-        conflict_count = sum(
-            1 for doc in logs 
-            if doc.get("risk_validation", {}).get("shadow_validation", {}).get("conflict_detected", False)
-        )
-        conflict_rate = (conflict_count / len(logs)) * 100 if logs else 0
-        
-        return {
-            "status": "SHADOW_VALIDATION_ACTIVE",
-            "total_validations": total_count,
-            "showing": len(logs),
-            
-            "aggregate_stats": {
-                "avg_computed_rr": round(avg_rr, 2),
-                "conflict_rate_pct": round(conflict_rate, 1),
-                "by_status": status_counts,
-                "by_class": class_counts,
-                "would_reject_pct": round((status_counts["REJECTED"] / total_count) * 100, 1) if total_count > 0 else 0
-            },
-            
-            "validation_logs": logs,
-            
-            "note": "Shadow validation evaluates signals but does NOT block live trades"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching shadow validation logs: {e}")
-        return {"error": str(e), "status": "ERROR"}
+    return {
+        "deprecated": True,
+        "message": "Shadow Validation Logs sono stati rimossi in v3.6.0.",
+        "logs": [],
+        "status": "DISABLED"
+    }
 
 
 @api_router.get("/v3/cluster-validation-summary")
@@ -26659,16 +26410,9 @@ async def startup_event():
         logger.error(f"❌ Background Scheduler: Failed to start - {e}")
         scheduler_status["running"] = False
     
-    # ============== START SHADOW TRACKING LOOP ==============
-    try:
-        # First restore any pending signals from previous session
-        restored = await restore_pending_shadow_signals()
-        
-        # Then start the tracking loop
-        start_shadow_tracking_task()
-        logger.info(f"✅ Shadow Tracking: Started (10s interval, {restored} signals restored)")
-    except Exception as e:
-        logger.error(f"❌ Shadow Tracking: Failed to start - {e}")
+    # ============== SHADOW TRACKING LOOP - DISABLED (v3.6.0) ==============
+    # Shadow tracking has been deprecated to save server resources
+    logger.info("⏸️  Shadow Tracking: DISABLED (deprecated in v3.6.0)")
     
     # ============== START CLUSTER TARGET VALIDATION LOOP ==============
     try:
@@ -26684,7 +26428,7 @@ async def startup_event():
     logger.info("=" * 50)
     logger.info("CryptoRadar startup complete!")
     logger.info(f"   - Signal Dedup Window: {SIGNAL_DEDUP_WINDOW_MINUTES} minutes")
-    logger.info("   - Shadow Tracking: Active")
+    logger.info("   - Shadow Tracking: DISABLED (deprecated)")
     logger.info("   - Cluster Validation: Active")
     logger.info("=" * 50)
 
