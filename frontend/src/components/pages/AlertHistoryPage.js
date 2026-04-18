@@ -231,7 +231,7 @@ export function AlertHistoryPage() {
             onClick={checkOutcomes}
             disabled={checkingOutcomes}
             variant="outline"
-            className="border-crypto-border"
+            className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
             data-testid="check-outcomes-btn"
           >
             {checkingOutcomes ? (
@@ -244,7 +244,7 @@ export function AlertHistoryPage() {
           <Button
             onClick={recordCurrentSignal}
             disabled={recording}
-            className="bg-crypto-accent hover:bg-crypto-accent/80"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500/50"
             data-testid="record-signal-btn"
           >
             {recording ? (
