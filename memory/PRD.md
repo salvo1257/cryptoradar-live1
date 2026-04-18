@@ -1,8 +1,8 @@
-# CryptoRadar v3.7.2 - Product Requirements Document
-**Last Updated:** 2026-04-18 (Trading Cockpit UI Overhaul)
+# CryptoRadar v3.8.0 - Product Requirements Document
+**Last Updated:** 2026-04-18 (The Sentinel - Pattern Detection Engine)
 
 ## QUICK STATUS
-- **Current Version:** v3.7.2 - V3-ONLY PRODUCTION MODE + TRADING COCKPIT
+- **Current Version:** v3.8.0 - THE SENTINEL ACTIVE
 - **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -20,8 +20,78 @@
 - **V3.6.2 Feature:** Big Five Exchange Integration (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)
 - **V3.7.0 Feature:** Premium UI Overhaul + Whale Flow 2.0
 - **V3.7.1 Feature:** Pedagogical Standardization (Cosa/Perché/Azione)
+- **V3.7.2 Feature:** Trading Cockpit Layout (Horizontal Primary Intelligence)
+- **V3.8.0 Feature:** THE SENTINEL - Autonomous Multi-Timeframe Pattern Detection Engine
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
+
+## V3.8.0 THE SENTINEL - PATTERN DETECTION ENGINE (2026-04-18)
+
+### Summary
+The Sentinel is an autonomous, 24/7 pattern detection engine that monitors BTC/USDT across 6 timeframes (15M, 1H, 4H, 1D, 1W, 1M). It detects technical patterns, identifies multi-timeframe confluences, and provides psychological explanations for each pattern in the "Cosa succede / Perché / Azione" format.
+
+### Features Implemented
+
+#### 1. Backend Pattern Engine (`/app/backend/sentinel_engine.py`)
+- **SentinelEngine Class**: Core pattern detection algorithms
+- **SentinelScanner Class**: Background task for autonomous scanning
+- **Pattern Types Detected** (14 types):
+  - Reversal: Double Top/Bottom, Head & Shoulders, Inverse H&S
+  - Continuation: Triangles (Symmetric, Ascending, Descending), Wedges, Flags
+  - Candlestick: Hammer, Shooting Star, Doji, Engulfing (Bull/Bear)
+  - Structure: Support/Resistance Lines, Trendlines (Up/Down)
+
+#### 2. Multi-Timeframe Scanning
+| Timeframe | Scan Interval | Color Code |
+|-----------|---------------|------------|
+| 15m | 60s | #00F0FF (Cyan) |
+| 1h | 120s | #8B5CF6 (Purple) |
+| 4h | 300s | #00FF9D (Green) |
+| 1d | 600s | #FFD700 (Gold) |
+| 1w | 1800s | #FF6B35 (Orange) |
+| 1M | 3600s | #FF1E56 (Red) |
+
+#### 3. Confluence Detection
+- Detects when same pattern type appears across multiple timeframes
+- Calculates confluence score based on timeframe weights
+- Flags "High Probability Setups" when score exceeds threshold
+- Current stats: 752 patterns detected, 10 high probability confluences
+
+#### 4. Psychological Interpretations (Italian)
+Every pattern includes tripartite explanation:
+- **Cosa succede**: What is happening in the market
+- **Perché**: Psychological dynamics (institutional vs retail)
+- **Azione**: Specific trading action with entry/stop/target guidance
+
+#### 5. API Endpoints (Public - No Auth Required)
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/sentinel/status` | Scanner status, stats, running state |
+| `GET /api/sentinel/patterns` | All patterns with psychology |
+| `GET /api/sentinel/confluences` | Multi-TF confluence alerts |
+| `GET /api/sentinel/chart-overlay` | SVG drawing data for UI overlay |
+| `GET /api/sentinel/pattern-psychology/{type}` | Psychology for specific pattern |
+| `POST /api/sentinel/manual-scan` | Admin: Force immediate scan |
+
+#### 6. Frontend Components
+- **SentinelPatternFeed.js**: Main UI component with:
+  - Timeframe filter buttons (Tutti, 15 Min, 1 Ora, etc.)
+  - Confluence alerts section
+  - Individual pattern cards with expandable psychology
+  - Completion progress bars
+  - Bias badges (LONG/SHORT/NEUTRAL)
+  - High probability badges
+  - Scanner running indicator
+- **SentinelChartOverlay.js**: SVG overlay component (P1: Not yet integrated)
+
+### Test Results
+- Backend: 27/27 tests passed (100%)
+- Frontend: All UI components verified
+- Test file: `/app/backend/tests/test_sentinel_engine.py`
+
+### Known Limitations
+- Weekly (1W) and Monthly (1M) timeframes have limited data from Kraken API
+- SVG Chart Overlay not yet integrated with TradingChart (P1 enhancement)
 
 ## V3.7.1 PEDAGOGICAL STANDARDIZATION (2026-04-18)
 
