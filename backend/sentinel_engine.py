@@ -108,6 +108,18 @@ class PatternType(str, Enum):
     ELLIOTT_WAVE_C = "elliott_wave_c"
     ELLIOTT_IMPULSE = "elliott_impulse"      # Complete 1-2-3-4-5
     ELLIOTT_CORRECTIVE = "elliott_corrective"  # Complete A-B-C
+    
+    # Fractal Sub-Waves (waves inside waves)
+    ELLIOTT_SUBWAVE_1 = "elliott_subwave_1"
+    ELLIOTT_SUBWAVE_2 = "elliott_subwave_2"
+    ELLIOTT_SUBWAVE_3 = "elliott_subwave_3"
+    ELLIOTT_SUBWAVE_4 = "elliott_subwave_4"
+    ELLIOTT_SUBWAVE_5 = "elliott_subwave_5"
+    ELLIOTT_SUBWAVE_A = "elliott_subwave_a"
+    ELLIOTT_SUBWAVE_B = "elliott_subwave_b"
+    ELLIOTT_SUBWAVE_C = "elliott_subwave_c"
+    ELLIOTT_FRACTAL_COMPLETE = "elliott_fractal_complete"  # Full fractal structure
+    ELLIOTT_FRACTAL_INSIGHT = "elliott_fractal_insight"    # Fractal timing insight
 
 PATTERN_BIAS = {
     PatternType.HEAD_AND_SHOULDERS: "BEARISH",
@@ -141,6 +153,17 @@ PATTERN_BIAS = {
     PatternType.ELLIOTT_WAVE_C: "BEARISH",  # Final correction
     PatternType.ELLIOTT_IMPULSE: "BULLISH",
     PatternType.ELLIOTT_CORRECTIVE: "BEARISH",
+    # Fractal Sub-Waves inherit direction from parent
+    PatternType.ELLIOTT_SUBWAVE_1: "BULLISH",
+    PatternType.ELLIOTT_SUBWAVE_2: "BEARISH",
+    PatternType.ELLIOTT_SUBWAVE_3: "BULLISH",
+    PatternType.ELLIOTT_SUBWAVE_4: "BEARISH",
+    PatternType.ELLIOTT_SUBWAVE_5: "BULLISH",
+    PatternType.ELLIOTT_SUBWAVE_A: "BEARISH",
+    PatternType.ELLIOTT_SUBWAVE_B: "BULLISH",
+    PatternType.ELLIOTT_SUBWAVE_C: "BEARISH",
+    PatternType.ELLIOTT_FRACTAL_COMPLETE: "NEUTRAL",
+    PatternType.ELLIOTT_FRACTAL_INSIGHT: "NEUTRAL",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -449,6 +472,69 @@ PATTERN_PSYCHOLOGY = {
             "cosa_succede": "Complete Elliott Correction (A-B-C). Entire corrective cycle ended. New 1-2-3-4-5 impulse about to begin.",
             "perche": "Market has 'reset' sentiment. Capitulation (C) cleared weak hands. Smart money accumulating.",
             "azione": "ENTER in direction of new impulse. Look for reversal confirmation. Stop below/above Wave C end."
+        }
+    },
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # FRACTAL SUB-WAVE PSYCHOLOGY - Onde dentro le Onde
+    # ═══════════════════════════════════════════════════════════════════════════════
+    PatternType.ELLIOTT_SUBWAVE_1: {
+        "it": {
+            "cosa_succede": "Sub-onda 1 del ciclo minore. L'inizio del micro-impulso dentro l'onda maggiore.",
+            "perche": "Il momentum dell'onda maggiore inizia a manifestarsi nei timeframe più bassi. Gli scalper stanno entrando.",
+            "azione": "Entry point per chi vuole cavalcare l'onda maggiore con timing preciso. Usa lo stop stretto del timeframe minore."
+        },
+        "en": {
+            "cosa_succede": "Sub-wave 1 of minor cycle. The beginning of micro-impulse inside major wave.",
+            "perche": "Major wave momentum starts manifesting in lower timeframes. Scalpers entering.",
+            "azione": "Entry point for riding major wave with precise timing. Use tight stops from lower timeframe."
+        }
+    },
+    PatternType.ELLIOTT_SUBWAVE_3: {
+        "it": {
+            "cosa_succede": "Sub-onda 3 - il CUORE del momentum. L'accelerazione massima dentro l'onda maggiore.",
+            "perche": "Sia i trader del timeframe maggiore che quelli del minore stanno spingendo nella stessa direzione. Confluenza totale.",
+            "azione": "AGGIUNGI posizioni. Questo è il momento di massimo momentum. Non uscire troppo presto!"
+        },
+        "en": {
+            "cosa_succede": "Sub-wave 3 - the HEART of momentum. Maximum acceleration inside major wave.",
+            "perche": "Both higher and lower timeframe traders pushing in same direction. Total confluence.",
+            "azione": "ADD positions. This is peak momentum. Don't exit too early!"
+        }
+    },
+    PatternType.ELLIOTT_SUBWAVE_5: {
+        "it": {
+            "cosa_succede": "Sub-onda 5 - completamento del micro-ciclo. L'onda maggiore sta per raggiungere un punto di svolta.",
+            "perche": "Il momentum del timeframe minore si sta esaurendo. Questo spesso precede una correzione anche nel timeframe maggiore.",
+            "azione": "PRENDI PROFITTI parziali. Il sub-ciclo sta finendo. Prepara trailing stop o scala l'uscita."
+        },
+        "en": {
+            "cosa_succede": "Sub-wave 5 - micro-cycle completion. Major wave about to reach a turning point.",
+            "perche": "Lower timeframe momentum exhausting. This often precedes correction in major timeframe too.",
+            "azione": "TAKE PARTIAL PROFITS. Sub-cycle ending. Prepare trailing stop or scale exit."
+        }
+    },
+    PatternType.ELLIOTT_FRACTAL_COMPLETE: {
+        "it": {
+            "cosa_succede": "Struttura Frattale Completa rilevata. Un intero ciclo 1-2-3-4-5 si è completato DENTRO un'onda di grado superiore.",
+            "perche": "Questa è la prova definitiva che l'onda maggiore ha raggiunto la sua maturità. Il pattern si auto-replica su tutti i gradi.",
+            "azione": "ALTA PROBABILITÀ di inversione o correzione imminente. Il timeframe maggiore sta per cambiare direzione."
+        },
+        "en": {
+            "cosa_succede": "Complete Fractal Structure detected. An entire 1-2-3-4-5 cycle completed INSIDE a higher-degree wave.",
+            "perche": "This is definitive proof the major wave has reached maturity. Pattern self-replicates across all degrees.",
+            "azione": "HIGH PROBABILITY of imminent reversal or correction. Higher timeframe about to change direction."
+        }
+    },
+    PatternType.ELLIOTT_FRACTAL_INSIGHT: {
+        "it": {
+            "cosa_succede": "Insight Frattale: Il timeframe minore sta confermando la struttura del timeframe maggiore.",
+            "perche": "Quando le onde frattali si allineano, la probabilità del movimento aumenta esponenzialmente. Self-similarity in azione.",
+            "azione": "Trade nella direzione confermata con alta fiducia. Usa il timeframe minore per entry, il maggiore per target."
+        },
+        "en": {
+            "cosa_succede": "Fractal Insight: Lower timeframe is confirming higher timeframe structure.",
+            "perche": "When fractal waves align, move probability increases exponentially. Self-similarity in action.",
+            "azione": "Trade in confirmed direction with high confidence. Use lower TF for entry, higher for target."
         }
     }
 }
@@ -1250,6 +1336,244 @@ def determine_current_wave_position(waves: List[Dict], prices: List[float]) -> O
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# FRACTAL WAVE DETECTION - Waves Inside Waves
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Timeframe hierarchy for fractal analysis
+FRACTAL_HIERARCHY = {
+    Timeframe.M1: None,           # Monthly has no parent
+    Timeframe.W1: Timeframe.M1,   # Weekly inside Monthly
+    Timeframe.D1: Timeframe.W1,   # Daily inside Weekly
+    Timeframe.H4: Timeframe.D1,   # 4H inside Daily
+    Timeframe.H1: Timeframe.H4,   # 1H inside 4H
+    Timeframe.M15: Timeframe.H1,  # 15M inside 1H
+}
+
+CHILD_TIMEFRAMES = {
+    Timeframe.M1: [Timeframe.W1],
+    Timeframe.W1: [Timeframe.D1],
+    Timeframe.D1: [Timeframe.H4],
+    Timeframe.H4: [Timeframe.H1, Timeframe.M15],
+    Timeframe.H1: [Timeframe.M15],
+    Timeframe.M15: [],
+}
+
+
+def detect_fractal_subwaves(
+    parent_wave: Dict,
+    parent_timeframe: Timeframe,
+    child_waves: List[Dict],
+    child_timeframe: Timeframe
+) -> List[Dict]:
+    """
+    Detect sub-waves (fractal structure) inside a parent wave.
+    
+    Example: If 4H is in Wave 3, look for 1-2-3-4-5 inside it on 15M.
+    
+    Args:
+        parent_wave: The major wave (e.g., Wave 3 on 4H)
+        parent_timeframe: The timeframe of the parent wave
+        child_waves: Detected waves on the lower timeframe
+        child_timeframe: The lower timeframe to analyze
+        
+    Returns:
+        List of sub-wave patterns with fractal relationships
+    """
+    fractal_patterns = []
+    
+    if not parent_wave or not child_waves:
+        return fractal_patterns
+    
+    parent_start = parent_wave.get("start", {})
+    parent_end = parent_wave.get("end", {})
+    parent_label = parent_wave.get("label", "?")
+    parent_direction = parent_wave.get("direction", "NEUTRAL")
+    
+    if not parent_start or not parent_end:
+        return fractal_patterns
+    
+    # Filter child waves that fall within the parent wave's time range
+    # (We use price range as a proxy since we have price data)
+    parent_price_range = (
+        min(parent_start.get("price", 0), parent_end.get("price", 0)),
+        max(parent_start.get("price", 0), parent_end.get("price", 0))
+    )
+    
+    # Find child waves that could be sub-waves
+    potential_subwaves = []
+    for cw in child_waves:
+        cw_start = cw.get("start", {})
+        cw_end = cw.get("end", {})
+        
+        # Check if this child wave is within the parent's domain
+        if cw_start and cw_end:
+            cw_prices = [cw_start.get("price", 0), cw_end.get("price", 0)]
+            
+            # Allow some tolerance for waves near the edges
+            if any(parent_price_range[0] * 0.98 <= p <= parent_price_range[1] * 1.02 for p in cw_prices):
+                potential_subwaves.append(cw)
+    
+    # Count complete sub-wave sequences (1-2-3-4-5 or A-B-C)
+    subwave_labels = [sw.get("label", "") for sw in potential_subwaves]
+    
+    # Check for complete impulse (1,2,3,4,5)
+    has_complete_impulse = all(str(i) in subwave_labels for i in range(1, 6))
+    
+    # Check for complete correction (A,B,C)
+    has_complete_correction = all(letter in subwave_labels for letter in ["A", "B", "C"])
+    
+    # Sub-wave color (lighter version of parent timeframe color)
+    subwave_color = TIMEFRAME_COLORS.get(child_timeframe, "#8B5CF6")
+    
+    # Create sub-wave patterns with parent relationship
+    for i, sw in enumerate(potential_subwaves):
+        sw_label = sw.get("label", "?")
+        
+        # Determine sub-wave type
+        if sw_label in ["1", "2", "3", "4", "5"]:
+            subwave_type = getattr(PatternType, f"ELLIOTT_SUBWAVE_{sw_label}", None)
+        elif sw_label in ["A", "B", "C"]:
+            subwave_type = getattr(PatternType, f"ELLIOTT_SUBWAVE_{sw_label}", None)
+        else:
+            continue
+        
+        if not subwave_type:
+            continue
+        
+        fractal_pattern = {
+            "type": subwave_type,
+            "start": sw.get("start"),
+            "end": sw.get("end"),
+            "label": f"{sw_label}",
+            "display_label": f"({sw_label})",  # Parentheses for sub-waves
+            "direction": sw.get("direction", parent_direction),
+            "color": subwave_color,
+            "is_subwave": True,
+            "parent_wave": {
+                "label": parent_label,
+                "timeframe": parent_timeframe.value,
+                "direction": parent_direction
+            },
+            "child_timeframe": child_timeframe.value,
+            "parent_timeframe": parent_timeframe.value,
+            "fractal_depth": 1,  # Depth of nesting
+            "weight": TIMEFRAME_WEIGHTS.get(child_timeframe, 1) * 0.5  # Half weight for sub-waves
+        }
+        
+        fractal_patterns.append(fractal_pattern)
+    
+    # Generate Fractal Insight if we have complete sub-structure
+    if has_complete_impulse or has_complete_correction:
+        insight_type = "impulse" if has_complete_impulse else "correction"
+        
+        fractal_insight = {
+            "type": PatternType.ELLIOTT_FRACTAL_COMPLETE,
+            "parent_wave": {
+                "label": parent_label,
+                "timeframe": parent_timeframe.value,
+                "direction": parent_direction
+            },
+            "child_timeframe": child_timeframe.value,
+            "parent_timeframe": parent_timeframe.value,
+            "subwave_type": insight_type,
+            "subwave_count": 5 if has_complete_impulse else 3,
+            "color": "#FFD700",  # Gold for complete fractal
+            "is_fractal_complete": True,
+            "mentor_insight": generate_fractal_mentor_insight(
+                parent_label, 
+                parent_timeframe.value,
+                child_timeframe.value,
+                insight_type,
+                parent_direction
+            ),
+            "psychology": PATTERN_PSYCHOLOGY.get(PatternType.ELLIOTT_FRACTAL_COMPLETE, {}).get("it", {})
+        }
+        
+        fractal_patterns.append(fractal_insight)
+    
+    return fractal_patterns
+
+
+def generate_fractal_mentor_insight(
+    parent_label: str,
+    parent_tf: str,
+    child_tf: str,
+    subwave_type: str,
+    parent_direction: str
+) -> str:
+    """Generate a Mentor-style fractal insight message."""
+    
+    direction_word = "rialzista" if parent_direction == "BULLISH" else "ribassista"
+    action_word = "correzione" if parent_direction == "BULLISH" else "ripresa"
+    
+    if subwave_type == "impulse":
+        return (
+            f"🔮 FRACTAL INSIGHT: Un'Onda {parent_label} {direction_word} sul {parent_tf.upper()} "
+            f"sta raggiungendo il completamento perché ho rilevato un ciclo completo di 5 sub-onde "
+            f"sul {child_tf.upper()}. ALTA PROBABILITÀ di {action_word} imminente. "
+            f"Il timeframe minore ha confermato la struttura maggiore."
+        )
+    else:
+        return (
+            f"🔮 FRACTAL INSIGHT: La correzione A-B-C sul {child_tf.upper()} all'interno dell'Onda {parent_label} "
+            f"del {parent_tf.upper()} è completa. Il momentum {direction_word} dovrebbe riprendere. "
+            f"Entry point ideale per continuare con il trend del timeframe maggiore."
+        )
+
+
+def analyze_fractal_structure(
+    all_waves: Dict[str, List[Dict]],
+    timeframes: List[Timeframe]
+) -> List[Dict]:
+    """
+    Analyze complete fractal structure across all timeframes.
+    
+    This is the main entry point for fractal analysis.
+    It looks at waves on higher timeframes and finds their
+    sub-wave decomposition on lower timeframes.
+    """
+    fractal_results = []
+    
+    # Sort timeframes from highest to lowest
+    sorted_tfs = sorted(timeframes, key=lambda tf: TIMEFRAME_WEIGHTS.get(tf, 0), reverse=True)
+    
+    for parent_tf in sorted_tfs:
+        parent_waves = all_waves.get(parent_tf.value, [])
+        
+        if not parent_waves:
+            continue
+        
+        # Get child timeframes for this parent
+        child_tfs = CHILD_TIMEFRAMES.get(parent_tf, [])
+        
+        for child_tf in child_tfs:
+            child_waves = all_waves.get(child_tf.value, [])
+            
+            if not child_waves:
+                continue
+            
+            # Analyze each parent wave for sub-waves
+            for parent_wave in parent_waves:
+                # Only analyze impulsive waves (1, 3, 5) for sub-structure
+                # as these have clearer internal structure
+                label = parent_wave.get("label", "")
+                if label not in ["1", "3", "5", "A", "C", "1-5", "A-B-C"]:
+                    continue
+                
+                subwaves = detect_fractal_subwaves(
+                    parent_wave,
+                    parent_tf,
+                    child_waves,
+                    child_tf
+                )
+                
+                if subwaves:
+                    fractal_results.extend(subwaves)
+    
+    return fractal_results
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN PATTERN SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1491,6 +1815,8 @@ class SentinelScanner:
         }
         self.pattern_cache: Dict[str, List[Dict]] = {}
         self.confluence_cache: List[Dict] = []
+        self.fractal_cache: List[Dict] = []  # Fractal sub-wave patterns
+        self.fractal_enabled: bool = True     # Toggle for fractal analysis
         self.current_price: float = 0
         self.scan_count: int = 0
         self.error_count: int = 0
@@ -1548,6 +1874,10 @@ class SentinelScanner:
                         high_prob = [c for c in self.confluence_cache if c.get("is_high_probability")]
                         if high_prob:
                             logger.info(f"[SENTINEL] 🎯 HIGH PROBABILITY CONFLUENCE DETECTED: {len(high_prob)} setups")
+                
+                # Perform Fractal Analysis (waves inside waves)
+                if self.pattern_cache and self.fractal_enabled:
+                    await self._analyze_fractals()
                 
                 self.scan_count += 1
                 
@@ -1614,6 +1944,102 @@ class SentinelScanner:
                 
         except Exception as e:
             logger.error(f"[SENTINEL] Error scanning {tf.value}: {e}")
+    
+    async def _analyze_fractals(self):
+        """Analyze fractal structure - waves inside waves."""
+        try:
+            # Extract only Elliott waves from pattern cache
+            elliott_waves = {}
+            for tf, patterns in self.pattern_cache.items():
+                tf_waves = [
+                    p for p in patterns 
+                    if p.get("is_elliott") or "elliott" in str(p.get("type", "")).lower()
+                ]
+                if tf_waves:
+                    elliott_waves[tf] = tf_waves
+            
+            if not elliott_waves:
+                self.fractal_cache = []
+                return
+            
+            # Perform fractal analysis
+            fractal_patterns = analyze_fractal_structure(
+                elliott_waves,
+                list(Timeframe)
+            )
+            
+            if fractal_patterns:
+                # Format fractal patterns for UI
+                formatted_fractals = []
+                for fp in fractal_patterns:
+                    formatted = self._format_fractal_for_ui(fp)
+                    formatted_fractals.append(formatted)
+                
+                self.fractal_cache = formatted_fractals
+                
+                # Log fractal insights
+                complete_fractals = [f for f in fractal_patterns if f.get("is_fractal_complete")]
+                if complete_fractals:
+                    logger.info(f"[SENTINEL] 🔮 FRACTAL STRUCTURE COMPLETE: {len(complete_fractals)} nested cycles detected")
+            else:
+                self.fractal_cache = []
+                
+        except Exception as e:
+            logger.error(f"[SENTINEL] Fractal analysis error: {e}")
+            self.fractal_cache = []
+    
+    def _format_fractal_for_ui(self, fractal: Dict) -> Dict:
+        """Format a fractal pattern for frontend display."""
+        ftype = fractal.get("type")
+        parent = fractal.get("parent_wave", {})
+        
+        # Get psychology if available
+        psychology = {}
+        if ftype and ftype in PATTERN_PSYCHOLOGY:
+            psychology = PATTERN_PSYCHOLOGY[ftype].get("it", {})
+        
+        return {
+            "type": ftype.value if hasattr(ftype, 'value') else str(ftype),
+            "label": fractal.get("display_label") or fractal.get("label", "?"),
+            "is_subwave": fractal.get("is_subwave", False),
+            "is_fractal_complete": fractal.get("is_fractal_complete", False),
+            "parent_wave": parent,
+            "parent_timeframe": fractal.get("parent_timeframe"),
+            "child_timeframe": fractal.get("child_timeframe"),
+            "fractal_depth": fractal.get("fractal_depth", 1),
+            "color": fractal.get("color", "#8B5CF6"),
+            "direction": fractal.get("direction", "NEUTRAL"),
+            "start": fractal.get("start"),
+            "end": fractal.get("end"),
+            "weight": fractal.get("weight", 1),
+            "mentor_insight": fractal.get("mentor_insight"),
+            "psychology": psychology,
+            "draw_data": {
+                "shape": "elliott_subwave" if fractal.get("is_subwave") else "elliott_fractal",
+                "start": fractal.get("start"),
+                "end": fractal.get("end"),
+                "label": fractal.get("display_label") or fractal.get("label"),
+                "color": fractal.get("color", "#8B5CF6"),
+                "parent_label": parent.get("label"),
+                "parent_tf": parent.get("timeframe"),
+                "is_complete": fractal.get("is_fractal_complete", False)
+            }
+        }
+    
+    def get_fractal_patterns(self) -> List[Dict]:
+        """Get all fractal patterns."""
+        return self.fractal_cache
+    
+    def get_fractal_insights(self) -> List[Dict]:
+        """Get fractal insights with mentor context."""
+        return [f for f in self.fractal_cache if f.get("mentor_insight")]
+    
+    def toggle_fractals(self, enabled: bool):
+        """Toggle fractal analysis on/off."""
+        self.fractal_enabled = enabled
+        if not enabled:
+            self.fractal_cache = []
+        logger.info(f"[SENTINEL] Fractal analysis {'enabled' if enabled else 'disabled'}")
             
     def get_all_patterns(self) -> List[Dict]:
         """Get all detected patterns across all timeframes."""
@@ -1642,6 +2068,9 @@ class SentinelScanner:
             "patterns_detected": sum(len(p) for p in self.pattern_cache.values()),
             "confluences_active": len(self.confluence_cache),
             "high_probability_setups": len(self.get_high_probability_setups()),
+            "fractal_patterns": len(self.fractal_cache),
+            "fractal_insights": len(self.get_fractal_insights()),
+            "fractal_enabled": self.fractal_enabled,
             "last_scan_times": {k: v.isoformat() if v else None for k, v in self.last_scan_time.items()},
             "timeframes_monitored": [tf.value for tf in Timeframe]
         }
@@ -1732,6 +2161,40 @@ class SentinelScanner:
                         "is_complete_pattern": True,
                         "bias": p.get("bias")
                     })
+        
+        # Add fractal sub-waves
+        chart_data["fractal_subwaves"] = []
+        chart_data["fractal_insights"] = []
+        
+        for fp in self.fractal_cache:
+            draw_data = fp.get("draw_data", {})
+            shape = draw_data.get("shape")
+            
+            if shape == "elliott_subwave":
+                chart_data["fractal_subwaves"].append({
+                    "type": fp.get("type"),
+                    "label": fp.get("label"),
+                    "timeframe": fp.get("child_timeframe"),
+                    "parent_timeframe": fp.get("parent_timeframe"),
+                    "parent_wave": fp.get("parent_wave"),
+                    "color": fp.get("color"),
+                    "start": draw_data.get("start"),
+                    "end": draw_data.get("end"),
+                    "direction": fp.get("direction"),
+                    "is_subwave": True,
+                    "fractal_depth": fp.get("fractal_depth", 1)
+                })
+            
+            elif shape == "elliott_fractal" or fp.get("is_fractal_complete"):
+                chart_data["fractal_insights"].append({
+                    "type": fp.get("type"),
+                    "parent_timeframe": fp.get("parent_timeframe"),
+                    "child_timeframe": fp.get("child_timeframe"),
+                    "parent_wave": fp.get("parent_wave"),
+                    "mentor_insight": fp.get("mentor_insight"),
+                    "is_complete": True,
+                    "color": "#FFD700"  # Gold for complete fractals
+                })
         
         return chart_data
 

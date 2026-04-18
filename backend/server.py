@@ -22550,6 +22550,70 @@ async def trigger_sentinel_scan():
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FRACTAL INTELLIGENCE - Nested Elliott Sub-Waves
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/sentinel/fractals")
+async def get_sentinel_fractals(lang: str = Query(default="it")):
+    """
+    Get fractal sub-wave patterns (waves inside waves) - PUBLIC endpoint.
+    Returns nested Elliott wave structures with parent-child relationships.
+    """
+    fractal_patterns = sentinel_scanner.get_fractal_patterns()
+    fractal_insights = sentinel_scanner.get_fractal_insights()
+    
+    return {
+        "fractal_patterns": fractal_patterns,
+        "fractal_count": len(fractal_patterns),
+        "fractal_insights": fractal_insights,
+        "insights_count": len(fractal_insights),
+        "fractal_enabled": sentinel_scanner.fractal_enabled,
+        "language": lang
+    }
+
+
+@api_router.get("/sentinel/fractal-insights")
+async def get_fractal_insights(lang: str = Query(default="it")):
+    """
+    Get Mentor-style fractal insights (PUBLIC endpoint).
+    Returns timing predictions based on sub-wave completion.
+    """
+    insights = sentinel_scanner.get_fractal_insights()
+    
+    # Enhance with psychology
+    enhanced_insights = []
+    for insight in insights:
+        enhanced = {
+            **insight,
+            "mentor_message": insight.get("mentor_insight", ""),
+            "psychology": insight.get("psychology", {}),
+            "action_signal": "HIGH_PROBABILITY" if insight.get("is_fractal_complete") else "MONITORING"
+        }
+        enhanced_insights.append(enhanced)
+    
+    return {
+        "insights": enhanced_insights,
+        "total": len(enhanced_insights),
+        "fractal_enabled": sentinel_scanner.fractal_enabled
+    }
+
+
+@api_router.post("/sentinel/toggle-fractals", dependencies=[Depends(verify_admin_access)])
+async def toggle_fractal_analysis(enabled: bool = Query(default=True)):
+    """
+    Toggle fractal analysis on/off (ADMIN only).
+    Useful for controlling chart clutter or saving resources.
+    """
+    sentinel_scanner.toggle_fractals(enabled)
+    
+    return {
+        "success": True,
+        "fractal_enabled": sentinel_scanner.fractal_enabled,
+        "message": f"Fractal analysis {'enabled' if enabled else 'disabled'}"
+    }
+
+
 
 async def test_v3_signal_validation(_: bool = Depends(verify_admin_access)):
     """

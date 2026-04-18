@@ -30,6 +30,41 @@
 ### Summary
 The Sentinel is an autonomous, 24/7 pattern detection engine that monitors BTC/USDT across 6 timeframes (15M, 1H, 4H, 1D, 1W, 1M). It detects technical patterns, identifies multi-timeframe confluences, and provides psychological explanations for each pattern in the "Cosa succede / Perché / Azione" format.
 
+### v3.8.2 - FRACTAL INTELLIGENCE (2026-04-18)
+**New Feature: Nested Elliott Sub-Waves (Waves Inside Waves)**
+
+#### Fractal Logic
+- **Self-Similarity Principle**: Same Elliott rules applied to micro-timeframes
+- **Nested Detection**: When 4H is in Wave 3, scans 15M/1H for internal 1-2-3-4-5
+- **Parent-Child Relationships**: Each sub-wave knows its parent wave and timeframe
+
+#### Visual Hierarchy
+- **Major Waves**: Large circles (14px) with solid lines
+- **Sub-Waves**: Smaller circles (10px) with dashed lines
+- **Visual Offset**: Sub-wave labels positioned slightly offset from main waves
+- **Connecting Lines**: Faint dashed lines show parent-child relationship
+
+#### Toggle Control
+- **"Sub-Waves" Toggle**: Button in chart header to show/hide fractal detail
+- **Independent of "Patterns ON"**: Can control clutter level independently
+- **API Toggle**: `POST /api/sentinel/toggle-fractals?enabled=true/false`
+
+#### Mentor Fractal Insights
+Example insight message:
+> "🔮 FRACTAL INSIGHT: Un'Onda 3 rialzista sul 4H sta raggiungendo il completamento 
+> perché ho rilevato un ciclo completo di 5 sub-onde sul 15M. ALTA PROBABILITÀ 
+> di correzione imminente. Il timeframe minore ha confermato la struttura maggiore."
+
+#### New API Endpoints
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/sentinel/fractals` | Get fractal sub-wave patterns |
+| `GET /api/sentinel/fractal-insights` | Get Mentor-style timing predictions |
+| `POST /api/sentinel/toggle-fractals` | Admin: Enable/disable fractal analysis |
+
+#### Legend Update
+- Added "Sub" indicator (light purple with dashed border) to chart legend
+
 ### v3.8.1 - ELLIOTT WAVE ENGINE (2026-04-18)
 **New Feature: Complete Elliott Wave Detection & Visualization**
 

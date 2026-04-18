@@ -55,12 +55,25 @@ const PATTERN_NAMES_IT = {
   elliott_wave_c: "Onda C - Correzione Finale",
   elliott_impulse: "Impulso Elliott (1-5)",
   elliott_corrective: "Correzione Elliott (A-B-C)",
+  // Fractal sub-waves
+  elliott_subwave_1: "Sub-Onda (1)",
+  elliott_subwave_2: "Sub-Onda (2)",
+  elliott_subwave_3: "Sub-Onda (3)",
+  elliott_subwave_4: "Sub-Onda (4)",
+  elliott_subwave_5: "Sub-Onda (5)",
+  elliott_subwave_a: "Sub-Onda (A)",
+  elliott_subwave_b: "Sub-Onda (B)",
+  elliott_subwave_c: "Sub-Onda (C)",
+  elliott_fractal_complete: "Struttura Frattale Completa",
+  elliott_fractal_insight: "Insight Frattale",
 };
 
 // Elliott Wave colors
 const ELLIOTT_COLORS = {
   impulse: "#9333EA",  // Deep Purple for 1-2-3-4-5
   corrective: "#F59E0B",  // Gold for A-B-C
+  subwave: "#C084FC",  // Light purple for sub-waves
+  fractal_complete: "#FFD700",  // Gold for complete fractals
 };
 
 export function TradingChartWithSentinel({ height = 400 }) {
@@ -73,6 +86,7 @@ export function TradingChartWithSentinel({ height = 400 }) {
   
   // Sentinel state
   const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [subwavesEnabled, setSubwavesEnabled] = useState(true);  // Toggle for sub-waves
   const [overlayData, setOverlayData] = useState(null);
   const [hoveredElement, setHoveredElement] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
@@ -929,6 +943,163 @@ export function TradingChartWithSentinel({ height = 400 }) {
           );
         })}
         
+        {/* FRACTAL SUB-WAVES - Smaller numbered labels for waves inside waves */}
+        {subwavesEnabled && chart_data.fractal_subwaves?.map((subwave, i) => {
+          if (!subwave.start || !subwave.end) return null;
+          
+          const color = subwave.color || ELLIOTT_COLORS.subwave;
+          const startY = priceToY(subwave.start.price);
+          const endY = priceToY(subwave.end.price);
+          
+          // Sub-waves are positioned slightly offset from main waves
+          const totalCandles = 100;
+          const startX = Math.max(30, (subwave.start.index / totalCandles) * (width - 100)) + 5;
+          const endX = Math.min(width - 50, (subwave.end.index / totalCandles) * (width - 100)) + 5;
+          
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
+          
+          return (
+            <g 
+              key={`subwave-${i}`} 
+              className="sentinel-subwave pointer-events-auto cursor-pointer"
+              onMouseEnter={(e) => handleElementHover({
+                type: subwave.type,
+                label: subwave.label,
+                timeframe: subwave.timeframe,
+                parent_wave: subwave.parent_wave,
+                parent_timeframe: subwave.parent_timeframe,
+                direction: subwave.direction,
+                is_subwave: true
+              }, e)}
+              onMouseLeave={() => handleElementHover(null)}
+            >
+              {/* Dashed connecting line to show hierarchy */}
+              <line
+                x1={startX}
+                y1={startY}
+                x2={endX}
+                y2={endY}
+                stroke={color}
+                strokeWidth="1.5"
+                strokeDasharray="4 2"
+                opacity="0.5"
+              />
+              
+              {/* Faint glow effect */}
+              <line
+                x1={startX}
+                y1={startY}
+                x2={endX}
+                y2={endY}
+                stroke={color}
+                strokeWidth="4"
+                strokeDasharray="4 2"
+                opacity="0.15"
+              />
+              
+              {/* Sub-wave label (smaller, offset) */}
+              <g transform={`translate(${midX}, ${midY - 15})`}>
+                {/* Small circle background */}
+                <circle
+                  r="10"
+                  fill="#18181b"
+                  stroke={color}
+                  strokeWidth="1.5"
+                  strokeDasharray="2 1"
+                />
+                {/* Number/Letter in parentheses style */}
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill={color}
+                  fontSize="9"
+                  fontWeight="bold"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {subwave.label}
+                </text>
+              </g>
+              
+              {/* Connection line to parent (visual hierarchy) */}
+              {subwave.parent_wave && (
+                <line
+                  x1={midX}
+                  y1={midY - 25}
+                  x2={midX}
+                  y2={midY - 15}
+                  stroke={color}
+                  strokeWidth="1"
+                  strokeDasharray="2 2"
+                  opacity="0.4"
+                />
+              )}
+            </g>
+          );
+        })}
+        
+        {/* FRACTAL COMPLETE INDICATORS - Gold boxes for complete nested structures */}
+        {subwavesEnabled && chart_data.fractal_insights?.map((insight, i) => {
+          const parentWave = insight.parent_wave;
+          if (!parentWave) return null;
+          
+          return (
+            <g 
+              key={`fractal-insight-${i}`}
+              className="sentinel-fractal-insight pointer-events-auto cursor-pointer"
+              onMouseEnter={(e) => handleElementHover({
+                type: 'fractal_complete',
+                parent_wave: parentWave,
+                parent_timeframe: insight.parent_timeframe,
+                child_timeframe: insight.child_timeframe,
+                mentor_insight: insight.mentor_insight,
+                is_fractal_complete: true
+              }, e)}
+              onMouseLeave={() => handleElementHover(null)}
+            >
+              {/* Fractal complete badge */}
+              <rect
+                x={width - 160}
+                y={40 + (i * 35)}
+                width={150}
+                height={30}
+                rx="6"
+                fill="#18181b"
+                stroke="#FFD700"
+                strokeWidth="1.5"
+              />
+              <rect
+                x={width - 160}
+                y={40 + (i * 35)}
+                width={150}
+                height={30}
+                rx="6"
+                fill="#FFD700"
+                fillOpacity="0.1"
+              />
+              <text
+                x={width - 85}
+                y={52 + (i * 35)}
+                textAnchor="middle"
+                fill="#FFD700"
+                fontSize="8"
+                fontWeight="bold"
+              >
+                FRACTAL {parentWave.label} COMPLETE
+              </text>
+              <text
+                x={width - 85}
+                y={64 + (i * 35)}
+                textAnchor="middle"
+                fill="#a1a1aa"
+                fontSize="7"
+              >
+                {insight.parent_timeframe?.toUpperCase()} → {insight.child_timeframe?.toUpperCase()}
+              </text>
+            </g>
+          );
+        })}
+        
         {/* Current price indicator */}
         {current_price && (
           <g className="current-price-line">
@@ -1037,6 +1208,41 @@ export function TradingChartWithSentinel({ height = 400 }) {
             )}
           </div>
         )}
+        {/* Sub-wave / Fractal specific info */}
+        {hoveredElement.is_subwave && (
+          <div className="mt-2 pt-2 border-t border-amber-500/30">
+            <div className="text-[10px] text-amber-400 font-bold uppercase">
+              Sub-Onda Frattale {hoveredElement.label}
+            </div>
+            {hoveredElement.parent_wave && (
+              <div className="text-[10px] text-zinc-500 mt-1">
+                Dentro Onda {hoveredElement.parent_wave.label} ({hoveredElement.parent_timeframe?.toUpperCase()})
+              </div>
+            )}
+            <div className="text-[10px] text-zinc-400 mt-1">
+              TF: {hoveredElement.timeframe?.toUpperCase()}
+            </div>
+          </div>
+        )}
+        {/* Fractal Complete insight */}
+        {hoveredElement.is_fractal_complete && (
+          <div className="mt-2 pt-2 border-t border-amber-500/50">
+            <div className="text-[10px] text-amber-400 font-bold uppercase mb-1">
+              🔮 Fractal Insight
+            </div>
+            <div className="text-[10px] text-amber-300/80 leading-relaxed">
+              {hoveredElement.parent_wave && (
+                <>Onda {hoveredElement.parent_wave.label} ({hoveredElement.parent_timeframe?.toUpperCase()}) </>
+              )}
+              completata su {hoveredElement.child_timeframe?.toUpperCase()}
+            </div>
+            {hoveredElement.mentor_insight && (
+              <div className="text-[9px] text-zinc-400 mt-1 italic">
+                {hoveredElement.mentor_insight.substring(0, 100)}...
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -1068,10 +1274,26 @@ export function TradingChartWithSentinel({ height = 400 }) {
           )}
         </button>
         
+        {/* Sub-waves Toggle */}
+        {overlayEnabled && (
+          <button
+            onClick={() => setSubwavesEnabled(!subwavesEnabled)}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-200",
+              subwavesEnabled 
+                ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                : "bg-zinc-800/80 text-zinc-500 border border-zinc-700/50"
+            )}
+            data-testid="sentinel-subwaves-toggle"
+          >
+            <Layers className="w-3 h-3" />
+            <span>Sub-Waves</span>
+          </button>
+        )}
+        
         {overlayEnabled && overlayData && (
           <>
             <div className="flex items-center gap-1 px-2 py-1 bg-zinc-800/80 rounded-lg border border-zinc-700/50">
-              <Layers className="w-3 h-3 text-amber-400" />
               <span className="text-[10px] text-amber-400 font-medium">
                 {overlayData.patterns_total || 0}
               </span>
@@ -1082,6 +1304,16 @@ export function TradingChartWithSentinel({ height = 400 }) {
                   ELLIOTT
                 </span>
                 <span className="w-1 h-1 rounded-full bg-purple-400 animate-pulse" />
+              </div>
+            )}
+            {overlayData.chart_data?.fractal_subwaves?.length > 0 && subwavesEnabled && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-500/10 rounded-lg border border-amber-500/30">
+                <span className="text-[10px] text-amber-400 font-bold">
+                  FRACTAL
+                </span>
+                <span className="text-[9px] text-amber-300">
+                  {overlayData.chart_data.fractal_subwaves.length}
+                </span>
               </div>
             )}
           </>
@@ -1134,6 +1366,15 @@ export function TradingChartWithSentinel({ height = 400 }) {
               />
               <span className="text-[9px] text-amber-400">A-B-C</span>
             </div>
+            {subwavesEnabled && (
+              <div className="flex items-center gap-1">
+                <span 
+                  className="w-2 h-2 rounded-full border border-dashed"
+                  style={{ backgroundColor: ELLIOTT_COLORS.subwave, borderColor: ELLIOTT_COLORS.subwave }}
+                />
+                <span className="text-[9px] text-purple-300">Sub</span>
+              </div>
+            )}
           </div>
         </div>
       )}
