@@ -101,17 +101,24 @@ export function LiquidityMagnetCard({ compact = false }) {
   };
 
   return (
-    <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="liquidity-magnet-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Magnet className={cn("w-4 h-4", magnetData?.magnet_strength === 'VERY_STRONG' || magnetData?.magnet_strength === 'STRONG' ? "text-purple-400" : "text-zinc-400")} />
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('liquidityMagnet')}</h3>
+    <div className="premium-card rounded-lg overflow-hidden" data-testid="liquidity-magnet-card">
+      {/* Header - Premium */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "p-2 rounded-lg",
+            magnetData?.magnet_strength === 'VERY_STRONG' || magnetData?.magnet_strength === 'STRONG' 
+              ? "bg-purple-500/20 shadow-neon-whale" 
+              : "bg-zinc-800"
+          )}>
+            <Magnet className={cn("w-5 h-5", magnetData?.magnet_strength === 'VERY_STRONG' || magnetData?.magnet_strength === 'STRONG' ? "text-purple-400" : "text-zinc-400")} />
+          </div>
+          <h3 className="font-heading font-bold text-base uppercase tracking-wider">{t('liquidityMagnet')}</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle className="w-3.5 h-3.5 text-yellow-400 cursor-help" />
+                  <HelpCircle className="w-4 h-4 text-amber-400 cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
                   <p className="text-xs">{t('learnLiquidityMagnet')}</p>
@@ -122,33 +129,35 @@ export function LiquidityMagnetCard({ compact = false }) {
         </div>
         <button 
           onClick={fetchLiquidityMagnet}
-          className="p-1.5 hover:bg-white/10 rounded-sm transition-colors"
+          className="p-2 hover:bg-white/5 rounded-lg transition-colors"
           title={t('refresh')}
         >
           <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
         </button>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
+      {/* Content - Premium spacing */}
+      <div className="p-5">
         {magnetData ? (
-          <div className="space-y-4">
-            {/* Magnet Score & Direction */}
+          <div className="space-y-5">
+            {/* Magnet Score & Direction - LARGE & BOLD */}
             <div className={cn(
-              "flex items-center justify-between p-3 rounded-sm border-l-2",
+              "flex items-center justify-between p-4 rounded-lg border-l-4",
               config.bgColor,
-              config.borderColor
+              config.borderColor,
+              magnetData.target_direction === 'UP' && "shadow-neon-bullish",
+              magnetData.target_direction === 'DOWN' && "shadow-neon-bearish"
             )}>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="relative">
                   <div className={cn(
-                    "w-12 h-12 rounded-full flex items-center justify-center",
+                    "w-16 h-16 rounded-lg flex items-center justify-center",
                     magnetData.magnet_score >= 70 ? "bg-purple-500/20 animate-pulse" : 
                     magnetData.magnet_score >= 45 ? "bg-purple-500/10" : "bg-zinc-800"
                   )}>
                     <span className={cn(
-                      "font-mono font-bold text-lg",
-                      magnetData.magnet_score >= 70 ? "text-purple-400" :
+                      "font-mono font-bold text-2xl",
+                      magnetData.magnet_score >= 70 ? "text-purple-400 text-glow-cyber" :
                       magnetData.magnet_score >= 45 ? "text-purple-300" : "text-zinc-400"
                     )}>
                       {magnetData.magnet_score?.toFixed(0)}
@@ -157,43 +166,55 @@ export function LiquidityMagnetCard({ compact = false }) {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <config.icon className={cn("w-4 h-4", config.iconColor)} />
-                    <span className={cn("font-mono font-bold text-sm", config.color)}>
+                    <config.icon className={cn("w-5 h-5", config.iconColor)} />
+                    <span className={cn("font-mono font-bold text-lg", config.color)}>
                       {t(magnetData.target_direction?.toLowerCase() || 'balanced')}
                     </span>
                   </div>
-                  <div className="text-xs text-zinc-500">{t('targetDirection')}</div>
+                  <div className="text-sm text-zinc-500">{t('targetDirection')}</div>
                 </div>
               </div>
               <div className="text-right">
-                <div className={cn("font-mono text-sm font-bold", strengthConfig.color)}>
+                <div className={cn("font-mono text-base font-bold", strengthConfig.color)}>
                   {strengthConfig.label}
                 </div>
-                <div className="text-xs text-zinc-500">{t('magnetStrength')}</div>
+                <div className="text-sm text-zinc-500">{t('magnetStrength')}</div>
               </div>
             </div>
 
-            {/* Nearest Magnet Target */}
-            <div className="bg-crypto-surface/30 p-3 rounded-sm">
-              <div className="flex items-center justify-between mb-2">
+            {/* Nearest Magnet Target - HIGH VISIBILITY */}
+            <div className="bg-crypto-bg/50 p-4 rounded-lg border border-white/5">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs text-zinc-400">{t('nearestMagnet')}</span>
+                  <Target className="w-5 h-5 text-purple-400" />
+                  <span className="text-sm text-zinc-400 font-medium">{t('nearestMagnet')}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className={cn("font-mono text-lg font-bold", config.color)}>
+                  {/* PRIMARY PRICE - LARGE & BOLD */}
+                  <div className={cn(
+                    "font-mono text-3xl font-bold",
+                    config.color,
+                    magnetData.target_direction === 'UP' && "text-glow-bullish",
+                    magnetData.target_direction === 'DOWN' && "text-glow-bearish"
+                  )}>
                     {formatPrice(magnetData.nearest_magnet_price)}
                   </div>
-                  <div className="text-xs text-zinc-500">
-                    {t('distance')}: <span className={config.color}>{formatDistance(magnetData.nearest_magnet_distance_percent)}</span>
+                  {/* Distance Badge */}
+                  <div className={cn(
+                    "inline-flex items-center px-3 py-1 rounded-md text-sm font-mono font-bold mt-2",
+                    magnetData.nearest_magnet_distance_percent > 0 
+                      ? "bg-bullish/20 text-bullish border border-bullish/30" 
+                      : "bg-bearish/20 text-bearish border border-bearish/30"
+                  )}>
+                    {formatDistance(magnetData.nearest_magnet_distance_percent)}
                   </div>
                 </div>
                 {magnetData.nearest_magnet_value > 0 && (
                   <div className="text-right">
-                    <div className="text-xs text-zinc-500">{t('estimatedValue')}</div>
-                    <div className="font-mono text-sm text-zinc-300">
+                    <div className="text-sm text-zinc-500">{t('estimatedValue')}</div>
+                    <div className="font-mono text-xl text-zinc-200 font-bold">
                       ${(magnetData.nearest_magnet_value / 1000000).toFixed(1)}M
                     </div>
                   </div>
@@ -203,15 +224,20 @@ export function LiquidityMagnetCard({ compact = false }) {
 
             {/* Secondary Magnet (if exists) */}
             {!compact && magnetData.secondary_magnet_price && (
-              <div className="bg-crypto-surface/20 p-3 rounded-sm border border-zinc-800">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-zinc-500">{t('secondaryMagnet')}</span>
+              <div className="bg-crypto-surface/30 p-4 rounded-lg border border-zinc-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-zinc-500">{t('secondaryMagnet')}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="font-mono text-sm text-zinc-400">
+                  <div className="font-mono text-lg text-zinc-300 font-bold">
                     {formatPrice(magnetData.secondary_magnet_price)}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className={cn(
+                    "px-2 py-1 rounded-md text-sm font-mono",
+                    magnetData.secondary_magnet_distance_percent > 0 
+                      ? "bg-bullish/10 text-bullish" 
+                      : "bg-bearish/10 text-bearish"
+                  )}>
                     {formatDistance(magnetData.secondary_magnet_distance_percent)}
                   </div>
                 </div>

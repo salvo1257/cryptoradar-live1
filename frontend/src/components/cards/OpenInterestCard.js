@@ -56,17 +56,19 @@ export function OpenInterestCard() {
   };
 
   return (
-    <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="open-interest-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-blue-400" />
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">Open Interest</h3>
+    <div className="premium-card rounded-lg overflow-hidden h-full" data-testid="open-interest-card">
+      {/* Header - Premium */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-blue-500/20 shadow-neon-cyber">
+            <BarChart3 className="w-5 h-5 text-cyber" />
+          </div>
+          <h3 className="font-heading font-bold text-base uppercase tracking-wider">Open Interest</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle className="w-3.5 h-3.5 text-whale cursor-help" />
+                  <HelpCircle className="w-4 h-4 text-whale cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
                   <p className="text-xs">Open Interest shows total outstanding derivative contracts. Rising OI with rising price = bullish. Rising OI with falling price = bearish.</p>
@@ -75,48 +77,55 @@ export function OpenInterestCard() {
             </TooltipProvider>
           )}
         </div>
-        <span className="text-xs text-zinc-500 font-mono">{data_source}</span>
-        {freshness_status && (
-          <DataFreshnessBadge status={freshness_status} ageSeconds={age_seconds} source={data_source} />
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500 font-mono">{data_source}</span>
+          {freshness_status && (
+            <DataFreshnessBadge status={freshness_status} ageSeconds={age_seconds} source={data_source} />
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
-        {/* Total OI */}
-        <div className="flex items-center justify-between mb-4">
+      {/* Content - Premium spacing */}
+      <div className="p-5">
+        {/* Total OI - Larger display */}
+        <div className="flex items-center justify-between mb-5">
           <div>
-            <div className="text-xs text-zinc-500 mb-1">Total OI</div>
-            <div className="text-2xl font-mono font-bold">${total_oi}B</div>
+            <div className="text-sm text-zinc-500 mb-1 uppercase tracking-wide">Total OI</div>
+            <div className={cn(
+              "text-3xl font-mono font-bold",
+              trend === 'increasing' && "text-bullish text-glow-bullish",
+              trend === 'decreasing' && "text-bearish text-glow-bearish",
+              trend === 'stable' && "text-white"
+            )}>${total_oi}B</div>
           </div>
           <div className={cn(
-            "flex items-center gap-1 px-2 py-1 rounded-sm",
-            trend === 'increasing' && "bg-bullish/10 text-bullish",
-            trend === 'decreasing' && "bg-bearish/10 text-bearish",
+            "flex items-center gap-2 px-3 py-2 rounded-lg",
+            trend === 'increasing' && "bg-bullish/15 text-bullish border border-bullish/30 shadow-neon-bullish",
+            trend === 'decreasing' && "bg-bearish/15 text-bearish border border-bearish/30 shadow-neon-bearish",
             trend === 'stable' && "bg-zinc-800 text-zinc-400"
           )}>
-            <TrendIcon className="w-4 h-4" />
-            <span className="text-xs font-mono uppercase">{trend}</span>
+            <TrendIcon className="w-5 h-5" />
+            <span className="text-sm font-mono font-bold uppercase">{trend}</span>
           </div>
         </div>
 
-        {/* Changes */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="bg-crypto-surface/50 p-2 rounded-sm text-center">
-            <div className="text-xs text-zinc-500 mb-1">1H</div>
-            <div className={cn("font-mono font-bold text-sm", getChangeColor(change_1h))}>
+        {/* Changes - Premium grid */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="bg-crypto-bg/50 p-3 rounded-lg text-center border border-white/5">
+            <div className="text-sm text-zinc-500 mb-1 font-medium">1H</div>
+            <div className={cn("font-mono font-bold text-lg", getChangeColor(change_1h))}>
               {formatChange(change_1h)}
             </div>
           </div>
-          <div className="bg-crypto-surface/50 p-2 rounded-sm text-center">
-            <div className="text-xs text-zinc-500 mb-1">4H</div>
-            <div className={cn("font-mono font-bold text-sm", getChangeColor(change_4h))}>
+          <div className="bg-crypto-bg/50 p-3 rounded-lg text-center border border-white/5">
+            <div className="text-sm text-zinc-500 mb-1 font-medium">4H</div>
+            <div className={cn("font-mono font-bold text-lg", getChangeColor(change_4h))}>
               {formatChange(change_4h)}
             </div>
           </div>
-          <div className="bg-crypto-surface/50 p-2 rounded-sm text-center">
-            <div className="text-xs text-zinc-500 mb-1">24H</div>
-            <div className={cn("font-mono font-bold text-sm", getChangeColor(change_24h))}>
+          <div className="bg-crypto-bg/50 p-3 rounded-lg text-center border border-white/5">
+            <div className="text-sm text-zinc-500 mb-1 font-medium">24H</div>
+            <div className={cn("font-mono font-bold text-lg", getChangeColor(change_24h))}>
               {formatChange(change_24h)}
             </div>
           </div>

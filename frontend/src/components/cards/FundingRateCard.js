@@ -50,17 +50,19 @@ export function FundingRateCard() {
   };
 
   return (
-    <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="funding-rate-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Percent className="w-4 h-4 text-yellow-400" />
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">Funding Rate</h3>
+    <div className="premium-card rounded-lg overflow-hidden h-full" data-testid="funding-rate-card">
+      {/* Header - Premium */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-500/20">
+            <Percent className="w-5 h-5 text-amber-400" />
+          </div>
+          <h3 className="font-heading font-bold text-base uppercase tracking-wider">Funding Rate</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle className="w-3.5 h-3.5 text-whale cursor-help" />
+                  <HelpCircle className="w-4 h-4 text-whale cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
                   <p className="text-xs">Funding rate is paid between long and short traders. Positive = longs pay shorts (bullish sentiment). Negative = shorts pay longs (bearish sentiment).</p>
@@ -69,14 +71,16 @@ export function FundingRateCard() {
             </TooltipProvider>
           )}
         </div>
-        <span className="text-xs text-zinc-500 font-mono">{data_source}</span>
-        {freshness_status && (
-          <DataFreshnessBadge status={freshness_status} ageSeconds={age_seconds} source={data_source} />
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500 font-mono">{data_source}</span>
+          {freshness_status && (
+            <DataFreshnessBadge status={freshness_status} ageSeconds={age_seconds} source={data_source} />
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
+      {/* Content - Premium spacing */}
+      <div className="p-5">
         {/* Current Rate */}
         <div className="flex items-center justify-between mb-4">
           <div>

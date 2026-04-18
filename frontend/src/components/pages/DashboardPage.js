@@ -236,17 +236,18 @@ export function DashboardPage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          SECTION: Primary Intelligence (Bias, OI, Funding)
-          Core metrics for market direction
+          SECTION: Primary Intelligence (Bias, OI, Funding) - COCKPIT ROW
+          Core metrics for market direction - Horizontal layout
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="space-y-4">
+      <section className="space-y-5">
         <div className="flex items-center gap-3 px-1">
-          <div className="w-1.5 h-5 bg-cyan-500 rounded-full"></div>
-          <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">
+          <div className="w-2 h-6 bg-cyber rounded-full shadow-neon-cyber"></div>
+          <h3 className="text-base font-heading font-bold text-zinc-100 uppercase tracking-wider">
             {t.primaryIntelligence}
           </h3>
+          <div className="flex-1 h-px bg-gradient-to-r from-cyber/30 to-transparent"></div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <MarketBiasCard />
           <OpenInterestCard />
           <FundingRateCard />

@@ -41,17 +41,19 @@ export function MarketBiasCard() {
   };
 
   return (
-    <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden tech-card" data-testid="market-bias-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-whale" />
-          <h3 className="font-heading font-semibold text-sm uppercase tracking-wider">{t('marketBias')}</h3>
+    <div className="premium-card rounded-lg overflow-hidden h-full" data-testid="market-bias-card">
+      {/* Header - Premium */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-whale/20 shadow-neon-whale">
+            <Activity className="w-5 h-5 text-whale" />
+          </div>
+          <h3 className="font-heading font-bold text-base uppercase tracking-wider">{t('marketBias')}</h3>
           {learnMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <HelpCircle className="w-3.5 h-3.5 text-whale cursor-help" />
+                  <HelpCircle className="w-4 h-4 text-whale cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs bg-crypto-surface border-crypto-border">
                   <p className="text-xs">{t('learnMarketBias')}</p>
@@ -61,38 +63,48 @@ export function MarketBiasCard() {
           )}
         </div>
         <span className={cn(
-          "px-2 py-0.5 rounded-sm text-xs font-mono font-bold uppercase",
-          bias === 'BULLISH' && "bg-bullish/10 text-bullish border border-bullish/20",
-          bias === 'BEARISH' && "bg-bearish/10 text-bearish border border-bearish/20",
+          "px-3 py-1.5 rounded-lg text-sm font-mono font-bold uppercase",
+          bias === 'BULLISH' && "bg-bullish/15 text-bullish border border-bullish/30 shadow-neon-bullish",
+          bias === 'BEARISH' && "bg-bearish/15 text-bearish border border-bearish/30 shadow-neon-bearish",
           bias === 'NEUTRAL' && "bg-zinc-800 text-zinc-400 border border-zinc-700"
         )}>
           {t(bias.toLowerCase())}
         </span>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
-        {/* Main bias display */}
-        <div className="flex items-center gap-4 mb-4">
+      {/* Content - More padding */}
+      <div className="p-5">
+        {/* Main bias display - Larger, with glow */}
+        <div className="flex items-center gap-5 mb-5">
           <div className={cn(
-            "w-16 h-16 rounded-sm flex items-center justify-center flex-shrink-0",
-            bias === 'BULLISH' && "bg-bullish/10 glow-bullish",
-            bias === 'BEARISH' && "bg-bearish/10 glow-bearish",
+            "w-20 h-20 rounded-lg flex items-center justify-center flex-shrink-0 transition-all",
+            bias === 'BULLISH' && "bg-bullish/15 shadow-neon-bullish",
+            bias === 'BEARISH' && "bg-bearish/15 shadow-neon-bearish",
             bias === 'NEUTRAL' && "bg-zinc-800"
           )}>
-            <BiasIcon className={cn("w-8 h-8", `text-${biasColor}`)} />
+            <BiasIcon className={cn(
+              "w-10 h-10",
+              bias === 'BULLISH' && "text-bullish drop-shadow-glow-bullish",
+              bias === 'BEARISH' && "text-bearish drop-shadow-glow-bearish",
+              bias === 'NEUTRAL' && "text-zinc-400"
+            )} />
           </div>
           <div className="flex-1">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-mono font-bold" data-testid="bias-confidence">
+              <span className={cn(
+                "text-4xl font-mono font-bold",
+                bias === 'BULLISH' && "text-bullish text-glow-bullish",
+                bias === 'BEARISH' && "text-bearish text-glow-bearish",
+                bias === 'NEUTRAL' && "text-zinc-400"
+              )} data-testid="bias-confidence">
                 {confidence.toFixed(0)}%
               </span>
-              <span className="text-xs text-zinc-500 uppercase">{t('confidence')}</span>
+              <span className="text-sm text-zinc-500 uppercase tracking-wide">{t('confidence')}</span>
             </div>
-            <div className="mt-1">
+            <div className="mt-2">
               <Progress 
                 value={confidence} 
-                className="h-1.5 bg-zinc-800"
+                className="h-2 bg-zinc-800/80"
                 indicatorClassName={cn(
                   bias === 'BULLISH' && "bg-bullish",
                   bias === 'BEARISH' && "bg-bearish",
@@ -103,19 +115,24 @@ export function MarketBiasCard() {
           </div>
         </div>
 
-        {/* Exchange Consensus */}
+        {/* Exchange Consensus - Premium styling with larger fonts */}
         {exchange_consensus && Object.keys(exchange_consensus).length > 0 && (
-          <div className="mb-4 p-2 bg-black/20 rounded-sm">
-            <div className="flex items-center gap-1 mb-2">
-              <Globe className="w-3 h-3 text-zinc-500" />
-              <span className="text-[10px] text-zinc-500 uppercase">Exchange Consensus</span>
+          <div className="mb-5 p-4 bg-crypto-bg/50 rounded-lg border border-white/5">
+            <div className="flex items-center gap-2 mb-3">
+              <Globe className="w-4 h-4 text-zinc-500" />
+              <span className="text-xs text-zinc-500 uppercase tracking-wider font-medium">Exchange Consensus</span>
             </div>
-            <div className="flex gap-3 justify-around">
+            <div className="grid grid-cols-5 gap-2">
               {Object.entries(exchange_consensus).map(([exchange, exBias]) => (
-                <div key={exchange} className="text-center">
-                  <div className="text-[10px] text-zinc-500">{exchange}</div>
-                  <div className={cn("font-mono text-xs font-bold", getConsensusColor(exBias))}>
-                    {exBias}
+                <div key={exchange} className="text-center p-2 rounded-lg bg-crypto-surface/50">
+                  <div className="text-xs text-zinc-400 font-medium mb-1">{exchange}</div>
+                  <div className={cn(
+                    "font-mono text-sm font-bold",
+                    exBias === 'BULLISH' && "text-bullish",
+                    exBias === 'BEARISH' && "text-bearish",
+                    exBias !== 'BULLISH' && exBias !== 'BEARISH' && "text-zinc-500"
+                  )}>
+                    {exBias === 'BULLISH' ? '▲' : exBias === 'BEARISH' ? '▼' : '—'}
                   </div>
                 </div>
               ))}
