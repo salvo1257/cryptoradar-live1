@@ -178,6 +178,7 @@ mentor_analysis_collection = db["mentor_analysis"]  # Mentor analysis cache
 
 # Import Mentor Engine (isolated module)
 from mentor_engine import get_mentor_analysis, mentor_engine
+from sentinel_engine import sentinel_scanner, Timeframe, PatternType, PATTERN_PSYCHOLOGY
 
 # Create the main app
 app = FastAPI(title="CryptoRadar API", version="2.4.0")
@@ -22385,7 +22386,171 @@ async def get_mentor_status():
     }
 
 
-@api_router.post("/v3/test-signal-validation")
+# ═══════════════════════════════════════════════════════════════════════════════
+# THE SENTINEL - MULTI-TIMEFRAME PATTERN DETECTION ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/sentinel/status")
+async def get_sentinel_status():
+    """
+    Get The Sentinel scanner status (PUBLIC endpoint).
+    Shows if the pattern detection engine is running and basic stats.
+    """
+    return sentinel_scanner.get_status()
+
+
+@api_router.get("/sentinel/patterns")
+async def get_sentinel_patterns(lang: str = Query(default="it")):
+    """
+    Get all detected patterns across all timeframes (PUBLIC endpoint).
+    Returns patterns sorted by importance (higher timeframe = higher priority).
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    patterns = sentinel_scanner.get_all_patterns()
+    confluences = sentinel_scanner.get_confluences()
+    high_prob = sentinel_scanner.get_high_probability_setups()
+    
+    return {
+        "patterns": patterns,
+        "patterns_count": len(patterns),
+        "confluences": confluences,
+        "confluences_count": len(confluences),
+        "high_probability_setups": high_prob,
+        "high_probability_count": len(high_prob),
+        "current_price": sentinel_scanner.current_price,
+        "scanner_running": sentinel_scanner.running,
+        "last_scan_times": {k: v.isoformat() if v else None for k, v in sentinel_scanner.last_scan_time.items()},
+        "timeframes": [tf.value for tf in Timeframe]
+    }
+
+
+@api_router.get("/sentinel/chart-overlay")
+async def get_sentinel_chart_overlay():
+    """
+    Get pattern data formatted for SVG/Canvas chart overlay (PUBLIC endpoint).
+    Returns draw instructions for trendlines, zones, markers, and pattern shapes.
+    """
+    chart_data = sentinel_scanner.get_patterns_for_chart()
+    
+    return {
+        "chart_data": chart_data,
+        "current_price": sentinel_scanner.current_price,
+        "patterns_total": sum(len(v) for v in chart_data.values()),
+        "legend": {
+            tf.value: {"color": color, "weight": weight}
+            for tf, color, weight in [
+                (Timeframe.M15, "#00F0FF", 1),
+                (Timeframe.H1, "#8B5CF6", 2),
+                (Timeframe.H4, "#00FF9D", 4),
+                (Timeframe.D1, "#FFD700", 8),
+                (Timeframe.W1, "#FF6B35", 16),
+                (Timeframe.M1, "#FF1E56", 32),
+            ]
+        }
+    }
+
+
+@api_router.get("/sentinel/pattern-psychology/{pattern_type}")
+async def get_pattern_psychology(pattern_type: str, lang: str = Query(default="it")):
+    """
+    Get psychological interpretation for a specific pattern type (PUBLIC endpoint).
+    Returns Cosa succede / Perché / Azione format.
+    """
+    if lang not in ["it", "en"]:
+        lang = "it"
+    
+    # Find matching pattern type
+    try:
+        ptype = PatternType(pattern_type)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Pattern type '{pattern_type}' not found")
+    
+    if ptype in PATTERN_PSYCHOLOGY:
+        psychology = PATTERN_PSYCHOLOGY[ptype].get(lang, PATTERN_PSYCHOLOGY[ptype].get("it", {}))
+        return {
+            "pattern_type": pattern_type,
+            "pattern_display": pattern_type.replace("_", " ").title(),
+            "language": lang,
+            "psychology": psychology
+        }
+    
+    return {
+        "pattern_type": pattern_type,
+        "pattern_display": pattern_type.replace("_", " ").title(),
+        "language": lang,
+        "psychology": {
+            "cosa_succede": "Pattern rilevato ma interpretazione non disponibile.",
+            "perche": "Analizza il contesto per comprendere la dinamica.",
+            "azione": "Attendi conferma prima di agire."
+        }
+    }
+
+
+@api_router.get("/sentinel/confluences")
+async def get_sentinel_confluences(lang: str = Query(default="it")):
+    """
+    Get pattern confluences across timeframes (PUBLIC endpoint).
+    Confluences are high-probability setups where patterns align.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    confluences = sentinel_scanner.get_confluences()
+    high_prob = sentinel_scanner.get_high_probability_setups()
+    
+    # Enhance with psychology for each confluence
+    enhanced_confluences = []
+    for conf in confluences:
+        pattern_type = conf.get("pattern_type")
+        psychology = {}
+        
+        try:
+            ptype = PatternType(pattern_type)
+            if ptype in PATTERN_PSYCHOLOGY:
+                psychology = PATTERN_PSYCHOLOGY[ptype].get(lang, PATTERN_PSYCHOLOGY[ptype].get("it", {}))
+        except (ValueError, KeyError):
+            psychology = {
+                "cosa_succede": f"Confluenza di {pattern_type.replace('_', ' ')} su più timeframe.",
+                "perche": "Quando lo stesso pattern appare su timeframe diversi, la probabilità aumenta.",
+                "azione": "Monitora il setup per un possibile ingresso."
+            }
+        
+        enhanced_confluences.append({
+            **conf,
+            "psychology": psychology
+        })
+    
+    return {
+        "confluences": enhanced_confluences,
+        "total": len(confluences),
+        "high_probability": len(high_prob),
+        "scanner_running": sentinel_scanner.running
+    }
+
+
+@api_router.post("/sentinel/manual-scan", dependencies=[Depends(verify_admin_access)])
+async def trigger_sentinel_scan():
+    """
+    Manually trigger a full scan of all timeframes (ADMIN only).
+    Useful for testing or forcing an immediate update.
+    """
+    if not sentinel_scanner.running:
+        return {"error": "Sentinel scanner is not running", "success": False}
+    
+    # Force scan all timeframes
+    for tf in Timeframe:
+        sentinel_scanner.last_scan_time[tf.value] = None  # Reset to force immediate scan
+    
+    return {
+        "success": True,
+        "message": "Scan triggered for all timeframes",
+        "timeframes": [tf.value for tf in Timeframe]
+    }
+
+
+
 async def test_v3_signal_validation(_: bool = Depends(verify_admin_access)):
     """
     V3.4 VALIDATION TEST ENDPOINT
@@ -26570,6 +26735,16 @@ async def startup_event():
     # Shadow tracking has been deprecated to save server resources
     logger.info("⏸️  Shadow Tracking: DISABLED (deprecated in v3.6.0)")
     
+    # ============== START THE SENTINEL - PATTERN DETECTION ENGINE ==============
+    try:
+        await sentinel_scanner.start(
+            fetch_candles_fn=fetch_kraken_ohlc,
+            fetch_price_fn=fetch_kraken_ticker
+        )
+        logger.info("✅ The Sentinel: Started (multi-timeframe pattern detection)")
+    except Exception as e:
+        logger.error(f"❌ The Sentinel: Failed to start - {e}")
+    
     # ============== START CLUSTER TARGET VALIDATION LOOP ==============
     try:
         # Restore pending cluster signals
@@ -26586,6 +26761,7 @@ async def startup_event():
     logger.info(f"   - Signal Dedup Window: {SIGNAL_DEDUP_WINDOW_MINUTES} minutes")
     logger.info("   - Shadow Tracking: DISABLED (deprecated)")
     logger.info("   - Cluster Validation: Active")
+    logger.info("   - The Sentinel: Active (6 timeframes)")
     logger.info("=" * 50)
 
 @app.on_event("shutdown")
@@ -26594,6 +26770,13 @@ async def shutdown_db_client():
     global scheduler_status
     
     logger.info("CryptoRadar shutting down...")
+    
+    # Stop The Sentinel scanner
+    try:
+        await sentinel_scanner.stop()
+        logger.info("✅ The Sentinel: Stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Sentinel: {e}")
     
     # Stop the scheduler gracefully
     try:

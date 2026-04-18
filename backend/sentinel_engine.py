@@ -637,8 +637,6 @@ class SentinelEngine:
         
         # Extract price series
         closes = [c['close'] for c in candles]
-        highs = [c['high'] for c in candles]
-        lows = [c['low'] for c in candles]
         
         # Detect swing points
         high_indices, low_indices = detect_swing_points(closes, lookback=3)
@@ -800,5 +798,245 @@ class SentinelEngine:
         return draw_data
 
 
-# Global Sentinel instance
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND SCANNING LOOP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SentinelScanner:
+    """
+    Background scanner that monitors multiple timeframes and detects patterns.
+    Runs autonomously, updating pattern cache for the frontend.
+    """
+    
+    def __init__(self):
+        self.sentinel = SentinelEngine()
+        self.running = False
+        self.task: Optional[asyncio.Task] = None
+        self.last_scan_time: Dict[str, datetime] = {}
+        self.scan_intervals = {
+            Timeframe.M15: 60,      # Scan every 60 seconds
+            Timeframe.H1: 120,      # Scan every 2 minutes
+            Timeframe.H4: 300,      # Scan every 5 minutes
+            Timeframe.D1: 600,      # Scan every 10 minutes
+            Timeframe.W1: 1800,     # Scan every 30 minutes
+            Timeframe.M1: 3600,     # Scan every hour
+        }
+        self.pattern_cache: Dict[str, List[Dict]] = {}
+        self.confluence_cache: List[Dict] = []
+        self.current_price: float = 0
+        self.scan_count: int = 0
+        self.error_count: int = 0
+        
+    async def start(self, fetch_candles_fn, fetch_price_fn):
+        """Start the background scanning loop."""
+        if self.running:
+            logger.info("[SENTINEL] Scanner already running")
+            return
+        
+        self.running = True
+        self.fetch_candles = fetch_candles_fn
+        self.fetch_price = fetch_price_fn
+        self.task = asyncio.create_task(self._scan_loop())
+        logger.info("[SENTINEL] 🔭 Scanner started - monitoring all timeframes")
+        
+    async def stop(self):
+        """Stop the background scanning loop."""
+        self.running = False
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+        logger.info("[SENTINEL] Scanner stopped")
+        
+    async def _scan_loop(self):
+        """Main scanning loop - checks each timeframe at appropriate intervals."""
+        while self.running:
+            try:
+                now = datetime.now(timezone.utc)
+                
+                # Fetch current price
+                try:
+                    ticker = await self.fetch_price()
+                    if ticker and ticker.get("price"):
+                        self.current_price = ticker["price"]
+                except Exception as e:
+                    logger.error(f"[SENTINEL] Price fetch error: {e}")
+                
+                # Scan each timeframe if interval elapsed
+                for tf in Timeframe:
+                    last_scan = self.last_scan_time.get(tf.value)
+                    interval = self.scan_intervals[tf]
+                    
+                    if last_scan is None or (now - last_scan).total_seconds() >= interval:
+                        await self._scan_timeframe(tf)
+                        self.last_scan_time[tf.value] = now
+                
+                # Check confluence after all scans
+                if self.pattern_cache:
+                    self.confluence_cache = self.sentinel.check_confluence(self.pattern_cache)
+                    if self.confluence_cache:
+                        high_prob = [c for c in self.confluence_cache if c.get("is_high_probability")]
+                        if high_prob:
+                            logger.info(f"[SENTINEL] 🎯 HIGH PROBABILITY CONFLUENCE DETECTED: {len(high_prob)} setups")
+                
+                self.scan_count += 1
+                
+                # Sleep before next iteration
+                await asyncio.sleep(30)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.error_count += 1
+                logger.error(f"[SENTINEL] Scan loop error: {e}")
+                await asyncio.sleep(60)
+                
+    async def _scan_timeframe(self, tf: Timeframe):
+        """Scan a single timeframe for patterns."""
+        try:
+            # Map timeframe to Kraken interval
+            interval_map = {
+                Timeframe.M15: 15,
+                Timeframe.H1: 60,
+                Timeframe.H4: 240,
+                Timeframe.D1: 1440,
+                Timeframe.W1: 10080,
+                Timeframe.M1: 43200,
+            }
+            
+            kraken_interval = interval_map.get(tf, 60)
+            candles = await self.fetch_candles(kraken_interval)
+            
+            if not candles or len(candles) < 20:
+                logger.debug(f"[SENTINEL] Insufficient candles for {tf.value}")
+                return
+            
+            # Convert to required format
+            formatted_candles = []
+            for c in candles:
+                if isinstance(c, dict):
+                    formatted_candles.append({
+                        "time": c.get("time", 0),
+                        "open": float(c.get("open", 0)),
+                        "high": float(c.get("high", 0)),
+                        "low": float(c.get("low", 0)),
+                        "close": float(c.get("close", 0)),
+                        "volume": float(c.get("volume", 0))
+                    })
+            
+            if len(formatted_candles) < 20:
+                return
+            
+            # Scan for patterns
+            patterns = await self.sentinel.scan_timeframe(formatted_candles, tf)
+            
+            if patterns:
+                # Format patterns for UI
+                formatted_patterns = []
+                for p in patterns:
+                    formatted = self.sentinel.format_pattern_for_ui(p, self.current_price, "it")
+                    formatted_patterns.append(formatted)
+                
+                self.pattern_cache[tf.value] = formatted_patterns
+                logger.debug(f"[SENTINEL] {tf.value}: {len(patterns)} patterns detected")
+            else:
+                self.pattern_cache[tf.value] = []
+                
+        except Exception as e:
+            logger.error(f"[SENTINEL] Error scanning {tf.value}: {e}")
+            
+    def get_all_patterns(self) -> List[Dict]:
+        """Get all detected patterns across all timeframes."""
+        all_patterns = []
+        for tf, patterns in self.pattern_cache.items():
+            all_patterns.extend(patterns)
+        # Sort by weight (higher timeframe = more important)
+        all_patterns.sort(key=lambda p: p.get("weight", 0), reverse=True)
+        return all_patterns
+    
+    def get_confluences(self) -> List[Dict]:
+        """Get detected confluences."""
+        return self.confluence_cache
+    
+    def get_high_probability_setups(self) -> List[Dict]:
+        """Get only high probability confluent setups."""
+        return [c for c in self.confluence_cache if c.get("is_high_probability")]
+    
+    def get_status(self) -> Dict:
+        """Get scanner status for API."""
+        return {
+            "running": self.running,
+            "scan_count": self.scan_count,
+            "error_count": self.error_count,
+            "current_price": self.current_price,
+            "patterns_detected": sum(len(p) for p in self.pattern_cache.values()),
+            "confluences_active": len(self.confluence_cache),
+            "high_probability_setups": len(self.get_high_probability_setups()),
+            "last_scan_times": {k: v.isoformat() if v else None for k, v in self.last_scan_time.items()},
+            "timeframes_monitored": [tf.value for tf in Timeframe]
+        }
+    
+    def get_patterns_for_chart(self) -> Dict:
+        """Get pattern draw data formatted for SVG/Canvas overlay."""
+        chart_data = {
+            "patterns": [],
+            "trendlines": [],
+            "markers": [],
+            "zones": []
+        }
+        
+        for tf, patterns in self.pattern_cache.items():
+            for p in patterns:
+                draw_data = p.get("draw_data", {})
+                shape = draw_data.get("shape")
+                
+                if shape == "horizontal_line":
+                    chart_data["zones"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": p.get("color"),
+                        "price": draw_data.get("price") or draw_data.get("neckline"),
+                        "target": draw_data.get("target"),
+                        "bias": p.get("bias")
+                    })
+                    
+                elif shape == "diagonal_line":
+                    chart_data["trendlines"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": p.get("color"),
+                        "start": draw_data.get("start"),
+                        "end": draw_data.get("end"),
+                        "bias": p.get("bias")
+                    })
+                    
+                elif shape == "converging_lines":
+                    chart_data["patterns"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": p.get("color"),
+                        "upper_line": draw_data.get("upper_line"),
+                        "lower_line": draw_data.get("lower_line"),
+                        "resistance": draw_data.get("resistance"),
+                        "support": draw_data.get("support"),
+                        "bias": p.get("bias")
+                    })
+                    
+                elif shape == "marker":
+                    chart_data["markers"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": p.get("color"),
+                        "index": draw_data.get("index"),
+                        "price": draw_data.get("price"),
+                        "bias": p.get("bias")
+                    })
+        
+        return chart_data
+
+
+# Global instances
 sentinel = SentinelEngine()
+sentinel_scanner = SentinelScanner()

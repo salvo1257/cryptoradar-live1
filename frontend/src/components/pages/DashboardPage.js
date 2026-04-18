@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAccess } from '../../contexts/AccessContext';
 import { TradingChart } from '../TradingChart';
-import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock, Eye } from 'lucide-react';
 import { 
   MarketBiasCard, 
   SupportResistanceCard, 
@@ -17,7 +17,8 @@ import {
   LiquidityMagnetCard,
   PriceMeasurementTool,
   V3SignalCard,
-  DecisionEngineCard
+  DecisionEngineCard,
+  SentinelPatternFeed
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
 import { DataFreshnessIndicator } from '../cards/DataFreshnessIndicator';
@@ -42,7 +43,9 @@ export function DashboardPage() {
       technicalContext: 'Contesto Tecnico',
       tools: 'Strumenti',
       priceChart: 'Grafico Prezzo',
-      liveAnalysis: 'Analisi Live'
+      liveAnalysis: 'Analisi Live',
+      patternDetection: 'Pattern Detection',
+      sentinelDesc: 'Analisi Multi-Timeframe Automatica'
     },
     en: {
       diagnostic: 'V2 DIAGNOSTIC - NOT OPERATIONAL',
@@ -53,7 +56,9 @@ export function DashboardPage() {
       technicalContext: 'Technical Context',
       tools: 'Tools',
       priceChart: 'Price Chart',
-      liveAnalysis: 'Live Analysis'
+      liveAnalysis: 'Live Analysis',
+      patternDetection: 'Pattern Detection',
+      sentinelDesc: 'Automated Multi-Timeframe Analysis'
     },
     de: {
       diagnostic: 'V2 DIAGNOSE - NICHT OPERATIV',
@@ -64,7 +69,9 @@ export function DashboardPage() {
       technicalContext: 'Technischer Kontext',
       tools: 'Werkzeuge',
       priceChart: 'Preischart',
-      liveAnalysis: 'Live-Analyse'
+      liveAnalysis: 'Live-Analyse',
+      patternDetection: 'Pattern-Erkennung',
+      sentinelDesc: 'Automatische Multi-Zeitrahmen-Analyse'
     },
     pl: {
       diagnostic: 'V2 DIAGNOSTYKA - NIEOPERACYJNY',
@@ -75,7 +82,9 @@ export function DashboardPage() {
       technicalContext: 'Kontekst Techniczny',
       tools: 'Narzędzia',
       priceChart: 'Wykres Ceny',
-      liveAnalysis: 'Analiza Live'
+      liveAnalysis: 'Analiza Live',
+      patternDetection: 'Wykrywanie Wzorców',
+      sentinelDesc: 'Automatyczna Analiza Wielu Ram Czasowych'
     }
   };
 
@@ -234,6 +243,25 @@ export function DashboardPage() {
           <TradingChart height={380} />
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          THE SENTINEL - Multi-Timeframe Pattern Detection Engine
+          Autonomous pattern scanning across 6 timeframes (15M to 1M)
+      ═══════════════════════════════════════════════════════════════════ */}
+      <section className="space-y-5">
+        <div className="flex items-center gap-3 px-1">
+          <div className="w-2 h-6 bg-purple-500 rounded-full shadow-lg shadow-purple-500/30"></div>
+          <h3 className="text-base font-heading font-bold text-zinc-100 uppercase tracking-wider flex items-center gap-2">
+            <Eye className="w-4 h-4 text-purple-400" />
+            {t.patternDetection}
+          </h3>
+          <Badge className="text-[10px] text-purple-400 border-purple-500/40 bg-purple-500/10 px-2">
+            THE SENTINEL
+          </Badge>
+          <div className="flex-1 h-px bg-gradient-to-r from-purple-500/30 to-transparent"></div>
+        </div>
+        <SentinelPatternFeed />
+      </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
           SECTION: Primary Intelligence (Bias, OI, Funding) - COCKPIT ROW
