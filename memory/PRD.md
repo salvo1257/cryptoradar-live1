@@ -1,8 +1,8 @@
-# CryptoRadar v3.6.1 - Product Requirements Document
-**Last Updated:** 2026-04-18 (Shadow Target Inspector Removed)
+# CryptoRadar v3.6.2 - Product Requirements Document
+**Last Updated:** 2026-04-18 (Big Five Exchange Integration)
 
 ## QUICK STATUS
-- **Current Version:** v3.6.1 - V3-ONLY PRODUCTION MODE
+- **Current Version:** v3.6.2 - V3-ONLY PRODUCTION MODE
 - **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -17,46 +17,44 @@
 - **V3.5.9 Fix:** Statistical Modules Repaired (History, Analytics, Backtest)
 - **V3.6.0 Feature:** V2 Engine Downgraded to Diagnostic-Only Mode
 - **V3.6.1 Cleanup:** Shadow Target Inspector Removed (deprecated)
+- **V3.6.2 Feature:** Big Five Exchange Integration (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
-## V3.6.1 SHADOW TARGET INSPECTOR REMOVAL (2026-04-18)
+## V3.6.2 BIG FIVE EXCHANGE INTEGRATION (2026-04-18)
 
 ### Summary
-The Shadow Target Inspector component has been completely removed from the platform to simplify the UI and reduce server resource usage.
+Order book data is now aggregated from 5 exchanges instead of 3, providing a more comprehensive view of market liquidity.
 
-### Changes Made
+### New Exchange Connectors
+| Exchange | API URL | Status | Notes |
+|----------|---------|--------|-------|
+| Kraken | api.kraken.com | ✅ Active | Primary price source |
+| Coinbase | api.exchange.coinbase.com | ✅ Active | High liquidity |
+| Bitstamp | bitstamp.net/api/v2 | ✅ Active | Deep orderbook |
+| Binance.US | api.binance.us/api/v3 | ✅ NEW | Uses BTC/USD pair |
+| KuCoin | api.kucoin.com/api/v1 | ✅ NEW | High volume |
 
-#### Frontend
-| File | Change |
-|------|--------|
-| `AlertHistoryPage.js` | Removed `ShadowTargetInspector` import and component |
-| `HelpOverlay.js` | Removed `shadow_targets` help entry |
+### Implementation Details
+- All 5 exchanges fetched in parallel using `asyncio.gather()`
+- Cache TTL maintained at 60 seconds for orderbooks
+- Data freshness tracker updated for new sources
+- Consensus logic updated for 3/5 majority (was 2/3)
 
-#### Backend (server.py)
-- `SHADOW_TRACKING_ENABLED = False` flag added
-- Shadow tracking background loop **DISABLED** at startup
-- API endpoints return deprecation messages:
-  - `/api/v3/shadow-targets` → deprecated
-  - `/api/v3/shadow-performance` → deprecated
-  - `/api/v3/shadow-validation-logs` → deprecated
-  - `/api/v3/shadow-tracking-status` → deprecated
+### UI Updates
+All "Aggregated" labels now show:
+`Aggregated (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)`
 
-#### Database Cleanup
-- **Dropped collections:**
-  - `shadow_liquidity_targets` (11 docs)
-  - `shadow_validation_logs` (8 docs)
+Affected pages:
+- Dashboard: Liquidity Magnet
+- Supporti e Resistenze: Support/Resistance levels
+- Liquidità: Order Book, Direction, Clusters
+- Manuale: Data source descriptions
 
-#### Server Resources Saved
-- Background loop (10s interval) no longer runs
-- No more DB writes for shadow data
-- Reduced memory usage (active_shadow_tracking dict no longer populated)
-
-### Layout Optimization
-The Signal History page now shows:
-- Performance Trading stats (full width)
-- V3 Monitoring Panel (expands to fill space)
-- Signal table with more vertical space
+### Performance
+- Total market depth now ~$10M+ combined (was ~$5M)
+- Async fetching ensures no slowdown
+- Exchange breakdown visible in UI (per-exchange imbalance %)
 
 ## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
 

@@ -53,6 +53,8 @@ DATA_FRESHNESS_THRESHOLDS = {
     "funding_rate": {"warning": 60, "stale": 180, "critical": 600},
     "liquidation": {"warning": 60, "stale": 120, "critical": 300},
     "orderbook": {"warning": 30, "stale": 60, "critical": 120},
+    "binance_orderbook": {"warning": 30, "stale": 60, "critical": 120},
+    "bybit_orderbook": {"warning": 30, "stale": 60, "critical": 120},
     "whale_activity": {"warning": 60, "stale": 120, "critical": 300},
     "candles": {"warning": 60, "stale": 180, "critical": 300},
 }
@@ -72,6 +74,8 @@ data_freshness_tracker = {
     "funding_rate": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
     "liquidation": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
     "orderbook": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "binance_orderbook": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
+    "bybit_orderbook": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
     "whale_activity": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
     "candles": {"last_fetch": None, "status": DataFreshnessStatus.UNAVAILABLE, "source": None},
 }
@@ -3704,6 +3708,8 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
 KRAKEN_API_URL = "https://api.kraken.com/0/public"
 COINBASE_API_URL = "https://api.exchange.coinbase.com"
 BITSTAMP_API_URL = "https://www.bitstamp.net/api/v2"
+BINANCE_US_API_URL = "https://api.binance.us/api/v3"
+KUCOIN_API_URL = "https://api.kucoin.com/api/v1"
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news"
 COINGLASS_API_URL = "https://open-api-v4.coinglass.com/api"
 COINGLASS_API_KEY = os.environ.get('COINGLASS_API_KEY', '')
@@ -3729,10 +3735,18 @@ market_data_cache = {
     "coinbase_orderbook_time": None,
     "bitstamp_orderbook": None,
     "bitstamp_orderbook_time": None,
+    "binance_orderbook": None,
+    "binance_orderbook_time": None,
+    "bybit_orderbook": None,
+    "bybit_orderbook_time": None,
     "coinbase_ticker": None,
     "coinbase_ticker_time": None,
     "bitstamp_ticker": None,
     "bitstamp_ticker_time": None,
+    "binance_ticker": None,
+    "binance_ticker_time": None,
+    "bybit_ticker": None,
+    "bybit_ticker_time": None,
     "aggregated_orderbook": None,
     "aggregated_orderbook_time": None,
 }
@@ -5459,16 +5473,152 @@ async def fetch_bitstamp_orderbook():
         logger.error(f"Error fetching Bitstamp orderbook: {e}")
     return None
 
+# ============== BINANCE US API HELPERS ==============
+
+async def fetch_binance_ticker():
+    """Fetch current BTC/USD ticker from Binance US"""
+    try:
+        if market_data_cache["binance_ticker"] and market_data_cache["binance_ticker_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["binance_ticker_time"]).seconds < CACHE_TTL:
+                return market_data_cache["binance_ticker"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{BINANCE_US_API_URL}/ticker/24hr",
+                params={"symbol": "BTCUSD"}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                result = {
+                    "price": float(data.get("lastPrice", 0)),
+                    "volume_24h": float(data.get("volume", 0)),
+                    "bid": float(data.get("bidPrice", 0)),
+                    "ask": float(data.get("askPrice", 0)),
+                    "high_24h": float(data.get("highPrice", 0)),
+                    "low_24h": float(data.get("lowPrice", 0)),
+                    "exchange": "Binance.US"
+                }
+                market_data_cache["binance_ticker"] = result
+                market_data_cache["binance_ticker_time"] = datetime.now(timezone.utc)
+                return result
+    except Exception as e:
+        logger.error(f"Error fetching Binance.US ticker: {e}")
+    return None
+
+async def fetch_binance_orderbook(limit: int = 100):
+    """Fetch order book from Binance US Spot"""
+    try:
+        if market_data_cache["binance_orderbook"] and market_data_cache["binance_orderbook_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["binance_orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+                return market_data_cache["binance_orderbook"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{BINANCE_US_API_URL}/depth",
+                params={"symbol": "BTCUSD", "limit": limit}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                # Binance format: {"bids": [[price, qty], ...], "asks": [[price, qty], ...]}
+                orderbook = {
+                    "bids": [[str(b[0]), str(b[1])] for b in data.get("bids", [])[:100]],
+                    "asks": [[str(a[0]), str(a[1])] for a in data.get("asks", [])[:100]],
+                    "exchange": "Binance.US"
+                }
+                market_data_cache["binance_orderbook"] = orderbook
+                market_data_cache["binance_orderbook_time"] = datetime.now(timezone.utc)
+                
+                # Update data freshness tracker
+                update_data_freshness("binance_orderbook", True, "Binance.US")
+                
+                return orderbook
+    except Exception as e:
+        logger.error(f"Error fetching Binance.US orderbook: {e}")
+        update_data_freshness("binance_orderbook", False)
+    return None
+
+# ============== KUCOIN API HELPERS ==============
+
+async def fetch_kucoin_ticker():
+    """Fetch current BTC/USDT ticker from KuCoin"""
+    try:
+        if market_data_cache["bybit_ticker"] and market_data_cache["bybit_ticker_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["bybit_ticker_time"]).seconds < CACHE_TTL:
+                return market_data_cache["bybit_ticker"]
+        
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{KUCOIN_API_URL}/market/stats",
+                params={"symbol": "BTC-USDT"}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == "200000" and data.get("data"):
+                    ticker = data["data"]
+                    result = {
+                        "price": float(ticker.get("last", 0)),
+                        "volume_24h": float(ticker.get("vol", 0)),
+                        "bid": float(ticker.get("buy", 0)),
+                        "ask": float(ticker.get("sell", 0)),
+                        "high_24h": float(ticker.get("high", 0)),
+                        "low_24h": float(ticker.get("low", 0)),
+                        "exchange": "KuCoin"
+                    }
+                    market_data_cache["bybit_ticker"] = result
+                    market_data_cache["bybit_ticker_time"] = datetime.now(timezone.utc)
+                    return result
+    except Exception as e:
+        logger.error(f"Error fetching KuCoin ticker: {e}")
+    return None
+
+async def fetch_kucoin_orderbook(limit: int = 100):
+    """Fetch order book from KuCoin Spot"""
+    try:
+        if market_data_cache["bybit_orderbook"] and market_data_cache["bybit_orderbook_time"]:
+            if (datetime.now(timezone.utc) - market_data_cache["bybit_orderbook_time"]).seconds < ORDERBOOK_CACHE_TTL:
+                return market_data_cache["bybit_orderbook"]
+        
+        # KuCoin has level2_20 (20 levels) and level2_100 (100 levels)
+        level = "level2_100" if limit > 20 else "level2_20"
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            response = await http_client.get(
+                f"{KUCOIN_API_URL}/market/orderbook/{level}",
+                params={"symbol": "BTC-USDT"}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == "200000" and data.get("data"):
+                    result = data["data"]
+                    # KuCoin format: {"bids": [[price, size], ...], "asks": [[price, size], ...]}
+                    orderbook = {
+                        "bids": [[str(b[0]), str(b[1])] for b in result.get("bids", [])[:100]],
+                        "asks": [[str(a[0]), str(a[1])] for a in result.get("asks", [])[:100]],
+                        "exchange": "KuCoin"
+                    }
+                    market_data_cache["bybit_orderbook"] = orderbook
+                    market_data_cache["bybit_orderbook_time"] = datetime.now(timezone.utc)
+                    
+                    # Update data freshness tracker
+                    update_data_freshness("bybit_orderbook", True, "KuCoin")
+                    
+                    return orderbook
+    except Exception as e:
+        logger.error(f"Error fetching KuCoin orderbook: {e}")
+        update_data_freshness("bybit_orderbook", False)
+    return None
+
 # ============== MULTI-EXCHANGE AGGREGATION ==============
 
 async def fetch_all_exchange_orderbooks():
-    """Fetch order books from all exchanges in parallel"""
+    """Fetch order books from all 5 exchanges in parallel (Big Five)"""
     kraken_task = fetch_kraken_orderbook(100)
     coinbase_task = fetch_coinbase_orderbook(2)
     bitstamp_task = fetch_bitstamp_orderbook()
+    binance_task = fetch_binance_orderbook(100)
+    kucoin_task = fetch_kucoin_orderbook(100)
     
-    kraken_ob, coinbase_ob, bitstamp_ob = await asyncio.gather(
-        kraken_task, coinbase_task, bitstamp_task,
+    kraken_ob, coinbase_ob, bitstamp_ob, binance_ob, kucoin_ob = await asyncio.gather(
+        kraken_task, coinbase_task, bitstamp_task, binance_task, kucoin_task,
         return_exceptions=True
     )
     
@@ -5479,17 +5629,23 @@ async def fetch_all_exchange_orderbooks():
         orderbooks["Coinbase"] = coinbase_ob
     if bitstamp_ob and not isinstance(bitstamp_ob, Exception):
         orderbooks["Bitstamp"] = bitstamp_ob
+    if binance_ob and not isinstance(binance_ob, Exception):
+        orderbooks["Binance.US"] = binance_ob
+    if kucoin_ob and not isinstance(kucoin_ob, Exception):
+        orderbooks["KuCoin"] = kucoin_ob
     
     return orderbooks
 
 async def fetch_all_exchange_tickers():
-    """Fetch tickers from all exchanges in parallel"""
+    """Fetch tickers from all 5 exchanges in parallel"""
     kraken_task = fetch_kraken_ticker()
     coinbase_task = fetch_coinbase_ticker()
     bitstamp_task = fetch_bitstamp_ticker()
+    binance_task = fetch_binance_ticker()
+    kucoin_task = fetch_kucoin_ticker()
     
-    kraken_t, coinbase_t, bitstamp_t = await asyncio.gather(
-        kraken_task, coinbase_task, bitstamp_task,
+    kraken_t, coinbase_t, bitstamp_t, binance_t, kucoin_t = await asyncio.gather(
+        kraken_task, coinbase_task, bitstamp_task, binance_task, kucoin_task,
         return_exceptions=True
     )
     
@@ -5500,6 +5656,10 @@ async def fetch_all_exchange_tickers():
         tickers["Coinbase"] = coinbase_t
     if bitstamp_t and not isinstance(bitstamp_t, Exception):
         tickers["Bitstamp"] = bitstamp_t
+    if binance_t and not isinstance(binance_t, Exception):
+        tickers["Binance.US"] = binance_t
+    if kucoin_t and not isinstance(kucoin_t, Exception):
+        tickers["KuCoin"] = kucoin_t
     
     return tickers
 
@@ -5948,10 +6108,6 @@ async def fetch_binance_klines(interval: str = "1h", limit: int = 100):
     }
     kraken_interval = interval_map.get(interval, 60)
     return await fetch_kraken_ohlc(kraken_interval)
-
-async def fetch_binance_orderbook(limit: int = 100):
-    """Wrapper for Kraken orderbook"""
-    return await fetch_kraken_orderbook(limit)
 
 # ============== ANALYSIS ENGINES ==============
 

@@ -61,7 +61,7 @@ Il sistema usa candele a 4 ore (4H) come contesto operativo principale. Questo s
 - Classifica la forza: forte (3+ tocchi), moderato (2), debole (1)
 
 **2. Order Book Aggregato**
-- Aggrega dati da Kraken, Coinbase e Bitstamp (API pubbliche)
+- Aggrega dati da Kraken, Coinbase, Bitstamp, Binance.US e KuCoin (Big Five)
 - Identifica "muri" di ordini significativi (>2.5x volume medio)
 - Mostra dove c'è reale interesse di acquisto/vendita
 
@@ -349,7 +349,7 @@ Meno segnali, ma più puliti e coerenti. Qualità > Quantità.`
 
 **FASE 1: Raccolta Dati**
 1. Prezzo BTC da Kraken (real-time)
-2. Order book multi-exchange (Kraken, Coinbase, Bitstamp)
+2. Order book multi-exchange (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)
 3. Open Interest e Funding Rate da CoinGlass
 4. Candele storiche per pattern analysis
 
@@ -641,7 +641,7 @@ The system uses 4-hour (4H) candles as the main operational context. This means 
 - Classifies strength: strong (3+ touches), moderate (2), weak (1)
 
 **2. Multi-Exchange Order Book**
-- Aggregates data from Kraken, Coinbase, and Bitstamp
+- Aggregates data from Kraken, Coinbase, Bitstamp, Binance.US, and KuCoin (Big Five)
 - Identifies significant order "walls" (>2.5x average volume)
 - Shows where real buying/selling interest exists
 
@@ -764,7 +764,7 @@ Fewer signals, but cleaner and more coherent. Quality > Quantity.`
 
 **PHASE 1: Data Collection**
 1. BTC price from Kraken (primary, real-time)
-2. Order book aggregated from Kraken, Coinbase, Bitstamp
+2. Order book aggregated from Kraken, Coinbase, Bitstamp, Binance.US, KuCoin (Big Five)
 3. Open Interest and Funding Rate from CoinGlass
 4. Historical candles for pattern analysis
 
