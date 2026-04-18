@@ -171,6 +171,22 @@ function getHelpContent(cardType, language, ctx) {
     },
 
     // ═══════════════════════════════════════════════════════════════════
+    // WHALE FLOW 2.0 - Multi-Exchange Capital Tracker
+    // ═══════════════════════════════════════════════════════════════════
+    whale_flow: {
+      it: {
+        whatItIs: getWhaleFlowWhatItIs(ctx, 'it'),
+        whyItHappens: getWhaleFlowWhyItHappens(ctx, 'it'),
+        howToRead: getWhaleFlowAction(ctx, 'it')
+      },
+      en: {
+        whatItIs: getWhaleFlowWhatItIs(ctx, 'en'),
+        whyItHappens: getWhaleFlowWhyItHappens(ctx, 'en'),
+        howToRead: getWhaleFlowAction(ctx, 'en')
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════
     // LIQUIDITY MAGNET - Price Attraction
     // ═══════════════════════════════════════════════════════════════════
     liquidity_magnet: {
@@ -739,6 +755,120 @@ function getWhaleAction(ctx, lang) {
     return `Moderate whale flow. Can support an aligned trade.`;
   }
   return `Weak whale flow. Don't base trade only on this.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WHALE FLOW 2.0 - MULTI-EXCHANGE CAPITAL TRACKER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getWhaleFlowWhatItIs(ctx, lang) {
+  const momentum = ctx.momentumScore || 50;
+  const direction = ctx.overallDirection || 'NEUTRAL';
+  const consensus = ctx.consensus || '0/5';
+  
+  if (lang === 'it') {
+    if (direction === 'BUY') {
+      return `Le istituzioni stanno ACCUMULANDO su ${consensus} exchange (Momentum: ${momentum}/100). Pressione di acquisto dominante.`;
+    }
+    if (direction === 'SELL') {
+      return `Le istituzioni stanno DISTRIBUENDO su ${consensus} exchange (Momentum: ${momentum}/100). Pressione di vendita dominante.`;
+    }
+    return `Flussi istituzionali bilanciati. Nessuna pressione dominante su ${consensus} exchange.`;
+  }
+  
+  if (direction === 'BUY') {
+    return `Institutions are ACCUMULATING across ${consensus} exchanges (Momentum: ${momentum}/100). Dominant buying pressure.`;
+  }
+  if (direction === 'SELL') {
+    return `Institutions are DISTRIBUTING across ${consensus} exchanges (Momentum: ${momentum}/100). Dominant selling pressure.`;
+  }
+  return `Balanced institutional flows. No dominant pressure across ${consensus} exchanges.`;
+}
+
+function getWhaleFlowWhyItHappens(ctx, lang) {
+  const momentum = ctx.momentumScore || 50;
+  const buyingExchanges = ctx.buyingExchanges || 0;
+  const sellingExchanges = ctx.sellingExchanges || 0;
+  
+  if (lang === 'it') {
+    let parts = [];
+    
+    if (momentum > 60) {
+      parts.push('capitali istituzionali in entrata');
+      parts.push('i grandi player stanno costruendo posizioni');
+    } else if (momentum < 40) {
+      parts.push('capitali istituzionali in uscita');
+      parts.push('distribuzione attiva a livelli di resistenza');
+    } else {
+      parts.push('mercato in equilibrio');
+      parts.push('attendi sbilanciamento prima di agire');
+    }
+    
+    if (buyingExchanges >= 4) {
+      parts.push(`consensus forte: ${buyingExchanges}/5 exchange in acquisto`);
+    } else if (sellingExchanges >= 4) {
+      parts.push(`consensus forte: ${sellingExchanges}/5 exchange in vendita`);
+    }
+    
+    return parts.join(' • ');
+  }
+  
+  let parts = [];
+  
+  if (momentum > 60) {
+    parts.push('institutional capital inflows');
+    parts.push('large players building positions');
+  } else if (momentum < 40) {
+    parts.push('institutional capital outflows');
+    parts.push('active distribution at resistance levels');
+  } else {
+    parts.push('market in equilibrium');
+    parts.push('wait for imbalance before acting');
+  }
+  
+  if (buyingExchanges >= 4) {
+    parts.push(`strong consensus: ${buyingExchanges}/5 exchanges buying`);
+  } else if (sellingExchanges >= 4) {
+    parts.push(`strong consensus: ${sellingExchanges}/5 exchanges selling`);
+  }
+  
+  return parts.join(' • ');
+}
+
+function getWhaleFlowAction(ctx, lang) {
+  const momentum = ctx.momentumScore || 50;
+  const direction = ctx.overallDirection || 'NEUTRAL';
+  const consensus = ctx.consensus || '0/5';
+  
+  if (lang === 'it') {
+    if (momentum >= 65) {
+      return `✅ Segnale forte! Il momentum istituzionale (${momentum}/100) supporta posizioni LONG. Cerca entry su pullback.`;
+    }
+    if (momentum <= 35) {
+      return `🔻 Distribuzione in corso! Il momentum istituzionale (${momentum}/100) suggerisce cautela sui LONG. Valuta SHORT su rimbalzi.`;
+    }
+    if (momentum > 55) {
+      return `📊 Leggero bias rialzista (${momentum}/100). Attendi consensus ${consensus} più forte prima di operare.`;
+    }
+    if (momentum < 45) {
+      return `📊 Leggero bias ribassista (${momentum}/100). Attendi consensus ${consensus} più forte prima di operare.`;
+    }
+    return `⚖️ Mercato neutro (${momentum}/100). I Big Five sono divisi. Non forzare i trade, attendi chiarezza.`;
+  }
+  
+  if (momentum >= 65) {
+    return `✅ Strong signal! Institutional momentum (${momentum}/100) supports LONG positions. Look for pullback entries.`;
+  }
+  if (momentum <= 35) {
+    return `🔻 Distribution in progress! Institutional momentum (${momentum}/100) suggests caution on LONG. Consider SHORT on bounces.`;
+  }
+  if (momentum > 55) {
+    return `📊 Slight bullish bias (${momentum}/100). Wait for stronger ${consensus} consensus before trading.`;
+  }
+  if (momentum < 45) {
+    return `📊 Slight bearish bias (${momentum}/100). Wait for stronger ${consensus} consensus before trading.`;
+  }
+  return `⚖️ Neutral market (${momentum}/100). Big Five are divided. Don't force trades, wait for clarity.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

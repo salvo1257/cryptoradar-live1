@@ -1,8 +1,8 @@
-# CryptoRadar v3.7.0 - Product Requirements Document
-**Last Updated:** 2026-04-18 (Premium UI + Whale Flow 2.0)
+# CryptoRadar v3.7.1 - Product Requirements Document
+**Last Updated:** 2026-04-18 (Pedagogical Standardization Complete)
 
 ## QUICK STATUS
-- **Current Version:** v3.7.0 - V3-ONLY PRODUCTION MODE + PREMIUM UI
+- **Current Version:** v3.7.1 - V3-ONLY PRODUCTION MODE + PREMIUM UI + PEDAGOGY
 - **Phase:** V3-ONLY OPERATIONAL MODE + LIVE VALIDATION READY
 - **V3.4 Fix:** Signal Validation System (blocks low R:R and conflicting signals)
 - **V3.5 Feature:** Contrarian Logic (trap detection when signals blocked)
@@ -19,70 +19,60 @@
 - **V3.6.1 Cleanup:** Shadow Target Inspector Removed (deprecated)
 - **V3.6.2 Feature:** Big Five Exchange Integration (Kraken, Coinbase, Bitstamp, Binance.US, KuCoin)
 - **V3.7.0 Feature:** Premium UI Overhaul + Whale Flow 2.0
+- **V3.7.1 Feature:** Pedagogical Standardization (Cosa/Perché/Azione)
 - **V3-Only Reset:** Completed 2026-04-15 (340 signals archived), refreshed 2026-04-18 (3 V2 signals deleted)
 - **Blocked Tasks:** server.py refactoring (until validation complete)
 
-## V3.7.0 PREMIUM UI + WHALE FLOW 2.0 (2026-04-18)
+## V3.7.1 PEDAGOGICAL STANDARDIZATION (2026-04-18)
 
-### Premium UI Overhaul
+### Summary
+Every intelligence module now follows the "Cosa succede / Perché / Azione" (What / Why / Action) tripartite format. This is the core educational value proposition of Radar Mentor.
 
-#### New Color Palette (Trading Terminal Aesthetic)
-| Color | Old Value | New Value | Usage |
-|-------|-----------|-----------|-------|
-| Bullish | #00dc82 | #00FF9D | Long signals, buying pressure |
-| Bearish | #ff3b30 | #FF1E56 | Short signals, selling pressure |
-| Cyber | N/A | #00F0FF | Neutral/intelligence data |
-| Background | #09090b | #06080A | Main app background |
-| Card | #121214 | #0C1015 | Card backgrounds |
-| Border | #27272a | #1C232D | Borders and dividers |
+### Learn Mode Toggle
+- **Location**: TopBar, top-right corner
+- **Icon**: Purple question mark with toggle switch
+- **Behavior**: When ON, yellow "lampadina" boxes appear under every card
+- **Persistence**: Does not persist across sessions (intentional)
 
-#### Visual Effects Added
-- **Glassmorphism Sidebar**: `backdrop-filter: blur(24px)` with subtle border
-- **Neon Glow Shadows**: `shadow-neon-bullish`, `shadow-neon-bearish`, `shadow-neon-whale`
-- **Text Glow Effects**: `.text-glow-bullish`, `.text-glow-bearish`, `.text-glow-cyber`
-- **Premium Card Class**: `.premium-card` with hover effects and blur backdrop
-- **Active State Borders**: Green/Red glow borders for active signals
+### Whale Flow 2.0 Integration
+New `whale_flow` cardType added to HelpOverlay with intelligent context:
 
-#### Layout Changes
-- Increased padding: `p-6` → `p-8` on dashboard
-- Larger card headers with icons in rounded-lg containers
-- Bolder fonts for primary metrics
-- Rounded corners: `rounded-sm` → `rounded-lg`
+| Field | Content Generation |
+|-------|-------------------|
+| **Cosa succede** | Direction + momentum score + exchange consensus |
+| **Perché** | Capital flow analysis + institutional behavior |
+| **Azione** | Specific trading guidance based on momentum thresholds |
 
-### Whale Flow 2.0 (New Component)
+#### Momentum Thresholds:
+- `≥65`: Strong bullish signal, look for pullback entries
+- `55-64`: Slight bullish bias, wait for stronger consensus
+- `45-54`: Neutral, don't force trades
+- `36-44`: Slight bearish bias, wait for stronger consensus
+- `≤35`: Distribution in progress, consider shorts on bounces
 
-#### Features
-| Feature | Description |
-|---------|-------------|
-| **Institutional Momentum** | Aggregated score 0-100 from all 5 exchanges |
-| **Heat Bar Visualization** | Per-exchange buying/selling pressure |
-| **Consensus Indicator** | Shows X/5 exchange agreement |
-| **Direction Label** | "Pressione Acquisto" or "Pressione Vendita" |
-| **Real-Time Updates** | Refreshes every 30 seconds |
-
-#### Heat Bar Logic
-- **Green segments**: Buying pressure (bid > ask)
-- **Red segments**: Selling pressure (ask > bid)
-- **Gray segments**: Neutral/balanced
-- **Imbalance %**: Per-exchange deviation from 50/50
-
-#### Data Source
-Uses `/api/orderbook` `exchange_comparison` data:
-- Bid depth vs Ask depth per exchange
-- Calculates directional imbalance
-- Aggregates into single momentum score
+### Cards with Lampadina Support
+| Card | CardType | Context Data |
+|------|----------|--------------|
+| V3SignalCard | `v3_signal` | direction, quality, regime |
+| MarketBiasCard | `market_bias` | bias, confidence, trapRisk |
+| OpenInterestCard | `open_interest` | change, funding, sentiment |
+| FundingRateCard | `funding_rate` | rate, payer, overcrowded |
+| LiquidityCard | `liquidity` | direction, clusters, imbalance |
+| **WhaleFlowCard** | `whale_flow` | momentum, consensus, exchanges |
+| MarketEnergyCard | `market_energy` | energy, regime |
+| LiquidityMagnetCard | `liquidity_magnet` | direction, confidence |
 
 ### Files Modified
 | File | Changes |
 |------|---------|
-| `tailwind.config.js` | New colors, shadows, animations |
-| `index.css` | Premium CSS classes, glassmorphism, glow effects |
-| `Sidebar.js` | Glass-sidebar class, neon active states |
-| `DashboardPage.js` | WhaleFlowCard integration, premium padding |
-| `V3SignalCard.js` | Premium styling with active state borders |
-| `MentorCard.js` | Purple glow, premium header gradient |
-| `WhaleFlowCard.js` | **NEW** - Complete Whale Flow 2.0 component |
-| `cards/index.js` | Export WhaleFlowCard |
+| `HelpOverlay.js` | Added `whale_flow` cardType + 3 content functions |
+| `WhaleFlowCard.js` | Updated to use `whale_flow` cardType with full context |
+
+### Visual Style
+- **Border**: Yellow/amber left border (border-l-2 border-amber-500/50)
+- **Background**: Subtle amber glow (bg-amber-500/5)
+- **Icon**: Lightbulb (Lightbulb from lucide-react)
+- **Animation**: Fade-in on toggle
 
 ## V3.5.9 STATISTICAL MODULES FIX (2026-04-17)
 

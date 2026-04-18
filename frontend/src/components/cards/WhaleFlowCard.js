@@ -298,14 +298,18 @@ export function WhaleFlowCard() {
         </div>
       </div>
 
-      {/* Learn Mode Overlay */}
+      {/* Learn Mode Overlay - Whale Flow 2.0 Pedagogy */}
       {learnMode && (
         <HelpOverlay 
-          topic="whale_activity" 
-          context={{ 
-            whaleBehavior: flowData?.overallDirection === 'BUY' ? 'accumulating' : 
-                          flowData?.overallDirection === 'SELL' ? 'distributing' : 'balanced',
-            whaleStrength: flowData?.momentumScore || 50
+          show={true}
+          cardType="whale_flow"
+          language={language}
+          contextData={{ 
+            momentumScore: flowData?.momentumScore || 50,
+            overallDirection: flowData?.overallDirection || 'NEUTRAL',
+            consensus: flowData?.consensus || '0/5',
+            buyingExchanges: flowData?.buyingExchanges || 0,
+            sellingExchanges: flowData?.sellingExchanges || 0
           }} 
         />
       )}
