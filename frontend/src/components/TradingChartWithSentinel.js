@@ -44,6 +44,23 @@ const PATTERN_NAMES_IT = {
   hammer: "Hammer",
   shooting_star: "Shooting Star",
   doji: "Doji",
+  // Elliott Wave patterns
+  elliott_wave_1: "Onda 1 - Inizio Trend",
+  elliott_wave_2: "Onda 2 - Correzione",
+  elliott_wave_3: "Onda 3 - Impulso Principale",
+  elliott_wave_4: "Onda 4 - Consolidamento",
+  elliott_wave_5: "Onda 5 - Impulso Finale",
+  elliott_wave_a: "Onda A - Inizio Correzione",
+  elliott_wave_b: "Onda B - Trappola",
+  elliott_wave_c: "Onda C - Correzione Finale",
+  elliott_impulse: "Impulso Elliott (1-5)",
+  elliott_corrective: "Correzione Elliott (A-B-C)",
+};
+
+// Elliott Wave colors
+const ELLIOTT_COLORS = {
+  impulse: "#9333EA",  // Deep Purple for 1-2-3-4-5
+  corrective: "#F59E0B",  // Gold for A-B-C
 };
 
 export function TradingChartWithSentinel({ height = 400 }) {
@@ -760,6 +777,158 @@ export function TradingChartWithSentinel({ height = 400 }) {
           );
         })}
         
+        {/* ELLIOTT WAVES - Numbered wave segments */}
+        {chart_data.elliott_waves?.map((wave, i) => {
+          if (!wave.start || !wave.end) return null;
+          
+          const color = wave.color || ELLIOTT_COLORS.impulse;
+          const startY = priceToY(wave.start.price);
+          const endY = priceToY(wave.end.price);
+          
+          // Calculate X positions based on index
+          const totalCandles = 100;
+          const startX = Math.max(50, (wave.start.index / totalCandles) * (width - 100));
+          const endX = Math.min(width - 70, (wave.end.index / totalCandles) * (width - 100));
+          
+          // Calculate midpoint for label
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
+          
+          // Determine if it's impulse (1-5) or corrective (A-B-C)
+          const isImpulse = ['1', '2', '3', '4', '5', '1-5'].includes(wave.label);
+          const waveColor = isImpulse ? ELLIOTT_COLORS.impulse : ELLIOTT_COLORS.corrective;
+          
+          return (
+            <g 
+              key={`elliott-${i}`} 
+              className="sentinel-elliott pointer-events-auto cursor-pointer"
+              onMouseEnter={(e) => handleElementHover({
+                type: wave.type,
+                timeframe: wave.timeframe,
+                label: wave.label,
+                direction: wave.direction,
+                start_price: wave.start?.price,
+                end_price: wave.end?.price,
+                is_extended: wave.is_extended,
+                is_truncated: wave.is_truncated
+              }, e)}
+              onMouseLeave={() => handleElementHover(null)}
+            >
+              {/* Wave line segment */}
+              <line
+                x1={startX}
+                y1={startY}
+                x2={endX}
+                y2={endY}
+                stroke={waveColor}
+                strokeWidth="3"
+                opacity="0.8"
+                strokeLinecap="round"
+              />
+              
+              {/* Glow effect */}
+              <line
+                x1={startX}
+                y1={startY}
+                x2={endX}
+                y2={endY}
+                stroke={waveColor}
+                strokeWidth="6"
+                opacity="0.2"
+                strokeLinecap="round"
+              />
+              
+              {/* Wave number/letter label */}
+              <g transform={`translate(${midX}, ${midY})`}>
+                {/* Circle background */}
+                <circle
+                  r="14"
+                  fill="#18181b"
+                  stroke={waveColor}
+                  strokeWidth="2"
+                />
+                {/* Number/Letter */}
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill={waveColor}
+                  fontSize="12"
+                  fontWeight="bold"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {wave.label}
+                </text>
+              </g>
+              
+              {/* Start point marker */}
+              <circle
+                cx={startX}
+                cy={startY}
+                r="4"
+                fill={waveColor}
+              />
+              
+              {/* End point marker */}
+              <circle
+                cx={endX}
+                cy={endY}
+                r="4"
+                fill={waveColor}
+              />
+              
+              {/* Extended/Truncated indicator */}
+              {wave.is_extended && (
+                <text
+                  x={midX + 18}
+                  y={midY - 5}
+                  fill="#00FF9D"
+                  fontSize="8"
+                  fontWeight="bold"
+                >
+                  EXT
+                </text>
+              )}
+              {wave.is_truncated && (
+                <text
+                  x={midX + 18}
+                  y={midY - 5}
+                  fill="#FF1E56"
+                  fontSize="8"
+                  fontWeight="bold"
+                >
+                  TRUNC
+                </text>
+              )}
+              
+              {/* Timeframe badge for complete patterns */}
+              {wave.is_complete_pattern && (
+                <rect
+                  x={endX + 5}
+                  y={endY - 10}
+                  width={40}
+                  height={20}
+                  rx="4"
+                  fill="#18181b"
+                  stroke={waveColor}
+                  strokeWidth="1"
+                />
+              )}
+              {wave.is_complete_pattern && (
+                <text
+                  x={endX + 25}
+                  y={endY + 3}
+                  textAnchor="middle"
+                  fill={waveColor}
+                  fontSize="9"
+                  fontWeight="bold"
+                >
+                  {wave.timeframe?.toUpperCase()}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        
         {/* Current price indicator */}
         {current_price && (
           <g className="current-price-line">
@@ -840,6 +1009,34 @@ export function TradingChartWithSentinel({ height = 400 }) {
             High Probability Zone
           </div>
         )}
+        {/* Elliott Wave specific info */}
+        {hoveredElement.label && ['1','2','3','4','5','A','B','C','1-5','A-B-C'].includes(hoveredElement.label) && (
+          <div className="mt-2 pt-2 border-t border-zinc-700/50">
+            <div className="text-[10px] text-purple-400 font-bold uppercase">
+              Elliott Wave {hoveredElement.label}
+            </div>
+            {hoveredElement.start_price && (
+              <div className="text-[10px] text-zinc-500">
+                Start: ${hoveredElement.start_price?.toLocaleString()}
+              </div>
+            )}
+            {hoveredElement.end_price && (
+              <div className="text-[10px] text-zinc-500">
+                End: ${hoveredElement.end_price?.toLocaleString()}
+              </div>
+            )}
+            {hoveredElement.is_extended && (
+              <div className="text-[10px] text-green-400 font-medium">
+                Onda Estesa (161.8%+)
+              </div>
+            )}
+            {hoveredElement.is_truncated && (
+              <div className="text-[10px] text-red-400 font-medium">
+                Onda Troncata
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -872,12 +1069,22 @@ export function TradingChartWithSentinel({ height = 400 }) {
         </button>
         
         {overlayEnabled && overlayData && (
-          <div className="flex items-center gap-1 px-2 py-1 bg-zinc-800/80 rounded-lg border border-zinc-700/50">
-            <Layers className="w-3 h-3 text-amber-400" />
-            <span className="text-[10px] text-amber-400 font-medium">
-              {overlayData.patterns_total || 0}
-            </span>
-          </div>
+          <>
+            <div className="flex items-center gap-1 px-2 py-1 bg-zinc-800/80 rounded-lg border border-zinc-700/50">
+              <Layers className="w-3 h-3 text-amber-400" />
+              <span className="text-[10px] text-amber-400 font-medium">
+                {overlayData.patterns_total || 0}
+              </span>
+            </div>
+            {overlayData.chart_data?.elliott_waves?.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 rounded-lg border border-purple-500/30">
+                <span className="text-[10px] text-purple-400 font-bold">
+                  ELLIOTT
+                </span>
+                <span className="w-1 h-1 rounded-full bg-purple-400 animate-pulse" />
+              </div>
+            )}
+          </>
         )}
       </div>
       
@@ -897,17 +1104,37 @@ export function TradingChartWithSentinel({ height = 400 }) {
       
       {/* Legend */}
       {overlayEnabled && (
-        <div className="absolute bottom-2 left-2 z-20 flex items-center gap-3 bg-zinc-900/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-zinc-700/50">
-          <span className="text-[10px] text-zinc-500 uppercase font-medium">Timeframe:</span>
-          {Object.entries(TIMEFRAME_COLORS).map(([tf, color]) => (
-            <div key={tf} className="flex items-center gap-1">
+        <div className="absolute bottom-2 left-2 z-20 flex items-center gap-4 bg-zinc-900/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-zinc-700/50">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-zinc-500 uppercase font-medium">TF:</span>
+            {Object.entries(TIMEFRAME_COLORS).map(([tf, color]) => (
+              <div key={tf} className="flex items-center gap-1">
+                <span 
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-[9px] text-zinc-400">{tf}</span>
+              </div>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-zinc-700" />
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-zinc-500 uppercase font-medium">Elliott:</span>
+            <div className="flex items-center gap-1">
               <span 
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: color }}
+                style={{ backgroundColor: ELLIOTT_COLORS.impulse }}
               />
-              <span className="text-[9px] text-zinc-400">{tf}</span>
+              <span className="text-[9px] text-purple-400">1-5</span>
             </div>
-          ))}
+            <div className="flex items-center gap-1">
+              <span 
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: ELLIOTT_COLORS.corrective }}
+              />
+              <span className="text-[9px] text-amber-400">A-B-C</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -96,6 +96,18 @@ class PatternType(str, Enum):
     SHOOTING_STAR = "shooting_star"
     MORNING_STAR = "morning_star"
     EVENING_STAR = "evening_star"
+    
+    # Elliott Wave Patterns
+    ELLIOTT_WAVE_1 = "elliott_wave_1"
+    ELLIOTT_WAVE_2 = "elliott_wave_2"
+    ELLIOTT_WAVE_3 = "elliott_wave_3"
+    ELLIOTT_WAVE_4 = "elliott_wave_4"
+    ELLIOTT_WAVE_5 = "elliott_wave_5"
+    ELLIOTT_WAVE_A = "elliott_wave_a"
+    ELLIOTT_WAVE_B = "elliott_wave_b"
+    ELLIOTT_WAVE_C = "elliott_wave_c"
+    ELLIOTT_IMPULSE = "elliott_impulse"      # Complete 1-2-3-4-5
+    ELLIOTT_CORRECTIVE = "elliott_corrective"  # Complete A-B-C
 
 PATTERN_BIAS = {
     PatternType.HEAD_AND_SHOULDERS: "BEARISH",
@@ -118,6 +130,17 @@ PATTERN_BIAS = {
     PatternType.SHOOTING_STAR: "BEARISH",
     PatternType.MORNING_STAR: "BULLISH",
     PatternType.EVENING_STAR: "BEARISH",
+    # Elliott Waves - Bias depends on wave direction
+    PatternType.ELLIOTT_WAVE_1: "BULLISH",
+    PatternType.ELLIOTT_WAVE_2: "BEARISH",  # Corrective
+    PatternType.ELLIOTT_WAVE_3: "BULLISH",  # Strongest wave
+    PatternType.ELLIOTT_WAVE_4: "BEARISH",  # Corrective
+    PatternType.ELLIOTT_WAVE_5: "BULLISH",  # Final impulse
+    PatternType.ELLIOTT_WAVE_A: "BEARISH",  # Correction start
+    PatternType.ELLIOTT_WAVE_B: "BULLISH",  # Counter-trend
+    PatternType.ELLIOTT_WAVE_C: "BEARISH",  # Final correction
+    PatternType.ELLIOTT_IMPULSE: "BULLISH",
+    PatternType.ELLIOTT_CORRECTIVE: "BEARISH",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -303,6 +326,129 @@ PATTERN_PSYCHOLOGY = {
             "cosa_succede": "Candle with small body at bottom and long upper shadow. Buyers pushed price up but sellers brought it back down.",
             "perche": "Price rejection at higher levels. Sellers entered aggressively seeing price as overvalued.",
             "azione": "SHORT if confirmed by next candle. Stop above shooting star shadow. Effective after an uptrend."
+        }
+    },
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ELLIOTT WAVE PSYCHOLOGY - La Mente del Trader
+    # ═══════════════════════════════════════════════════════════════════════════════
+    PatternType.ELLIOTT_WAVE_1: {
+        "it": {
+            "cosa_succede": "Onda 1: L'inizio di un nuovo trend. Il prezzo inizia a muoversi nella nuova direzione, spesso dopo un periodo di accumulazione o distribuzione.",
+            "perche": "Solo gli early adopters e lo smart money riconoscono il cambiamento. La maggioranza è ancora scettica o bearish. Il volume è basso-medio.",
+            "azione": "Fase difficile da tradare. Cerca conferme. Posizionamento iniziale con size ridotto. Stop sotto l'inizio dell'onda."
+        },
+        "en": {
+            "cosa_succede": "Wave 1: The beginning of a new trend after accumulation/distribution.",
+            "perche": "Only early adopters and smart money recognize the change. Majority still skeptical.",
+            "azione": "Difficult to trade. Look for confirmation. Initial positioning with reduced size."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_2: {
+        "it": {
+            "cosa_succede": "Onda 2: Correzione dell'Onda 1. Il prezzo ritraccia parte del movimento iniziale, ma NON supera mai l'inizio dell'Onda 1.",
+            "perche": "Profit-taking dai primi compratori. Gli scettici pensano che il trend sia finito. Regola: l'Onda 2 non ritraccia MAI il 100% dell'Onda 1.",
+            "azione": "Zona ideale per entrare LONG. Cerca ritracciamenti del 50-61.8% (Fibonacci). Stop sotto l'inizio dell'Onda 1."
+        },
+        "en": {
+            "cosa_succede": "Wave 2: Retracement of Wave 1. Price retraces but NEVER exceeds Wave 1 start.",
+            "perche": "Profit-taking from early buyers. Skeptics think the trend is over. Rule: Wave 2 NEVER retraces 100% of Wave 1.",
+            "azione": "Ideal zone to enter LONG. Look for 50-61.8% retracements (Fibonacci). Stop below Wave 1 start."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_3: {
+        "it": {
+            "cosa_succede": "Onda 3: L'onda più POTENTE e lunga. Il trend è ora evidente a tutti. Volume esplosivo. Momentum massimo.",
+            "perche": "La massa riconosce il trend e salta dentro. FOMO (Fear Of Missing Out) amplifica il movimento. I media parlano del trend. L'Onda 3 non è MAI la più corta delle onde impulsive.",
+            "azione": "CAVALCA l'onda. Non uscire troppo presto. Aggiungi posizioni sui pullback. Target: estensione 161.8% dell'Onda 1."
+        },
+        "en": {
+            "cosa_succede": "Wave 3: The MOST POWERFUL and longest wave. Trend now obvious to everyone. Explosive volume.",
+            "perche": "Mass recognizes trend and jumps in. FOMO amplifies the move. Media covers the trend. Wave 3 is NEVER the shortest impulse wave.",
+            "azione": "RIDE the wave. Don't exit too early. Add on pullbacks. Target: 161.8% extension of Wave 1."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_4: {
+        "it": {
+            "cosa_succede": "Onda 4: Correzione laterale o triangolare. Il prezzo consolida i guadagni. Regola: l'Onda 4 NON entra MAI nel territorio dell'Onda 1.",
+            "perche": "Presa di profitto da chi è entrato nell'Onda 3. Il mercato 'respira'. Spesso forma pattern triangolari o flags.",
+            "azione": "HOLD le posizioni esistenti. Non shortare - il trend non è finito. Cerca setup per aggiungere nella parte bassa dell'Onda 4."
+        },
+        "en": {
+            "cosa_succede": "Wave 4: Sideways or triangular correction. Rule: Wave 4 NEVER enters Wave 1 territory.",
+            "perche": "Profit-taking from Wave 3 entrants. Market 'breathing'. Often forms triangles or flags.",
+            "azione": "HOLD existing positions. Don't short - trend isn't over. Look to add at Wave 4 lows."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_5: {
+        "it": {
+            "cosa_succede": "Onda 5: L'onda FINALE dell'impulso. Ultimo push nella direzione del trend. Spesso con divergenze sui indicatori.",
+            "perche": "Gli ultimi ritardatari entrano. Euforia massima (top) o disperazione massima (bottom). Smart money inizia a distribuire/accumulare per la direzione opposta.",
+            "azione": "PREPARA L'USCITA. Cerca divergenze RSI/MACD. Prendi profitti parziali. Il trend sta per invertire verso A-B-C."
+        },
+        "en": {
+            "cosa_succede": "Wave 5: The FINAL impulse wave. Last push in trend direction. Often shows indicator divergences.",
+            "perche": "Last stragglers enter. Maximum euphoria (top) or despair (bottom). Smart money distributing/accumulating for reversal.",
+            "azione": "PREPARE TO EXIT. Look for RSI/MACD divergences. Take partial profits. Trend about to reverse to A-B-C."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_A: {
+        "it": {
+            "cosa_succede": "Onda A: Inizio della correzione. Il prezzo inizia a muoversi CONTRO il trend precedente. Molti pensano sia solo un pullback.",
+            "perche": "Lo smart money esce. La massa pensa sia un'opportunità di acquisto (in un top) o di vendita (in un bottom). Denial psicologico.",
+            "azione": "ESCI dalle posizioni in trend. Non comprare il dip - è una trappola. Aspetta la fine dell'A-B-C per rientrare."
+        },
+        "en": {
+            "cosa_succede": "Wave A: Correction begins. Price moves AGAINST the previous trend. Many think it's just a pullback.",
+            "perche": "Smart money exiting. Mass thinks it's buying opportunity (at top) or selling opportunity (at bottom). Psychological denial.",
+            "azione": "EXIT trend positions. Don't buy the dip - it's a trap. Wait for A-B-C completion to re-enter."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_B: {
+        "it": {
+            "cosa_succede": "Onda B: La 'trappola per tori/orsi'. Il prezzo rimbalza nella direzione del vecchio trend, dando falsa speranza.",
+            "perche": "I ritardatari pensano che il trend sia ripreso. È l'ultimo tentativo di salvataggio. Volume tipicamente basso.",
+            "azione": "NON ENTRARE. È una trappola. Il prezzo sta per crollare/esplodere nell'Onda C. Prepara posizioni contrarie."
+        },
+        "en": {
+            "cosa_succede": "Wave B: The 'bull/bear trap'. Price bounces in old trend direction, giving false hope.",
+            "perche": "Latecomers think trend has resumed. Last rescue attempt. Typically low volume.",
+            "azione": "DO NOT ENTER. It's a trap. Price about to crash/explode in Wave C. Prepare contrary positions."
+        }
+    },
+    PatternType.ELLIOTT_WAVE_C: {
+        "it": {
+            "cosa_succede": "Onda C: L'onda FINALE della correzione. Movimento potente che completa il pattern A-B-C. Spesso uguale o 161.8% dell'Onda A.",
+            "perche": "La realtà colpisce. Tutti coloro che hanno comprato in B sono intrappolati. Panic selling/buying. Capitolazione.",
+            "azione": "Se sei fuori: ASPETTA la fine per entrare nel nuovo impulso. Se intrappolato: accetta la perdita o holda per il nuovo ciclo."
+        },
+        "en": {
+            "cosa_succede": "Wave C: The FINAL correction wave. Powerful move completing A-B-C pattern. Often equals or 161.8% of Wave A.",
+            "perche": "Reality hits. Everyone who bought in B is trapped. Panic selling/buying. Capitulation.",
+            "azione": "If out: WAIT for end to enter new impulse. If trapped: accept loss or hold for new cycle."
+        }
+    },
+    PatternType.ELLIOTT_IMPULSE: {
+        "it": {
+            "cosa_succede": "Impulso Elliott Completo (1-2-3-4-5). Un intero ciclo impulsivo è stato identificato. Il trend principale è chiaramente definito.",
+            "perche": "L'intero ciclo psicologico delle masse si è completato: dal disinteresse iniziale (1) all'euforia finale (5).",
+            "azione": "Prepara posizioni contrarie per il ciclo correttivo A-B-C. Il trend sta per invertire significativamente."
+        },
+        "en": {
+            "cosa_succede": "Complete Elliott Impulse (1-2-3-4-5). An entire impulse cycle identified. Main trend clearly defined.",
+            "perche": "The entire mass psychology cycle completed: from initial disinterest (1) to final euphoria (5).",
+            "azione": "Prepare contrary positions for A-B-C corrective cycle. Trend about to reverse significantly."
+        }
+    },
+    PatternType.ELLIOTT_CORRECTIVE: {
+        "it": {
+            "cosa_succede": "Correzione Elliott Completa (A-B-C). L'intero ciclo correttivo è terminato. Un nuovo impulso 1-2-3-4-5 sta per iniziare.",
+            "perche": "Il mercato ha 'resettato' il sentiment. La capitolazione (C) ha pulito le mani deboli. Smart money accumulando.",
+            "azione": "ENTRA nella direzione del nuovo impulso. Cerca conferme di inversione. Stop sotto/sopra la fine dell'Onda C."
+        },
+        "en": {
+            "cosa_succede": "Complete Elliott Correction (A-B-C). Entire corrective cycle ended. New 1-2-3-4-5 impulse about to begin.",
+            "perche": "Market has 'reset' sentiment. Capitulation (C) cleared weak hands. Smart money accumulating.",
+            "azione": "ENTER in direction of new impulse. Look for reversal confirmation. Stop below/above Wave C end."
         }
     }
 }
@@ -615,6 +761,494 @@ def detect_trendlines(prices: List[float], high_indices: List[int], low_indices:
     
     return trendlines
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ELLIOTT WAVE DETECTION ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def detect_elliott_waves(prices: List[float], high_indices: List[int], low_indices: List[int]) -> List[Dict]:
+    """
+    Detect Elliott Wave patterns following the three cardinal rules:
+    1. Wave 2 never retraces more than 100% of Wave 1
+    2. Wave 3 is never the shortest of waves 1, 3, and 5
+    3. Wave 4 never enters the price territory of Wave 1
+    
+    Returns both impulse waves (1-2-3-4-5) and corrective waves (A-B-C)
+    """
+    waves = []
+    
+    if len(prices) < 30 or len(high_indices) < 4 or len(low_indices) < 4:
+        return waves
+    
+    # Combine swing points and sort by index
+    swing_points = []
+    for idx in high_indices:
+        if idx < len(prices):
+            swing_points.append({
+                "index": idx,
+                "price": prices[idx],
+                "type": "high"
+            })
+    for idx in low_indices:
+        if idx < len(prices):
+            swing_points.append({
+                "index": idx,
+                "price": prices[idx],
+                "type": "low"
+            })
+    
+    swing_points.sort(key=lambda x: x["index"])
+    
+    if len(swing_points) < 6:
+        return waves
+    
+    # Detect Bullish Impulse (1-2-3-4-5)
+    bullish_impulse = detect_bullish_impulse(swing_points, prices)
+    if bullish_impulse:
+        waves.extend(bullish_impulse)
+    
+    # Detect Bearish Impulse (inverted 1-2-3-4-5)
+    bearish_impulse = detect_bearish_impulse(swing_points, prices)
+    if bearish_impulse:
+        waves.extend(bearish_impulse)
+    
+    # Detect Corrective A-B-C patterns
+    corrective = detect_abc_correction(swing_points, prices)
+    if corrective:
+        waves.extend(corrective)
+    
+    # Determine current wave position for "Mentor" context
+    if waves:
+        current_wave = determine_current_wave_position(waves, prices)
+        if current_wave:
+            waves.append(current_wave)
+    
+    return waves
+
+
+def detect_bullish_impulse(swing_points: List[Dict], prices: List[float]) -> List[Dict]:
+    """Detect bullish Elliott impulse wave (1-2-3-4-5)"""
+    waves = []
+    
+    # Look for pattern: low -> high -> higher_low -> higher_high -> low -> high
+    # We need at least 6 swing points
+    
+    for i in range(len(swing_points) - 5):
+        points = swing_points[i:i+6]
+        
+        # Check if pattern starts with low
+        if points[0]["type"] != "low":
+            continue
+        
+        # Extract potential wave points
+        w0 = points[0]  # Start (Wave 0)
+        w1_end = None
+        w2_end = None
+        w3_end = None
+        w4_end = None
+        w5_end = None
+        
+        # Find Wave 1 end (first high after start)
+        for p in points[1:]:
+            if p["type"] == "high" and p["price"] > w0["price"]:
+                w1_end = p
+                break
+        
+        if not w1_end:
+            continue
+        
+        # Find Wave 2 end (low after Wave 1)
+        remaining = [p for p in points if p["index"] > w1_end["index"]]
+        for p in remaining:
+            if p["type"] == "low":
+                # Rule 1: Wave 2 must not retrace 100% of Wave 1
+                wave1_height = w1_end["price"] - w0["price"]
+                wave2_retracement = w1_end["price"] - p["price"]
+                
+                if wave2_retracement < wave1_height and p["price"] > w0["price"]:
+                    w2_end = p
+                    break
+        
+        if not w2_end:
+            continue
+        
+        # Find Wave 3 end (high after Wave 2)
+        remaining = [p for p in points if p["index"] > w2_end["index"]]
+        for p in remaining:
+            if p["type"] == "high" and p["price"] > w1_end["price"]:
+                w3_end = p
+                break
+        
+        if not w3_end:
+            continue
+        
+        # Find Wave 4 end (low after Wave 3)
+        remaining = [p for p in swing_points if p["index"] > w3_end["index"]]
+        for p in remaining:
+            if p["type"] == "low":
+                # Rule 3: Wave 4 must not enter Wave 1 territory
+                if p["price"] > w1_end["price"]:
+                    w4_end = p
+                    break
+        
+        if not w4_end:
+            continue
+        
+        # Find Wave 5 end (high after Wave 4)
+        remaining = [p for p in swing_points if p["index"] > w4_end["index"]]
+        for p in remaining:
+            if p["type"] == "high":
+                w5_end = p
+                break
+        
+        # Validate Rule 2: Wave 3 cannot be the shortest
+        wave1_length = w1_end["price"] - w0["price"]
+        wave3_length = w3_end["price"] - w2_end["price"]
+        wave5_length = (w5_end["price"] - w4_end["price"]) if w5_end else 0
+        
+        if wave3_length < wave1_length or wave3_length < wave5_length:
+            continue  # Wave 3 is shortest, invalid
+        
+        # Valid impulse found! Create wave patterns
+        wave_color = "#9333EA"  # Deep Purple for Elliott
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_1,
+            "start": {"index": w0["index"], "price": w0["price"]},
+            "end": {"index": w1_end["index"], "price": w1_end["price"]},
+            "label": "1",
+            "direction": "BULLISH",
+            "color": wave_color,
+            "length": wave1_length
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_2,
+            "start": {"index": w1_end["index"], "price": w1_end["price"]},
+            "end": {"index": w2_end["index"], "price": w2_end["price"]},
+            "label": "2",
+            "direction": "BEARISH",
+            "color": wave_color,
+            "retracement": (w1_end["price"] - w2_end["price"]) / wave1_length * 100 if wave1_length > 0 else 0
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_3,
+            "start": {"index": w2_end["index"], "price": w2_end["price"]},
+            "end": {"index": w3_end["index"], "price": w3_end["price"]},
+            "label": "3",
+            "direction": "BULLISH",
+            "color": wave_color,
+            "length": wave3_length,
+            "is_extended": wave3_length > wave1_length * 1.618
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_4,
+            "start": {"index": w3_end["index"], "price": w3_end["price"]},
+            "end": {"index": w4_end["index"], "price": w4_end["price"]},
+            "label": "4",
+            "direction": "BEARISH",
+            "color": wave_color
+        })
+        
+        if w5_end:
+            waves.append({
+                "type": PatternType.ELLIOTT_WAVE_5,
+                "start": {"index": w4_end["index"], "price": w4_end["price"]},
+                "end": {"index": w5_end["index"], "price": w5_end["price"]},
+                "label": "5",
+                "direction": "BULLISH",
+                "color": wave_color,
+                "length": wave5_length,
+                "is_truncated": w5_end["price"] < w3_end["price"]
+            })
+            
+            # Complete impulse pattern
+            waves.append({
+                "type": PatternType.ELLIOTT_IMPULSE,
+                "start": {"index": w0["index"], "price": w0["price"]},
+                "end": {"index": w5_end["index"], "price": w5_end["price"]},
+                "label": "1-5",
+                "direction": "BULLISH",
+                "color": wave_color,
+                "completion": 100
+            })
+        
+        # Only return first valid pattern found
+        return waves
+    
+    return waves
+
+
+def detect_bearish_impulse(swing_points: List[Dict], prices: List[float]) -> List[Dict]:
+    """Detect bearish Elliott impulse wave (inverted 1-2-3-4-5)"""
+    waves = []
+    
+    for i in range(len(swing_points) - 5):
+        points = swing_points[i:i+6]
+        
+        # Check if pattern starts with high (bearish impulse)
+        if points[0]["type"] != "high":
+            continue
+        
+        w0 = points[0]  # Start
+        w1_end = None
+        w2_end = None
+        w3_end = None
+        w4_end = None
+        w5_end = None
+        
+        # Find Wave 1 end (first low after start)
+        for p in points[1:]:
+            if p["type"] == "low" and p["price"] < w0["price"]:
+                w1_end = p
+                break
+        
+        if not w1_end:
+            continue
+        
+        # Find Wave 2 end (high after Wave 1, must not exceed Wave 0)
+        remaining = [p for p in points if p["index"] > w1_end["index"]]
+        for p in remaining:
+            if p["type"] == "high":
+                wave1_height = w0["price"] - w1_end["price"]
+                wave2_retracement = p["price"] - w1_end["price"]
+                
+                if wave2_retracement < wave1_height and p["price"] < w0["price"]:
+                    w2_end = p
+                    break
+        
+        if not w2_end:
+            continue
+        
+        # Find Wave 3 end (low below Wave 1)
+        remaining = [p for p in points if p["index"] > w2_end["index"]]
+        for p in remaining:
+            if p["type"] == "low" and p["price"] < w1_end["price"]:
+                w3_end = p
+                break
+        
+        if not w3_end:
+            continue
+        
+        # Find Wave 4 end (high, must not enter Wave 1 territory)
+        remaining = [p for p in swing_points if p["index"] > w3_end["index"]]
+        for p in remaining:
+            if p["type"] == "high":
+                if p["price"] < w1_end["price"]:
+                    w4_end = p
+                    break
+        
+        if not w4_end:
+            continue
+        
+        # Find Wave 5 end (low)
+        remaining = [p for p in swing_points if p["index"] > w4_end["index"]]
+        for p in remaining:
+            if p["type"] == "low":
+                w5_end = p
+                break
+        
+        # Validate Rule 2
+        wave1_length = w0["price"] - w1_end["price"]
+        wave3_length = w2_end["price"] - w3_end["price"]
+        wave5_length = (w4_end["price"] - w5_end["price"]) if w5_end else 0
+        
+        if wave3_length < wave1_length or wave3_length < wave5_length:
+            continue
+        
+        wave_color = "#9333EA"  # Deep Purple
+        
+        # Create bearish waves
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_1,
+            "start": {"index": w0["index"], "price": w0["price"]},
+            "end": {"index": w1_end["index"], "price": w1_end["price"]},
+            "label": "1",
+            "direction": "BEARISH",
+            "color": wave_color,
+            "length": wave1_length
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_2,
+            "start": {"index": w1_end["index"], "price": w1_end["price"]},
+            "end": {"index": w2_end["index"], "price": w2_end["price"]},
+            "label": "2",
+            "direction": "BULLISH",
+            "color": wave_color
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_3,
+            "start": {"index": w2_end["index"], "price": w2_end["price"]},
+            "end": {"index": w3_end["index"], "price": w3_end["price"]},
+            "label": "3",
+            "direction": "BEARISH",
+            "color": wave_color,
+            "length": wave3_length,
+            "is_extended": wave3_length > wave1_length * 1.618
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_4,
+            "start": {"index": w3_end["index"], "price": w3_end["price"]},
+            "end": {"index": w4_end["index"], "price": w4_end["price"]},
+            "label": "4",
+            "direction": "BULLISH",
+            "color": wave_color
+        })
+        
+        if w5_end:
+            waves.append({
+                "type": PatternType.ELLIOTT_WAVE_5,
+                "start": {"index": w4_end["index"], "price": w4_end["price"]},
+                "end": {"index": w5_end["index"], "price": w5_end["price"]},
+                "label": "5",
+                "direction": "BEARISH",
+                "color": wave_color,
+                "length": wave5_length
+            })
+            
+            waves.append({
+                "type": PatternType.ELLIOTT_IMPULSE,
+                "start": {"index": w0["index"], "price": w0["price"]},
+                "end": {"index": w5_end["index"], "price": w5_end["price"]},
+                "label": "1-5",
+                "direction": "BEARISH",
+                "color": wave_color,
+                "completion": 100
+            })
+        
+        return waves
+    
+    return waves
+
+
+def detect_abc_correction(swing_points: List[Dict], prices: List[float]) -> List[Dict]:
+    """Detect A-B-C corrective pattern"""
+    waves = []
+    
+    if len(swing_points) < 3:
+        return waves
+    
+    # Look for recent A-B-C pattern
+    for i in range(max(0, len(swing_points) - 6), len(swing_points) - 2):
+        a_start = swing_points[i]
+        
+        # Find A wave end
+        a_end = None
+        for p in swing_points[i+1:]:
+            if p["type"] != a_start["type"]:
+                a_end = p
+                break
+        
+        if not a_end:
+            continue
+        
+        # Find B wave end
+        b_end = None
+        for p in swing_points:
+            if p["index"] > a_end["index"] and p["type"] == a_start["type"]:
+                b_end = p
+                break
+        
+        if not b_end:
+            continue
+        
+        # Find C wave end
+        c_end = None
+        for p in swing_points:
+            if p["index"] > b_end["index"] and p["type"] == a_end["type"]:
+                c_end = p
+                break
+        
+        if not c_end:
+            continue
+        
+        # Validate A-B-C
+        a_length = abs(a_end["price"] - a_start["price"])
+        b_length = abs(b_end["price"] - a_end["price"])
+        c_length = abs(c_end["price"] - b_end["price"])
+        
+        # B should be smaller than A (retracement)
+        if b_length >= a_length:
+            continue
+        
+        wave_color = "#F59E0B"  # Gold for corrections
+        is_bullish_correction = a_start["type"] == "high"  # Started from high = bearish correction
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_A,
+            "start": {"index": a_start["index"], "price": a_start["price"]},
+            "end": {"index": a_end["index"], "price": a_end["price"]},
+            "label": "A",
+            "direction": "BEARISH" if is_bullish_correction else "BULLISH",
+            "color": wave_color,
+            "length": a_length
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_B,
+            "start": {"index": a_end["index"], "price": a_end["price"]},
+            "end": {"index": b_end["index"], "price": b_end["price"]},
+            "label": "B",
+            "direction": "BULLISH" if is_bullish_correction else "BEARISH",
+            "color": wave_color,
+            "retracement": b_length / a_length * 100 if a_length > 0 else 0
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_WAVE_C,
+            "start": {"index": b_end["index"], "price": b_end["price"]},
+            "end": {"index": c_end["index"], "price": c_end["price"]},
+            "label": "C",
+            "direction": "BEARISH" if is_bullish_correction else "BULLISH",
+            "color": wave_color,
+            "length": c_length,
+            "c_equals_a": abs(c_length - a_length) < a_length * 0.15,
+            "c_extended": c_length > a_length * 1.5
+        })
+        
+        waves.append({
+            "type": PatternType.ELLIOTT_CORRECTIVE,
+            "start": {"index": a_start["index"], "price": a_start["price"]},
+            "end": {"index": c_end["index"], "price": c_end["price"]},
+            "label": "A-B-C",
+            "direction": "BEARISH" if is_bullish_correction else "BULLISH",
+            "color": wave_color,
+            "completion": 100
+        })
+        
+        return waves
+    
+    return waves
+
+
+def determine_current_wave_position(waves: List[Dict], prices: List[float]) -> Optional[Dict]:
+    """Determine which wave we are currently in for Mentor context"""
+    if not waves or not prices:
+        return None
+    
+    current_index = len(prices) - 1
+    
+    # Find the most recent incomplete wave
+    for wave in reversed(waves):
+        if wave.get("end", {}).get("index", 0) >= current_index - 5:
+            # We're near this wave
+            return {
+                "type": wave["type"],
+                "current_position": "active",
+                "direction": wave.get("direction", "NEUTRAL"),
+                "label": wave.get("label", "?"),
+                "color": wave.get("color", "#9333EA"),
+                "mentor_context": True
+            }
+    
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN PATTERN SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -678,6 +1312,16 @@ class SentinelEngine:
             cp['color'] = TIMEFRAME_COLORS[timeframe]
             cp['weight'] = TIMEFRAME_WEIGHTS[timeframe]
             patterns.append(cp)
+        
+        # Detect Elliott Waves (only on H4, D1, W1 for structure)
+        if timeframe in [Timeframe.H4, Timeframe.D1, Timeframe.W1, Timeframe.H1]:
+            elliott_waves = detect_elliott_waves(closes, high_indices, low_indices)
+            for ew in elliott_waves:
+                ew['timeframe'] = timeframe.value
+                # Elliott waves keep their own purple/gold color
+                ew['weight'] = TIMEFRAME_WEIGHTS[timeframe] * 2  # Double weight for Elliott
+                ew['is_elliott'] = True
+                patterns.append(ew)
         
         self.last_scan[timeframe.value] = datetime.now(timezone.utc)
         return patterns
@@ -794,6 +1438,30 @@ class SentinelEngine:
             draw_data["index"] = pattern.get('index')
             draw_data["price"] = pattern.get('price')
             draw_data["shape"] = "marker"
+        
+        # Elliott Wave patterns
+        elif ptype in [PatternType.ELLIOTT_WAVE_1, PatternType.ELLIOTT_WAVE_2, 
+                       PatternType.ELLIOTT_WAVE_3, PatternType.ELLIOTT_WAVE_4, 
+                       PatternType.ELLIOTT_WAVE_5, PatternType.ELLIOTT_WAVE_A,
+                       PatternType.ELLIOTT_WAVE_B, PatternType.ELLIOTT_WAVE_C]:
+            draw_data["start"] = pattern.get('start')
+            draw_data["end"] = pattern.get('end')
+            draw_data["label"] = pattern.get('label')
+            draw_data["direction"] = pattern.get('direction')
+            draw_data["color"] = pattern.get('color', '#9333EA')  # Deep Purple
+            draw_data["shape"] = "elliott_wave"
+            draw_data["is_extended"] = pattern.get('is_extended', False)
+            draw_data["is_truncated"] = pattern.get('is_truncated', False)
+            draw_data["retracement"] = pattern.get('retracement')
+        
+        elif ptype in [PatternType.ELLIOTT_IMPULSE, PatternType.ELLIOTT_CORRECTIVE]:
+            draw_data["start"] = pattern.get('start')
+            draw_data["end"] = pattern.get('end')
+            draw_data["label"] = pattern.get('label')
+            draw_data["direction"] = pattern.get('direction')
+            draw_data["color"] = pattern.get('color', '#9333EA')
+            draw_data["shape"] = "elliott_complete"
+            draw_data["completion"] = pattern.get('completion', 100)
         
         return draw_data
 
@@ -984,7 +1652,8 @@ class SentinelScanner:
             "patterns": [],
             "trendlines": [],
             "markers": [],
-            "zones": []
+            "zones": [],
+            "elliott_waves": []  # New: Elliott Wave patterns
         }
         
         for tf, patterns in self.pattern_cache.items():
@@ -1031,6 +1700,36 @@ class SentinelScanner:
                         "color": p.get("color"),
                         "index": draw_data.get("index"),
                         "price": draw_data.get("price"),
+                        "bias": p.get("bias")
+                    })
+                
+                # Elliott Wave patterns
+                elif shape == "elliott_wave":
+                    chart_data["elliott_waves"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": draw_data.get("color", "#9333EA"),
+                        "start": draw_data.get("start"),
+                        "end": draw_data.get("end"),
+                        "label": draw_data.get("label"),
+                        "direction": draw_data.get("direction"),
+                        "is_extended": draw_data.get("is_extended", False),
+                        "is_truncated": draw_data.get("is_truncated", False),
+                        "retracement": draw_data.get("retracement"),
+                        "bias": p.get("bias")
+                    })
+                
+                elif shape == "elliott_complete":
+                    chart_data["elliott_waves"].append({
+                        "type": p.get("type"),
+                        "timeframe": tf,
+                        "color": draw_data.get("color", "#9333EA"),
+                        "start": draw_data.get("start"),
+                        "end": draw_data.get("end"),
+                        "label": draw_data.get("label"),
+                        "direction": draw_data.get("direction"),
+                        "completion": draw_data.get("completion", 100),
+                        "is_complete_pattern": True,
                         "bias": p.get("bias")
                     })
         

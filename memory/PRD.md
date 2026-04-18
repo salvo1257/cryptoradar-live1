@@ -30,6 +30,40 @@
 ### Summary
 The Sentinel is an autonomous, 24/7 pattern detection engine that monitors BTC/USDT across 6 timeframes (15M, 1H, 4H, 1D, 1W, 1M). It detects technical patterns, identifies multi-timeframe confluences, and provides psychological explanations for each pattern in the "Cosa succede / Perché / Azione" format.
 
+### v3.8.1 - ELLIOTT WAVE ENGINE (2026-04-18)
+**New Feature: Complete Elliott Wave Detection & Visualization**
+
+#### Wave Count Logic
+- **Impulse Waves (1-2-3-4-5)**: Bullish and bearish impulse detection
+- **Corrective Waves (A-B-C)**: Correction pattern detection
+- **Three Cardinal Rules Enforced**:
+  1. Wave 2 never retraces more than 100% of Wave 1
+  2. Wave 3 is never the shortest of waves 1, 3, and 5
+  3. Wave 4 never enters the price territory of Wave 1
+
+#### Visual Numbering (SVG Overlay)
+- **Numbered Circles**: 1, 2, 3, 4, 5 displayed on chart segments (Deep Purple)
+- **Lettered Circles**: A, B, C for corrections (Gold)
+- **Extended Waves**: "EXT" label when Wave 3 exceeds 161.8% extension
+- **Truncated Waves**: "TRUNC" label when Wave 5 fails to exceed Wave 3
+- **Complete Pattern Badges**: "1-5" and "A-B-C" labels
+
+#### Mass Psychology Explanations
+Each wave includes detailed psychological insight:
+- **Wave 1**: Early adopters, smart money entry, low volume
+- **Wave 2**: Profit-taking, skeptics think trend is over, ideal long entry
+- **Wave 3**: FOMO, media coverage, momentum maximum, RIDE THE WAVE
+- **Wave 4**: Consolidation, market breathing, triangles/flags form
+- **Wave 5**: Final push, divergences appear, smart money exits, PREPARE EXIT
+- **Wave A**: Denial, most think it's just a pullback
+- **Wave B**: Bull/Bear trap, false hope, DON'T ENTER
+- **Wave C**: Capitulation, reality hits, wait for new impulse
+
+#### Stats (Live Detection)
+- 64 Elliott Waves detected across timeframes
+- Multi-timeframe structure alignment
+- Automatic current wave position identification for Mentor context
+
 ### Features Implemented
 
 #### 1. Backend Pattern Engine (`/app/backend/sentinel_engine.py`)
