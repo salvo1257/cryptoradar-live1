@@ -13,7 +13,6 @@ import { useApp } from '../../contexts/AppContext';
 import { useAccess } from '../../contexts/AccessContext';
 import { V3MonitoringPanel } from '../cards/V3MonitoringPanel';
 import { ShadowTargetInspector } from '../cards/ShadowTargetInspector';
-import LiquidityZoneInspector from '../cards/LiquidityZoneInspector';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -472,9 +471,6 @@ export function AlertHistoryPage() {
       {/* Shadow Liquidity Target Inspector - Validates V3 cluster targets */}
       <ShadowTargetInspector language={language} />
 
-      {/* Liquidity Zone Engine - Technical Analysis Tool */}
-      <LiquidityZoneInspector lang={language} />
-
       {/* V3-Only Mode Banner */}
       <div className="bg-gradient-to-r from-purple-900/30 to-indigo-900/30 border border-purple-500/30 rounded-sm p-4">
         <div className="flex items-center justify-between">
@@ -833,6 +829,20 @@ export function AlertHistoryPage() {
                           {signal.risk_reward_ratio?.toFixed(1)}:1
                         </div>
                       </div>
+                      {/* Quality Score - V3.5+ */}
+                      {signal.quality_score !== undefined && (
+                        <div className="text-center">
+                          <div className="text-xs text-zinc-500">{language === 'it' ? 'Qualità' : 'Quality'}</div>
+                          <div className={cn(
+                            "font-mono font-bold",
+                            signal.quality_score >= 70 ? "text-emerald-400" :
+                            signal.quality_score >= 50 ? "text-yellow-400" :
+                            signal.quality_score >= 30 ? "text-orange-400" : "text-red-400"
+                          )}>
+                            {signal.quality_score}/100
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
