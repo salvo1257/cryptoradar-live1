@@ -8585,7 +8585,8 @@ def detect_market_regime(
     # Bias metrics
     bias_direction = market_bias.bias if market_bias else "NEUTRAL"
     bias_confidence = market_bias.confidence if market_bias else 50
-    bias_strong = bias_confidence >= 60 and bias_direction in ["BULLISH", "BEARISH"]
+    # V3.6: Lowered threshold from 60 to 55 for stronger signal generation
+    bias_strong = bias_confidence >= 55 and bias_direction in ["BULLISH", "BEARISH"]
     
     # Energy metrics
     energy_score = market_energy.energy_score if market_energy else 50
@@ -9222,37 +9223,116 @@ def detect_4h_events(
         })
     
     # ===== 5. TREND CONTINUATION (Strong move in trend direction) =====
-    if market_regime == "TREND" and market_bias in ["BULLISH", "BEARISH"]:
-        # Check for strong momentum candle in trend direction
-        candle_body = abs(last_candle["close"] - last_candle["open"])
-        candle_range = last_candle["high"] - last_candle["low"]
-        body_ratio = candle_body / candle_range if candle_range > 0 else 0
+    # V3.6: Relaxed conditions - don't require strict TREND regime
+    # If there's strong momentum candle AND directional bias, allow signal
+    candle_body = abs(last_candle["close"] - last_candle["open"])
+    candle_range = last_candle["high"] - last_candle["low"]
+    body_ratio = candle_body / candle_range if candle_range > 0 else 0
+    
+    # Allow trend continuation if:
+    # 1. TREND regime + directional bias (original)
+    # 2. OR strong liquidity imbalance (OPPORTUNITY MODE)
+    # 3. OR directional bias even without TREND regime (relaxed)
+    
+    liq_total = liquidity_above + liquidity_below
+    liq_imbalance = max(liquidity_above, liquidity_below) / max(min(liquidity_above, liquidity_below), 1)
+    has_strong_liquidity = liq_total > 12_000_000 and liq_imbalance >= 2.0
+    liq_direction_up = liquidity_above > liquidity_below
+    
+    # Relaxed condition: directional bias or strong liquidity
+    can_generate_trend_signal = (
+        (market_regime == "TREND" and market_bias in ["BULLISH", "BEARISH"]) or
+        (market_bias in ["BULLISH", "BEARISH"]) or  # V3.6: Allow with just directional bias
+        has_strong_liquidity  # V3.6: Liquidity Lead override
+    )
+    
+    if can_generate_trend_signal and body_ratio > 0.7:  # Strong body candle
+        # Determine direction from bias OR liquidity
+        should_go_long = (
+            market_bias == "BULLISH" or 
+            (has_strong_liquidity and liq_direction_up and market_bias != "BEARISH")
+        )
+        should_go_short = (
+            market_bias == "BEARISH" or 
+            (has_strong_liquidity and not liq_direction_up and market_bias != "BULLISH")
+        )
         
-        if body_ratio > 0.7:  # Strong body candle
-            if market_bias == "BULLISH" and last_candle["close"] > last_candle["open"]:
-                events.append({
-                    "type": SetupEventType.TREND_CONTINUATION.value,
-                    "direction": "LONG",
-                    "event_price": current_price,
-                    "zone_high": last_candle["close"],
-                    "zone_low": last_candle["open"],
-                    "swing_high": swing_high,
-                    "swing_low": swing_low,
-                    "strength": min(100, body_ratio * 100),
-                    "signal": "Trend continuation LONG - candela momentum forte"
-                })
-            elif market_bias == "BEARISH" and last_candle["close"] < last_candle["open"]:
-                events.append({
-                    "type": SetupEventType.TREND_CONTINUATION.value,
-                    "direction": "SHORT",
-                    "event_price": current_price,
-                    "zone_high": last_candle["open"],
-                    "zone_low": last_candle["close"],
-                    "swing_high": swing_high,
-                    "swing_low": swing_low,
-                    "strength": min(100, body_ratio * 100),
-                    "signal": "Trend continuation SHORT - candela momentum forte"
-                })
+        if should_go_long and last_candle["close"] > last_candle["open"]:
+            trigger_note = "Trend continuation" if market_regime == "TREND" else "Momentum LONG"
+            if has_strong_liquidity:
+                trigger_note += f" [LIQ ${liquidity_above/1e6:.1f}M sopra]"
+            events.append({
+                "type": SetupEventType.TREND_CONTINUATION.value,
+                "direction": "LONG",
+                "event_price": current_price,
+                "zone_high": last_candle["close"],
+                "zone_low": last_candle["open"],
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "strength": min(100, body_ratio * 100),
+                "signal": f"{trigger_note} - candela momentum forte",
+                "liquidity_lead": has_strong_liquidity
+            })
+        elif should_go_short and last_candle["close"] < last_candle["open"]:
+            trigger_note = "Trend continuation" if market_regime == "TREND" else "Momentum SHORT"
+            if has_strong_liquidity:
+                trigger_note += f" [LIQ ${liquidity_below/1e6:.1f}M sotto]"
+            events.append({
+                "type": SetupEventType.TREND_CONTINUATION.value,
+                "direction": "SHORT",
+                "event_price": current_price,
+                "zone_high": last_candle["open"],
+                "zone_low": last_candle["close"],
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "strength": min(100, body_ratio * 100),
+                "signal": f"{trigger_note} - candela momentum forte",
+                "liquidity_lead": has_strong_liquidity
+            })
+    
+    # ===== 6. LIQUIDITY OPPORTUNITY (V3.6 NEW) =====
+    # Generate signal when significant liquidity within 1% of price
+    # even if no structural event detected
+    OPPORTUNITY_DISTANCE_PCT = 1.0  # 1% from current price
+    OPPORTUNITY_MIN_LIQUIDITY = 12_000_000  # $12M minimum
+    
+    # Check for nearby liquidity opportunity
+    if not events:  # Only if no other events detected
+        price_1pct_above = current_price * 1.01
+        price_1pct_below = current_price * 0.99
+        
+        # Strong liquidity above within 1%
+        if liquidity_above >= OPPORTUNITY_MIN_LIQUIDITY:
+            # Assume liquidation zones are within reasonable distance
+            # This creates a "magnet" pull signal
+            events.append({
+                "type": SetupEventType.TREND_CONTINUATION.value,
+                "direction": "LONG",
+                "event_price": current_price,
+                "zone_high": current_price * 1.005,
+                "zone_low": current_price * 0.995,
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "strength": min(80, 40 + (liquidity_above / 1_000_000)),
+                "signal": f"OPPORTUNITY LONG: ${liquidity_above/1e6:.1f}M liquidità attrae il prezzo verso l'alto",
+                "liquidity_lead": True,
+                "opportunity_mode": True
+            })
+        # Strong liquidity below within 1%
+        elif liquidity_below >= OPPORTUNITY_MIN_LIQUIDITY:
+            events.append({
+                "type": SetupEventType.TREND_CONTINUATION.value,
+                "direction": "SHORT",
+                "event_price": current_price,
+                "zone_high": current_price * 1.005,
+                "zone_low": current_price * 0.995,
+                "swing_high": swing_high,
+                "swing_low": swing_low,
+                "strength": min(80, 40 + (liquidity_below / 1_000_000)),
+                "signal": f"OPPORTUNITY SHORT: ${liquidity_below/1e6:.1f}M liquidità attrae il prezzo verso il basso",
+                "liquidity_lead": True,
+                "opportunity_mode": True
+            })
     
     return events
 
@@ -9564,6 +9644,7 @@ def calculate_v3_stop_loss(
         "stop_loss": round(stop_loss, 2),
         "stop_type": stop_type,
         "stop_distance_percent": round(stop_distance_percent, 2),
+        "buffer_percent": round(stop_distance_percent, 2),  # V3.6: Add buffer_percent for compatibility
         "zone_used": zone_used,
         "swing_high": swing_high,
         "swing_low": swing_low,
@@ -12460,84 +12541,91 @@ async def validate_v3_signal_quality(
     
     # ═══════════════════════════════════════════════════════════════════════════
     # METRIC 4: BIAS CONFIRMATION (max +10 points)
-    # Conflict with strong bias = warning, not block
+    # V3.6 OPPORTUNITY MODE: Lowered threshold to 55%, reduced penalties
+    # Trust liquidity zones more than legacy bias metrics
     # ═══════════════════════════════════════════════════════════════════════════
     bias_bullish = market_bias == "BULLISH"
     signal_bullish = direction == "LONG"
     bias_aligned = bias_bullish == signal_bullish
     
-    if bias_confidence >= 70:
+    # V3.6: Lowered from 70 to 55 for "strong" bias
+    STRONG_BIAS_THRESHOLD = 55  # Was 70
+    MODERATE_BIAS_THRESHOLD = 45  # Was 55
+    
+    if bias_confidence >= STRONG_BIAS_THRESHOLD:
         if bias_aligned:
             quality_score += 10
             score_breakdown["bias"] = 10
         else:
-            quality_score -= 8
-            score_breakdown["bias"] = -8
-            warnings.append(f"Conflitto con forte bias {market_bias} ({bias_confidence}%)")
-    elif bias_confidence >= 55:
+            # V3.6: Reduced penalty from -8 to -3 (trust liquidity more)
+            quality_score -= 3
+            score_breakdown["bias"] = -3
+            warnings.append(f"Conflitto con bias {market_bias} ({bias_confidence}%) - proseguiamo con cautela")
+    elif bias_confidence >= MODERATE_BIAS_THRESHOLD:
         if bias_aligned:
             quality_score += 6
             score_breakdown["bias"] = 6
         else:
-            quality_score -= 3
-            score_breakdown["bias"] = -3
-            warnings.append(f"Conflitto con bias moderato {market_bias}")
+            # V3.6: Reduced penalty from -3 to 0 (neutral is not a problem)
+            score_breakdown["bias"] = 0
     else:
-        # Neutral bias - no adjustment
-        score_breakdown["bias"] = 0
+        # Neutral bias - V3.6: Give slight bonus (less conflict = cleaner trade)
+        quality_score += 2
+        score_breakdown["bias"] = 2
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # METRIC 5: ENERGY LEVEL (max +10 points)
-    # Low energy = lower probability of breakout success
+    # METRIC 5: ENERGY LEVEL (max +15 points) - V3.6 INCREASED WEIGHT
+    # High energy = high probability of significant move
+    # V3.6: Energy is now MORE important than regime
     # ═══════════════════════════════════════════════════════════════════════════
     if fuel_score is not None:
         if fuel_score >= 70:
-            quality_score += 10
-            score_breakdown["energy"] = 10
+            quality_score += 15  # Increased from 10
+            score_breakdown["energy"] = 15
         elif fuel_score >= 50:
-            quality_score += 6
-            score_breakdown["energy"] = 6
+            quality_score += 10  # Increased from 6
+            score_breakdown["energy"] = 10
         elif fuel_score >= 30:
-            quality_score += 3
-            score_breakdown["energy"] = 3
-            warnings.append("Energia moderata - può limitare il movimento")
+            quality_score += 5  # Increased from 3
+            score_breakdown["energy"] = 5
         else:
-            quality_score -= 5
-            score_breakdown["energy"] = -5
-            warnings.append("Energia bassa - breakout potrebbe fallire")
+            # V3.6: Low energy - just warning, no penalty
+            score_breakdown["energy"] = 0
+            warnings.append("Energia bassa - monitorare il movimento")
     elif energy_state:
         if energy_state == "HIGH":
-            quality_score += 8
-            score_breakdown["energy"] = 8
+            quality_score += 12  # Increased from 8
+            score_breakdown["energy"] = 12
         elif energy_state == "MEDIUM":
-            quality_score += 4
-            score_breakdown["energy"] = 4
+            quality_score += 6  # Increased from 4
+            score_breakdown["energy"] = 6
         else:
-            quality_score -= 3
-            score_breakdown["energy"] = -3
-            warnings.append("Stato energia basso")
+            # V3.6: Low energy - no penalty
+            score_breakdown["energy"] = 0
     else:
         score_breakdown["energy"] = 0
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # METRIC 6: REGIME CONTEXT (-10 to +5 points)
-    # RANGE regime has lower breakout success rate
+    # METRIC 6: REGIME CONTEXT (-5 to +5 points) - V3.6 REDUCED WEIGHT
+    # V3.6: Regime is now LESS important - trust liquidity + energy more
+    # Removed hard penalties for RANGE/UNKNOWN
     # ═══════════════════════════════════════════════════════════════════════════
     if market_regime == "TREND":
         quality_score += 5
         score_breakdown["regime"] = 5
     elif market_regime == "EXPANSION":
-        quality_score += 3
-        score_breakdown["regime"] = 3
+        quality_score += 4
+        score_breakdown["regime"] = 4
     elif market_regime == "COMPRESSION":
-        quality_score += 2
-        score_breakdown["regime"] = 2
-        warnings.append("COMPRESSIONE - breakout timing incerto")
+        quality_score += 3  # Increased from 2 - compression often precedes big moves
+        score_breakdown["regime"] = 3
     elif market_regime == "RANGE":
-        quality_score -= 10
-        score_breakdown["regime"] = -10
-        warnings.append("Regime RANGE - solo target limitati")
+        # V3.6: REMOVED -10 penalty - RANGE can still have opportunities
+        quality_score -= 2  # Small penalty only
+        score_breakdown["regime"] = -2
+        warnings.append("Regime RANGE - target conservativi")
     else:
+        # V3.6: Unknown regime - neutral, not penalized
         score_breakdown["regime"] = 0
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -12706,34 +12794,83 @@ async def create_setup_event(
     # Determine block reasons
     block_reasons = []
     
-    # 1. R:R Check
+    # ═══════════════════════════════════════════════════════════════════════════
+    # V3.6 OPPORTUNITY MODE: Liquidity-Lead Override Logic
+    # If significant liquidity imbalance exists, override neutral/conflict blocks
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    # Calculate liquidity imbalance ratio
+    total_liquidity = liquidity_above + liquidity_below
+    liq_imbalance_ratio = 1.0
+    liq_lead_direction = None
+    LIQUIDITY_OVERRIDE_THRESHOLD = 2.0  # 2x imbalance = override
+    SIGNIFICANT_LIQUIDITY = 12_000_000  # $12M minimum for override
+    
+    if total_liquidity > 0:
+        if liquidity_above > 0 and liquidity_below > 0:
+            liq_imbalance_ratio = max(liquidity_above / liquidity_below, liquidity_below / liquidity_above)
+            liq_lead_direction = "UP" if liquidity_above > liquidity_below else "DOWN"
+        elif liquidity_above > SIGNIFICANT_LIQUIDITY:
+            liq_imbalance_ratio = 10.0  # Strong up
+            liq_lead_direction = "UP"
+        elif liquidity_below > SIGNIFICANT_LIQUIDITY:
+            liq_imbalance_ratio = 10.0  # Strong down
+            liq_lead_direction = "DOWN"
+    
+    # Check if liquidity should override blocks
+    liquidity_override_active = (
+        liq_imbalance_ratio >= LIQUIDITY_OVERRIDE_THRESHOLD and 
+        total_liquidity >= SIGNIFICANT_LIQUIDITY
+    )
+    
+    # Check if liquidity direction aligns with signal
+    liquidity_aligned = (
+        (direction == "LONG" and liq_lead_direction == "UP") or
+        (direction == "SHORT" and liq_lead_direction == "DOWN")
+    )
+    
+    if liquidity_override_active:
+        logger.info(f"[V3 Setup] 🚀 OPPORTUNITY MODE: Liquidity imbalance {liq_imbalance_ratio:.1f}x, "
+                   f"direction={liq_lead_direction}, total=${total_liquidity/1e6:.1f}M")
+    
+    # 1. R:R Check (only hard block if very low)
     if rr_ratio < MIN_RR_THRESHOLD:
-        block_reasons.append(f"LOW_RR_{rr_ratio:.2f}")
-        logger.warning(f"[V3 Setup] ❌ R:R {rr_ratio:.2f} < {MIN_RR_THRESHOLD} - BLOCKED")
+        # But override if liquidity is strongly aligned
+        if liquidity_override_active and liquidity_aligned:
+            logger.info(f"[V3 Setup] ⚡ R:R {rr_ratio:.2f} overridden by strong liquidity alignment")
+        else:
+            block_reasons.append(f"LOW_RR_{rr_ratio:.2f}")
+            logger.warning(f"[V3 Setup] ❌ R:R {rr_ratio:.2f} < {MIN_RR_THRESHOLD} - BLOCKED")
     
-    # 2. Valid Clusters Check
+    # 2. Valid Clusters Check - override if strong liquidity
     if not has_valid_targets:
-        block_reasons.append("NO_VALID_CLUSTERS")
-        logger.warning(f"[V3 Setup] ❌ NO_VALID_CLUSTERS - BLOCKED")
+        if liquidity_override_active and liquidity_aligned:
+            logger.info(f"[V3 Setup] ⚡ NO_VALID_CLUSTERS overridden by strong liquidity")
+        else:
+            block_reasons.append("NO_VALID_CLUSTERS")
+            logger.warning(f"[V3 Setup] ❌ NO_VALID_CLUSTERS - BLOCKED")
     
-    # 3. Bias Conflict Check (Strong bias must align with direction)
-    # market_bias is passed as string "BULLISH"/"BEARISH"/"NEUTRAL"
+    # 3. Bias Conflict Check - REMOVED HARD BLOCK
+    # V3.6: We no longer block on bias conflict - just log it as warning
+    # Liquidity Lead takes precedence over legacy bias metrics
     if market_bias in ["BULLISH", "BEARISH"]:
         bias_bullish = market_bias == "BULLISH"
         signal_bullish = direction == "LONG"
         
-        # Only block if there's a strong bias conflict
-        # Note: We don't have bias_confidence here, so we'll use a simpler check
         if bias_bullish != signal_bullish:
-            block_reasons.append(f"BIAS_CONFLICT_{direction}_vs_{market_bias}")
-            logger.warning(f"[V3 Setup] ❌ {direction} conflicts with {market_bias} bias - BLOCKED")
+            # Log conflict but DON'T block - liquidity can override
+            logger.info(f"[V3 Setup] ⚠️ {direction} conflicts with {market_bias} bias - NOT blocking (V3.6 mode)")
+            if liquidity_override_active and liquidity_aligned:
+                logger.info(f"[V3 Setup] ⚡ Bias conflict overridden by liquidity lead")
+            # NO block_reasons.append() - we trust liquidity more than legacy bias
     
     # Combine block reasons
     is_blocked = len(block_reasons) > 0
     block_reason = block_reasons[0] if block_reasons else None
     
     if not is_blocked:
-        logger.info(f"[V3 Setup] ✅ Valid setup: T1=${target_info['target_1']:,.0f}, R:R={rr_ratio:.2f}")
+        override_note = " [OPPORTUNITY MODE]" if liquidity_override_active else ""
+        logger.info(f"[V3 Setup] ✅ Valid setup: T1=${target_info['target_1']:,.0f}, R:R={rr_ratio:.2f}{override_note}")
     
     # Log target details
     logger.info(f"[V3 Setup] Direction={direction}, Entry=${current_price:,.0f}")

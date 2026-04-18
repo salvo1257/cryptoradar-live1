@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useApp } from '../../contexts/AppContext';
+import { useAccess } from '../../contexts/AccessContext';
 import { translations } from '../../translations';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -23,6 +24,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export function DecisionEngineCard({ language = 'it' }) {
   const { marketBias, liquidity, openInterest } = useApp();
+  const { isAdmin, getAdminHeaders } = useAccess();
   
   // Fetch additional data needed for decision
   const [v3Data, setV3Data] = useState(null);
@@ -60,11 +62,14 @@ export function DecisionEngineCard({ language = 'it' }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // V3.6: Use admin headers when available for full signal access
+        const headers = isAdmin ? getAdminHeaders() : {};
+        
         const [v3Res, energyRes, magnetRes, whaleRes] = await Promise.all([
-          fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`).then(r => r.json()).catch(() => null),
-          fetch(`${API_URL}/api/market-energy?lang=${language}`).then(r => r.json()).catch(() => null),
-          fetch(`${API_URL}/api/liquidity-magnet`).then(r => r.json()).catch(() => null),
-          fetch(`${API_URL}/api/whale-activity`).then(r => r.json()).catch(() => null)
+          fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`, { headers }).then(r => r.json()).catch(() => null),
+          fetch(`${API_URL}/api/market-energy?lang=${language}`, { headers }).then(r => r.json()).catch(() => null),
+          fetch(`${API_URL}/api/liquidity-magnet`, { headers }).then(r => r.json()).catch(() => null),
+          fetch(`${API_URL}/api/whale-activity`, { headers }).then(r => r.json()).catch(() => null)
         ]);
         
         setV3Data(v3Res);
@@ -81,7 +86,7 @@ export function DecisionEngineCard({ language = 'it' }) {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [language]);
+  }, [language, isAdmin, getAdminHeaders]);
 
   // ═══════════════════════════════════════════════════════════════════
   // DECISION ENGINE LOGIC
@@ -98,14 +103,54 @@ export function DecisionEngineCard({ language = 'it' }) {
     const regime = energyData?.regime || energyData?.market_regime || 'UNKNOWN';
     const bias = v3Data?.market_context?.bias || marketBias?.bias || 'NEUTRAL';
     const biasPercent = v3Data?.market_context?.bias_percent || marketBias?.bias_percent || 50;
-    const riskReward = v3Data?.risk_reward || 0;
+    const riskReward = v3Data?.risk_reward || v3Data?.active_setup?.risk_reward_ratio || 0;
     const magnetDirection = magnetData?.target_direction || 'NEUTRAL';
     const magnetStrength = magnetData?.magnet_strength || 'LOW';
     const whaleDirection = whaleData?.direction || null;  // null = unavailable
     const whalePressure = whaleData?.buy_pressure;  // undefined = unavailable
     const oiChange = openInterest?.change_24h || 0;
-    const v3Direction = v3Data?.direction || null;
+    const v3Direction = v3Data?.direction || v3Data?.active_setup?.direction || null;
     const liquidityDirection = liquidity?.direction || null;
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // V3.6 OPPORTUNITY MODE: PRIORITIZE V3 SETUP WHEN ACTIVE
+    // If V3 has an active setup, use it directly - override other blocks
+    // ═══════════════════════════════════════════════════════════════════
+    const hasV3ActiveSetup = v3Data?.has_active_setup === true;
+    const v3RecommendedAction = v3Data?.recommended_action;
+    const v3QualityTier = v3Data?.quality_tier || v3Data?.active_setup?.quality_tier;
+    const v3Phase = v3Data?.active_setup?.phase;
+    
+    // V3.6: If V3 has active setup, use it as the primary signal
+    if (hasV3ActiveSetup && v3Direction) {
+      finalAction = v3Direction; // 'LONG' or 'SHORT'
+      
+      // Build reason based on phase
+      if (v3Phase === 'ENTRY_NOW') {
+        reason = `Entry V3: ${v3Direction} (${v3QualityTier || 'SIGNAL'})`;
+      } else if (v3Phase === 'PREPARE_ENTRY') {
+        reason = `Prepara Entry: ${v3Direction}`;
+      } else if (v3Phase === 'WAITING_FOR_RETEST') {
+        reason = `Setup ${v3Direction} attivo - attendi retest`;
+      } else {
+        reason = `V3 Signal: ${v3Direction}`;
+      }
+      
+      // Add aligned signals from V3
+      alignedSignals.push({ type: 'bullish' === v3Direction ? 'bullish' : 'bearish', 
+                           text: `V3 Setup ${v3Direction}`, 
+                           icon: v3Direction === 'LONG' ? TrendingUp : TrendingDown });
+      
+      // Add warnings but DON'T block
+      if (regime === 'COMPRESSION') {
+        warnings.push({ type: 'warning', text: t.compression, icon: Activity });
+      }
+      if (magnetDirection === 'NEUTRAL' || magnetDirection === 'BALANCED') {
+        warnings.push({ type: 'warning', text: t.neutralLiquidity, icon: AlertTriangle });
+      }
+      
+      return { finalAction, reason, warnings, alignedSignals, isConflict: false, isWeakRR: false, hasV3Setup: true };
+    }
     
     // ═══════════════════════════════════════════════════════════════════
     // WHALE ACTIVITY AVAILABILITY CHECK
@@ -124,17 +169,18 @@ export function DecisionEngineCard({ language = 'it' }) {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // RULE 1: BLOCK CONDITIONS → WAIT
+    // RULE 1: BLOCK CONDITIONS → WAIT (only when NO V3 setup)
+    // V3.6: Made these warnings instead of hard blocks
     // ─────────────────────────────────────────────────────────────────
     
-    // Check: Liquidity = NEUTRAL
+    // Check: Liquidity = NEUTRAL (warning, not block)
     if (magnetDirection === 'NEUTRAL' || magnetDirection === 'BALANCED') {
-      warnings.push({ type: 'block', text: t.neutralLiquidity, icon: AlertTriangle });
+      warnings.push({ type: 'warning', text: t.neutralLiquidity, icon: AlertTriangle });
     }
     
-    // Check: Regime = COMPRESSION
+    // Check: Regime = COMPRESSION (warning, not block - compression precedes big moves)
     if (regime === 'COMPRESSION' || regime === 'HIGH') {
-      warnings.push({ type: 'block', text: t.compression, icon: Activity });
+      warnings.push({ type: 'warning', text: t.compression, icon: Activity });
     }
     
     // ═══════════════════════════════════════════════════════════════════
