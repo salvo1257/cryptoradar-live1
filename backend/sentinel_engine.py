@@ -351,6 +351,42 @@ PATTERN_PSYCHOLOGY = {
             "azione": "SHORT if confirmed by next candle. Stop above shooting star shadow. Effective after an uptrend."
         }
     },
+    PatternType.DOJI: {
+        "it": {
+            "cosa_succede": "Candela con apertura e chiusura quasi identiche, formando una croce. Né compratori né venditori hanno vinto la battaglia.",
+            "perche": "Indecisione totale del mercato. L'equilibrio tra domanda e offerta è perfetto. Spesso segnala un possibile cambio di direzione.",
+            "azione": "NON entrare subito. Attendi la candela di conferma. Se appare dopo un trend, preparati per un'inversione. Più significativo a livelli di S/R."
+        },
+        "en": {
+            "cosa_succede": "Candle with nearly identical open and close, forming a cross. Neither buyers nor sellers won the battle.",
+            "perche": "Total market indecision. Perfect balance between supply and demand. Often signals potential direction change.",
+            "azione": "DON'T enter immediately. Wait for confirmation candle. If appears after a trend, prepare for reversal. More significant at S/R levels."
+        }
+    },
+    PatternType.MORNING_STAR: {
+        "it": {
+            "cosa_succede": "Pattern a tre candele: grande rossa, piccola (spesso Doji), grande verde. Rappresenta la transizione dalla notte (bearish) al giorno (bullish).",
+            "perche": "La prima candela mostra dominio venditori. La seconda mostra esaurimento e indecisione. La terza conferma che i compratori hanno preso il controllo.",
+            "azione": "LONG alla chiusura della terza candela o all'apertura successiva. Stop sotto il minimo del pattern. Target: altezza del pattern proiettata."
+        },
+        "en": {
+            "cosa_succede": "Three-candle pattern: large red, small (often Doji), large green. Represents transition from night (bearish) to day (bullish).",
+            "perche": "First candle shows seller dominance. Second shows exhaustion and indecision. Third confirms buyers have taken control.",
+            "azione": "LONG at third candle close or next open. Stop below pattern low. Target: pattern height projected."
+        }
+    },
+    PatternType.EVENING_STAR: {
+        "it": {
+            "cosa_succede": "Pattern a tre candele: grande verde, piccola (spesso Doji), grande rossa. Rappresenta la transizione dal giorno (bullish) alla notte (bearish).",
+            "perche": "La prima candela mostra dominio compratori. La seconda mostra esaurimento e indecisione. La terza conferma che i venditori hanno preso il controllo.",
+            "azione": "SHORT alla chiusura della terza candela o all'apertura successiva. Stop sopra il massimo del pattern. Target: altezza del pattern proiettata."
+        },
+        "en": {
+            "cosa_succede": "Three-candle pattern: large green, small (often Doji), large red. Represents transition from day (bullish) to night (bearish).",
+            "perche": "First candle shows buyer dominance. Second shows exhaustion and indecision. Third confirms sellers have taken control.",
+            "azione": "SHORT at third candle close or next open. Stop above pattern high. Target: pattern height projected."
+        }
+    },
     # ═══════════════════════════════════════════════════════════════════════════════
     # ELLIOTT WAVE PSYCHOLOGY - La Mente del Trader
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -1700,10 +1736,25 @@ class SentinelEngine:
         ptype = pattern.get('type')
         if isinstance(ptype, PatternType):
             ptype_str = ptype.value
+            ptype_enum = ptype
         else:
             ptype_str = str(ptype)
+            # Try to convert string to PatternType enum
+            try:
+                ptype_enum = PatternType(ptype_str)
+            except ValueError:
+                ptype_enum = None
         
-        psychology = self.get_pattern_psychology(ptype, language) if isinstance(ptype, PatternType) else {}
+        # Always try to get psychology
+        psychology = {}
+        if ptype_enum:
+            psychology = self.get_pattern_psychology(ptype_enum, language)
+        elif ptype_str:
+            # Try direct lookup by string
+            for pt in PatternType:
+                if pt.value == ptype_str:
+                    psychology = self.get_pattern_psychology(pt, language)
+                    break
         
         # Calculate target and risk
         target = pattern.get('target')

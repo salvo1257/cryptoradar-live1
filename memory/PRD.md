@@ -482,4 +482,39 @@ Every pattern card displays:
 - Manual Anchor mode (✏️ Disegna) for on-demand pattern drawing
 - Patterns persist until manually removed
 
+---
+## Update: April 19, 2025 - Learning Zone "Lazy AI" Fix & Noise Reduction
+
+### ✅ Completed - Full Psychology for All Patterns
+
+**Added Missing Candlestick Psychologies**:
+- `DOJI`: Full "Cosa/Perché/Azione" in Italian and English
+- `MORNING_STAR`: Three-candle reversal pattern psychology
+- `EVENING_STAR`: Three-candle reversal pattern psychology
+
+**Fixed Pattern Psychology Loading**:
+- Modified `format_pattern_for_ui()` to handle both enum and string pattern types
+- All API endpoints (`/patterns/chart`, `/patterns/candlestick`, `/patterns/elliott`) now ensure psychology is always included
+- No more "Dato non disponibile" errors
+
+**Noise Reduction Active**:
+- Candlestick patterns: 733 total → **20 significant** (high TF or reliability)
+- Chart patterns: Filtered to top **15** by completion and timeframe
+- Scoring based on: volume confirmation, reliability ≥60%, high timeframe (4H+)
+
+**100% Italian Localization**:
+- "Ancoraggi ON/OFF" (not "Anchors ON")
+- "Proiezioni ON/OFF" (not "Ghost ON")
+- All buttons, labels, and section headers in Italian
+
+**Backend Endpoints Updated**:
+- `/api/sentinel/patterns/candlestick` - Noise reduction + psychology injection
+- `/api/sentinel/patterns/chart` - Noise reduction + psychology injection
+- `/api/sentinel/patterns/elliott` - Psychology injection
+
+**Files Modified**:
+- `/app/backend/sentinel_engine.py` - Added Doji, Morning Star, Evening Star psychology
+- `/app/backend/server.py` - Noise reduction logic in pattern endpoints
+- `/app/frontend/src/components/TradingChartWithSentinel.js` - Italian toggle labels
+
 

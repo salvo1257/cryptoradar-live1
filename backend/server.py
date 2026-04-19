@@ -25687,27 +25687,57 @@ ELLIOTT_WAVE_TYPES = [
 async def get_chart_patterns(lang: str = Query(default="it")):
     """
     Get ONLY chart patterns (triangles, wedges, H&S, etc.) - filtered for Pattern Page.
+    Applies NOISE REDUCTION: Only significant patterns (high completion or timeframe).
     """
     if lang not in ["it", "en", "de", "pl"]:
         lang = "it"
     
     all_patterns = sentinel_scanner.get_all_patterns()
+    current_price = sentinel_scanner.current_price or 71000
     
     # Filter to chart patterns only
     filtered = [p for p in all_patterns if p.get("type") in CHART_PATTERN_TYPES]
     
-    # Get confluences for these patterns (confluences is a list of dicts with 'type' key)
+    # ═══════════════════════════════════════════════════════════════════
+    # NOISE REDUCTION: Filter only significant patterns
+    # ═══════════════════════════════════════════════════════════════════
+    significant_patterns = []
+    for pattern in filtered:
+        high_completion = (pattern.get("completion", 0) >= 60)
+        high_timeframe = pattern.get("timeframe") in ["4h", "1d", "1w", "1M"]
+        
+        if high_completion or high_timeframe:
+            pattern["significant"] = True
+            significant_patterns.append(pattern)
+    
+    # Sort by completion and limit to top 15
+    significant_patterns.sort(key=lambda p: (p.get("timeframe") in ["1d", "1w"], p.get("completion", 0)), reverse=True)
+    top_patterns = significant_patterns[:15]
+    
+    # Ensure psychology is included
+    for pattern in top_patterns:
+        if not pattern.get("psychology"):
+            ptype = pattern.get("type", "")
+            try:
+                ptype_enum = PatternType(ptype)
+                if ptype_enum in PATTERN_PSYCHOLOGY:
+                    pattern["psychology"] = PATTERN_PSYCHOLOGY[ptype_enum].get(lang, PATTERN_PSYCHOLOGY[ptype_enum]["it"])
+            except (ValueError, KeyError):
+                pass
+    
     all_confluences = sentinel_scanner.get_confluences()
     filtered_confluences = [c for c in all_confluences if c.get("type") in CHART_PATTERN_TYPES]
     
     return {
-        "patterns": filtered,
-        "patterns_count": len(filtered),
+        "patterns": top_patterns,
+        "patterns_count": len(top_patterns),
+        "total_detected": len(filtered),
         "confluences": filtered_confluences,
         "confluences_count": len(filtered_confluences),
         "category": "chart_patterns",
         "category_label": "Pattern Grafici" if lang == "it" else "Chart Patterns",
-        "current_price": sentinel_scanner.current_price
+        "current_price": current_price,
+        "noise_reduction_active": True
     }
 
 
@@ -25715,27 +25745,68 @@ async def get_chart_patterns(lang: str = Query(default="it")):
 async def get_candlestick_patterns(lang: str = Query(default="it")):
     """
     Get ONLY candlestick patterns (engulfing, doji, hammer, etc.) - filtered for Candele Page.
+    Applies NOISE REDUCTION: Only significant patterns (higher TF or high reliability).
     """
     if lang not in ["it", "en", "de", "pl"]:
         lang = "it"
     
     all_patterns = sentinel_scanner.get_all_patterns()
+    current_price = sentinel_scanner.current_price or 71000
     
     # Filter to candlestick patterns only
     filtered = [p for p in all_patterns if p.get("type") in CANDLESTICK_PATTERN_TYPES]
     
-    # Get confluences for these patterns (confluences is a list of dicts)
+    # ═══════════════════════════════════════════════════════════════════
+    # NOISE REDUCTION: Filter only significant patterns
+    # ═══════════════════════════════════════════════════════════════════
+    significant_patterns = []
+    for pattern in filtered:
+        # Check pattern quality indicators
+        has_volume = pattern.get("volume_confirmed", False) or pattern.get("high_volume", False)
+        high_reliability = (pattern.get("reliability", 0) or pattern.get("completion", 0)) >= 60
+        high_timeframe = pattern.get("timeframe") in ["4h", "1d", "1w", "1M"]
+        
+        # Include if: high reliability, OR high timeframe, OR volume confirmed
+        if has_volume or high_reliability or high_timeframe:
+            pattern["significant"] = True
+            significant_patterns.append(pattern)
+    
+    # Sort by significance and limit to top 20
+    def get_significance_score(p):
+        score = 0
+        if p.get("high_volume"): score += 20
+        score += p.get("reliability", 0) or p.get("completion", 0)
+        if p.get("timeframe") in ["4h", "1d", "1w"]: score += 15
+        return score
+    
+    significant_patterns.sort(key=get_significance_score, reverse=True)
+    top_patterns = significant_patterns[:20]
+    
+    # Ensure psychology is included for all patterns
+    for pattern in top_patterns:
+        if not pattern.get("psychology"):
+            ptype = pattern.get("type", "")
+            try:
+                ptype_enum = PatternType(ptype)
+                if ptype_enum in PATTERN_PSYCHOLOGY:
+                    pattern["psychology"] = PATTERN_PSYCHOLOGY[ptype_enum].get(lang, PATTERN_PSYCHOLOGY[ptype_enum]["it"])
+            except (ValueError, KeyError):
+                pass
+    
+    # Get confluences for these patterns
     all_confluences = sentinel_scanner.get_confluences()
     filtered_confluences = [c for c in all_confluences if c.get("type") in CANDLESTICK_PATTERN_TYPES]
     
     return {
-        "patterns": filtered,
-        "patterns_count": len(filtered),
+        "patterns": top_patterns,
+        "patterns_count": len(top_patterns),
+        "total_detected": len(filtered),
         "confluences": filtered_confluences,
         "confluences_count": len(filtered_confluences),
         "category": "candlestick_patterns",
         "category_label": "Pattern Candele" if lang == "it" else "Candlestick Patterns",
-        "current_price": sentinel_scanner.current_price
+        "current_price": current_price,
+        "noise_reduction_active": True
     }
 
 
@@ -25751,6 +25822,17 @@ async def get_elliott_patterns(lang: str = Query(default="it")):
     
     # Filter to Elliott patterns only
     filtered = [p for p in all_patterns if p.get("type") in ELLIOTT_WAVE_TYPES]
+    
+    # Ensure psychology is included for all patterns
+    for pattern in filtered:
+        if not pattern.get("psychology"):
+            ptype = pattern.get("type", "")
+            try:
+                ptype_enum = PatternType(ptype)
+                if ptype_enum in PATTERN_PSYCHOLOGY:
+                    pattern["psychology"] = PATTERN_PSYCHOLOGY[ptype_enum].get(lang, PATTERN_PSYCHOLOGY[ptype_enum]["it"])
+            except (ValueError, KeyError):
+                pass
     
     # Get confluences for these patterns (confluences is a list of dicts)
     all_confluences = sentinel_scanner.get_confluences()
