@@ -370,24 +370,24 @@ PATTERN_PSYCHOLOGY = {
         "it": {
             "cosa_succede": "Onda 2: Correzione dell'Onda 1. Il prezzo ritraccia parte del movimento iniziale, ma NON supera mai l'inizio dell'Onda 1.",
             "perche": "Profit-taking dai primi compratori. Gli scettici pensano che il trend sia finito. Regola: l'Onda 2 non ritraccia MAI il 100% dell'Onda 1.",
-            "azione": "Zona ideale per entrare LONG. Cerca ritracciamenti del 50-61.8% (Fibonacci). Stop sotto l'inizio dell'Onda 1."
+            "azione": "Zona ideale per entrare LONG. Cerca ritracciamenti verso zone di Liquidità o S/R storici. Stop sotto l'inizio dell'Onda 1."
         },
         "en": {
             "cosa_succede": "Wave 2: Retracement of Wave 1. Price retraces but NEVER exceeds Wave 1 start.",
             "perche": "Profit-taking from early buyers. Skeptics think the trend is over. Rule: Wave 2 NEVER retraces 100% of Wave 1.",
-            "azione": "Ideal zone to enter LONG. Look for 50-61.8% retracements (Fibonacci). Stop below Wave 1 start."
+            "azione": "Ideal zone to enter LONG. Look for retracements to Liquidity zones or historical S/R. Stop below Wave 1 start."
         }
     },
     PatternType.ELLIOTT_WAVE_3: {
         "it": {
             "cosa_succede": "Onda 3: L'onda più POTENTE e lunga. Il trend è ora evidente a tutti. Volume esplosivo. Momentum massimo.",
             "perche": "La massa riconosce il trend e salta dentro. FOMO (Fear Of Missing Out) amplifica il movimento. I media parlano del trend. L'Onda 3 non è MAI la più corta delle onde impulsive.",
-            "azione": "CAVALCA l'onda. Non uscire troppo presto. Aggiungi posizioni sui pullback. Target: estensione 161.8% dell'Onda 1."
+            "azione": "CAVALCA l'onda. Non uscire troppo presto. Aggiungi posizioni sui pullback. Target: prossimo Liquidity Wall o cluster di liquidazioni."
         },
         "en": {
             "cosa_succede": "Wave 3: The MOST POWERFUL and longest wave. Trend now obvious to everyone. Explosive volume.",
             "perche": "Mass recognizes trend and jumps in. FOMO amplifies the move. Media covers the trend. Wave 3 is NEVER the shortest impulse wave.",
-            "azione": "RIDE the wave. Don't exit too early. Add on pullbacks. Target: 161.8% extension of Wave 1."
+            "azione": "RIDE the wave. Don't exit too early. Add on pullbacks. Target: next Liquidity Wall or liquidation cluster."
         }
     },
     PatternType.ELLIOTT_WAVE_4: {
@@ -440,12 +440,12 @@ PATTERN_PSYCHOLOGY = {
     },
     PatternType.ELLIOTT_WAVE_C: {
         "it": {
-            "cosa_succede": "Onda C: L'onda FINALE della correzione. Movimento potente che completa il pattern A-B-C. Spesso uguale o 161.8% dell'Onda A.",
+            "cosa_succede": "Onda C: L'onda FINALE della correzione. Movimento potente che completa il pattern A-B-C. Spesso uguale o maggiore dell'Onda A in lunghezza.",
             "perche": "La realtà colpisce. Tutti coloro che hanno comprato in B sono intrappolati. Panic selling/buying. Capitolazione.",
             "azione": "Se sei fuori: ASPETTA la fine per entrare nel nuovo impulso. Se intrappolato: accetta la perdita o holda per il nuovo ciclo."
         },
         "en": {
-            "cosa_succede": "Wave C: The FINAL correction wave. Powerful move completing A-B-C pattern. Often equals or 161.8% of Wave A.",
+            "cosa_succede": "Wave C: The FINAL correction wave. Powerful move completing A-B-C pattern. Often equals or exceeds Wave A in length.",
             "perche": "Reality hits. Everyone who bought in B is trapped. Panic selling/buying. Capitulation.",
             "azione": "If out: WAIT for end to enter new impulse. If trapped: accept loss or hold for new cycle."
         }
@@ -1026,7 +1026,7 @@ def detect_bullish_impulse(swing_points: List[Dict], prices: List[float]) -> Lis
             "direction": "BULLISH",
             "color": wave_color,
             "length": wave3_length,
-            "is_extended": wave3_length > wave1_length * 1.618
+            "is_extended": wave3_length > wave1_length * 1.5  # Extended wave based on price action (>150% of Wave 1)
         })
         
         waves.append({
@@ -1174,7 +1174,7 @@ def detect_bearish_impulse(swing_points: List[Dict], prices: List[float]) -> Lis
             "direction": "BEARISH",
             "color": wave_color,
             "length": wave3_length,
-            "is_extended": wave3_length > wave1_length * 1.618
+            "is_extended": wave3_length > wave1_length * 1.5  # Extended wave based on price action (>150% of Wave 1)
         })
         
         waves.append({
@@ -2197,6 +2197,405 @@ class SentinelScanner:
                 })
         
         return chart_data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GHOST PROJECTION ENGINE - Future Pattern Predictions (NO FIBONACCI)
+# Uses: Measured Move, Liquidity Walls, Historical S/R
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class GhostProjection:
+    """
+    Represents a future price projection based on pattern geometry.
+    Uses pure Price Action + Liquidity, NO Fibonacci.
+    """
+    def __init__(
+        self,
+        projection_id: str,
+        pattern_type: str,
+        direction: str,  # BULLISH or BEARISH
+        start_price: float,
+        start_index: int,
+        target_price: float,
+        target_index: int,
+        confidence: float,  # 0-100
+        timeframe: str,
+        method: str,  # "measured_move", "liquidity_target", "wave_projection"
+        strategic_alignment: bool = False,  # True if aligns with higher TF liquidity
+        liquidity_zone: Optional[Dict] = None,  # Nearby liquidity zone
+        forming_pattern: Optional[str] = None,  # Pattern that's forming
+        completion_percent: float = 50.0
+    ):
+        self.projection_id = projection_id
+        self.pattern_type = pattern_type
+        self.direction = direction
+        self.start_price = start_price
+        self.start_index = start_index
+        self.target_price = target_price
+        self.target_index = target_index
+        self.confidence = confidence
+        self.timeframe = timeframe
+        self.method = method
+        self.strategic_alignment = strategic_alignment
+        self.liquidity_zone = liquidity_zone
+        self.forming_pattern = forming_pattern
+        self.completion_percent = completion_percent
+        self.created_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> Dict:
+        return {
+            "projection_id": self.projection_id,
+            "pattern_type": self.pattern_type,
+            "direction": self.direction,
+            "start": {"price": self.start_price, "index": self.start_index},
+            "target": {"price": self.target_price, "index": self.target_index},
+            "confidence": self.confidence,
+            "timeframe": self.timeframe,
+            "method": self.method,
+            "strategic_alignment": self.strategic_alignment,
+            "liquidity_zone": self.liquidity_zone,
+            "forming_pattern": self.forming_pattern,
+            "completion_percent": self.completion_percent,
+            "created_at": self.created_at.isoformat(),
+            "is_ghost": True,  # Mark as future projection
+            "draw_style": "dashed"  # Semi-transparent dashed lines
+        }
+
+
+class GhostProjectionEngine:
+    """
+    Engine for calculating future price projections.
+    
+    Projection Methods (NO FIBONACCI):
+    1. Measured Move - Pattern height projected from breakout
+    2. Liquidity Target - Nearest significant liquidity cluster
+    3. Wave Projection - Elliott Wave completion based on prior wave lengths
+    4. Historical S/R - Previous swing highs/lows as targets
+    """
+    
+    def __init__(self):
+        self.active_projections: List[GhostProjection] = []
+        self.max_projections = 10
+    
+    def calculate_measured_move(
+        self,
+        pattern_type: str,
+        pattern_data: Dict,
+        current_price: float,
+        timeframe: str
+    ) -> Optional[GhostProjection]:
+        """
+        Calculate target using Measured Move (pattern height = target distance).
+        Used for: Triangles, Wedges, Flags, H&S, Double Top/Bottom
+        """
+        try:
+            height = 0
+            breakout_price = current_price
+            direction = "BULLISH"
+            
+            # Extract pattern height based on type
+            if "triangle" in pattern_type or "wedge" in pattern_type:
+                upper = pattern_data.get("resistance") or pattern_data.get("upper_line", {}).get("end", {}).get("price", 0)
+                lower = pattern_data.get("support") or pattern_data.get("lower_line", {}).get("end", {}).get("price", 0)
+                if upper and lower:
+                    height = abs(upper - lower)
+                direction = "BULLISH" if "ascending" in pattern_type or "falling" in pattern_type else "BEARISH"
+            
+            elif "double_top" in pattern_type:
+                top_price = pattern_data.get("first_top", {}).get("price", 0) or pattern_data.get("second_top", {}).get("price", 0)
+                neckline = pattern_data.get("neckline", 0)
+                if top_price and neckline:
+                    height = top_price - neckline
+                    breakout_price = neckline
+                direction = "BEARISH"
+            
+            elif "double_bottom" in pattern_type:
+                bottom_price = pattern_data.get("first_bottom", {}).get("price", 0) or pattern_data.get("second_bottom", {}).get("price", 0)
+                neckline = pattern_data.get("neckline", 0)
+                if bottom_price and neckline:
+                    height = neckline - bottom_price
+                    breakout_price = neckline
+                direction = "BULLISH"
+            
+            elif "head_and_shoulders" in pattern_type:
+                head_price = pattern_data.get("head", {}).get("price", 0)
+                neckline = pattern_data.get("neckline", 0)
+                if head_price and neckline:
+                    height = abs(head_price - neckline)
+                    breakout_price = neckline
+                direction = "BEARISH" if "inverse" not in pattern_type else "BULLISH"
+            
+            elif "flag" in pattern_type or "pennant" in pattern_type:
+                flagpole_height = pattern_data.get("flagpole_height", 0)
+                if flagpole_height:
+                    height = flagpole_height
+                direction = "BULLISH" if "bull" in pattern_type else "BEARISH"
+            
+            if height == 0:
+                return None
+            
+            # Calculate target using measured move
+            target_price = breakout_price + height if direction == "BULLISH" else breakout_price - height
+            
+            # Estimate target index (future candles)
+            completion = pattern_data.get("completion", 70)
+            bars_to_target = max(5, int((100 - completion) / 5))
+            
+            return GhostProjection(
+                projection_id=f"mm_{pattern_type}_{timeframe}_{datetime.now().timestamp()}",
+                pattern_type=pattern_type,
+                direction=direction,
+                start_price=breakout_price,
+                start_index=pattern_data.get("current_index", 0),
+                target_price=target_price,
+                target_index=pattern_data.get("current_index", 0) + bars_to_target,
+                confidence=min(90, completion + 10),
+                timeframe=timeframe,
+                method="measured_move",
+                completion_percent=completion
+            )
+        except Exception as e:
+            logger.error(f"[GHOST] Error calculating measured move: {e}")
+            return None
+    
+    def calculate_elliott_projection(
+        self,
+        wave_data: Dict,
+        current_price: float,
+        timeframe: str,
+        liquidity_zones: List[Dict] = None
+    ) -> Optional[GhostProjection]:
+        """
+        Project Elliott Wave targets based on prior wave lengths and LIQUIDITY.
+        NO FIBONACCI - Uses wave proportions and nearest liquidity clusters.
+        """
+        try:
+            wave_label = wave_data.get("label", "")
+            direction = wave_data.get("direction", "BULLISH")
+            
+            # Get wave lengths
+            wave1_length = wave_data.get("wave1_length", 0)
+            wave_a_length = wave_data.get("wave_a_length", 0)
+            # wave3_length available for future use: wave_data.get("wave3_length", 0)
+            
+            target_price = current_price
+            method = "wave_projection"
+            confidence = 60
+            
+            # Wave 3 projection (if in Wave 2)
+            if wave_label == "2" and wave1_length > 0:
+                # Wave 3 is typically longer than Wave 1, use 1.5x as conservative estimate
+                if direction == "BULLISH":
+                    target_price = current_price + (wave1_length * 1.5)
+                else:
+                    target_price = current_price - (wave1_length * 1.5)
+                confidence = 70
+            
+            # Wave 5 projection (if in Wave 4)
+            elif wave_label == "4" and wave1_length > 0:
+                # Wave 5 is often equal to Wave 1 (conservative)
+                if direction == "BULLISH":
+                    target_price = current_price + wave1_length
+                else:
+                    target_price = current_price - wave1_length
+                confidence = 65
+            
+            # Wave C projection (if in Wave B)
+            elif wave_label == "B" and wave_a_length > 0:
+                # Wave C is often equal to Wave A
+                if direction == "BEARISH":
+                    target_price = current_price - wave_a_length
+                else:
+                    target_price = current_price + wave_a_length
+                confidence = 60
+            
+            else:
+                return None
+            
+            # Check for liquidity zone alignment
+            strategic = False
+            nearest_liq = None
+            if liquidity_zones:
+                for zone in liquidity_zones:
+                    zone_price = zone.get("price", 0)
+                    # If target is within 2% of a liquidity zone
+                    if abs(target_price - zone_price) / current_price < 0.02:
+                        strategic = True
+                        nearest_liq = zone
+                        confidence = min(95, confidence + 20)
+                        break
+            
+            return GhostProjection(
+                projection_id=f"ew_{wave_label}_{timeframe}_{datetime.now().timestamp()}",
+                pattern_type=f"elliott_wave_{wave_label.lower()}_projection",
+                direction=direction,
+                start_price=current_price,
+                start_index=wave_data.get("end", {}).get("index", 0),
+                target_price=target_price,
+                target_index=wave_data.get("end", {}).get("index", 0) + 20,
+                confidence=confidence,
+                timeframe=timeframe,
+                method=method,
+                strategic_alignment=strategic,
+                liquidity_zone=nearest_liq,
+                forming_pattern=f"Wave {wave_label} → Wave {int(wave_label)+1 if wave_label.isdigit() else 'C'}"
+            )
+        except Exception as e:
+            logger.error(f"[GHOST] Error calculating Elliott projection: {e}")
+            return None
+    
+    def find_liquidity_target(
+        self,
+        current_price: float,
+        direction: str,
+        liquidity_zones: List[Dict],
+        timeframe: str
+    ) -> Optional[GhostProjection]:
+        """
+        Find the nearest significant liquidity zone as a target.
+        This is where price is "magnetically attracted" to.
+        """
+        try:
+            if not liquidity_zones:
+                return None
+            
+            # Filter zones in the direction we're looking
+            candidates = []
+            for zone in liquidity_zones:
+                zone_price = zone.get("price", 0)
+                zone_value = zone.get("value", 0) or zone.get("total_volume", 0)
+                
+                if direction == "BULLISH" and zone_price > current_price:
+                    candidates.append((zone, zone_price - current_price, zone_value))
+                elif direction == "BEARISH" and zone_price < current_price:
+                    candidates.append((zone, current_price - zone_price, zone_value))
+            
+            if not candidates:
+                return None
+            
+            # Sort by distance, then by value (prefer closer + larger)
+            candidates.sort(key=lambda x: (x[1], -x[2]))
+            
+            best_zone, distance, value = candidates[0]
+            
+            # Confidence based on zone strength
+            confidence = min(85, 50 + int(value / 1000000))  # Scale by liquidity value
+            
+            return GhostProjection(
+                projection_id=f"liq_{direction.lower()}_{timeframe}_{datetime.now().timestamp()}",
+                pattern_type="liquidity_hunt",
+                direction=direction,
+                start_price=current_price,
+                start_index=0,
+                target_price=best_zone.get("price", 0),
+                target_index=10,  # Estimated bars
+                confidence=confidence,
+                timeframe=timeframe,
+                method="liquidity_target",
+                liquidity_zone=best_zone,
+                strategic_alignment=True
+            )
+        except Exception as e:
+            logger.error(f"[GHOST] Error finding liquidity target: {e}")
+            return None
+    
+    def generate_projections(
+        self,
+        patterns: List[Dict],
+        elliott_waves: List[Dict],
+        current_price: float,
+        liquidity_zones: List[Dict] = None,
+        timeframe: str = "4h"
+    ) -> List[Dict]:
+        """
+        Generate all ghost projections for detected and forming patterns.
+        Returns list of projection dictionaries for rendering.
+        """
+        projections = []
+        
+        # 1. Projections from chart patterns (measured move)
+        for pattern in patterns:
+            ptype = pattern.get("type", "")
+            if isinstance(ptype, PatternType):
+                ptype = ptype.value
+            
+            completion = pattern.get("completion", 100)
+            # Only project incomplete patterns
+            if completion < 100:
+                proj = self.calculate_measured_move(
+                    ptype,
+                    pattern,
+                    current_price,
+                    pattern.get("timeframe", timeframe)
+                )
+                if proj:
+                    # Check for strategic alignment with higher TF
+                    if liquidity_zones:
+                        for zone in liquidity_zones:
+                            if abs(proj.target_price - zone.get("price", 0)) / current_price < 0.015:
+                                proj.strategic_alignment = True
+                                proj.liquidity_zone = zone
+                                proj.confidence = min(95, proj.confidence + 15)
+                                break
+                    projections.append(proj.to_dict())
+        
+        # 2. Projections from Elliott Waves
+        for wave in elliott_waves:
+            wave_label = wave.get("label", "")
+            # Project from corrective waves (2, 4, B)
+            if wave_label in ["2", "4", "B"]:
+                proj = self.calculate_elliott_projection(
+                    wave,
+                    current_price,
+                    wave.get("timeframe", timeframe),
+                    liquidity_zones
+                )
+                if proj:
+                    projections.append(proj.to_dict())
+        
+        # 3. Pure liquidity target (always show nearest magnet)
+        if liquidity_zones:
+            # Find target in current bias direction
+            bias = "BULLISH"  # Default, should be passed from market context
+            liq_proj = self.find_liquidity_target(
+                current_price,
+                bias,
+                liquidity_zones,
+                timeframe
+            )
+            if liq_proj:
+                projections.append(liq_proj.to_dict())
+        
+        # Limit to max projections, prioritize by confidence
+        projections.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        self.active_projections = projections[:self.max_projections]
+        
+        return self.active_projections
+    
+    def check_multi_tf_alignment(
+        self,
+        lower_tf_projection: Dict,
+        higher_tf_zones: List[Dict]
+    ) -> bool:
+        """
+        Check if a lower timeframe projection aligns with higher timeframe liquidity.
+        This is a "STRATEGIC ALIGNMENT" signal.
+        """
+        if not higher_tf_zones:
+            return False
+        
+        target = lower_tf_projection.get("target", {}).get("price", 0)
+        
+        for zone in higher_tf_zones:
+            zone_price = zone.get("price", 0)
+            if abs(target - zone_price) / target < 0.02:  # Within 2%
+                return True
+        
+        return False
+
+
+# Global instance
+ghost_engine = GhostProjectionEngine()
 
 
 # Global instances

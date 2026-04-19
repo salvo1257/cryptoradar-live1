@@ -99,6 +99,8 @@ export function TradingChartWithSentinel({
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [subwavesEnabled, setSubwavesEnabled] = useState(showFractals);  // Toggle for sub-waves
   const [overlayData, setOverlayData] = useState(null);
+  const [ghostProjections, setGhostProjections] = useState([]);  // Ghost future projections
+  const [ghostEnabled, setGhostEnabled] = useState(true);  // Toggle for ghost projections
   const [hoveredElement, setHoveredElement] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [chartDimensions, setChartDimensions] = useState({ width: 800, height: 400 });
@@ -124,6 +126,27 @@ export function TradingChartWithSentinel({
     const interval = setInterval(fetchOverlayData, 30000);
     return () => clearInterval(interval);
   }, [overlayEnabled]);
+
+  // Fetch Ghost Projections (Future Pattern Predictions)
+  useEffect(() => {
+    if (!ghostEnabled) return;
+    
+    const fetchGhostProjections = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/sentinel/ghost-projections?timeframe=4h&lang=it`);
+        if (response.ok) {
+          const data = await response.json();
+          setGhostProjections(data.projections || []);
+        }
+      } catch (err) {
+        console.error('[GHOST PROJECTIONS] Fetch error:', err);
+      }
+    };
+    
+    fetchGhostProjections();
+    const interval = setInterval(fetchGhostProjections, 60000);  // Update every minute
+    return () => clearInterval(interval);
+  }, [ghostEnabled]);
 
   // Calculate price range from candles
   useEffect(() => {
@@ -725,6 +748,239 @@ export function TradingChartWithSentinel({
   // Original auto-draw disabled - Draft Mode uses renderAnchoredPatterns instead
   const renderSentinelOverlay = () => null;
 
+  // Render Ghost Projections (Future Pattern Predictions - Dashed Lines)
+  const renderGhostProjections = () => {
+    if (!ghostEnabled || !ghostProjections.length) return null;
+    
+    const { width, height: h } = chartDimensions;
+    
+    return (
+      <svg 
+        className="absolute inset-0 pointer-events-none z-5"
+        style={{ width: '100%', height: '100%' }}
+        viewBox={`0 0 ${width} ${h}`}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          {/* Glow filter for ghost projections */}
+          <filter id="ghost-glow-bullish" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="0 0 0 0 0
+                      0 0 0 0 1
+                      0 0 0 0 0.6
+                      0 0 0 0.5 0"
+            />
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="ghost-glow-bearish" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="0 0 0 0 1
+                      0 0 0 0 0.1
+                      0 0 0 0 0.3
+                      0 0 0 0.5 0"
+            />
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          
+          {/* Animated pulse for ghost lines */}
+          <style>
+            {`
+              @keyframes ghostPulse {
+                0%, 100% { opacity: 0.4; }
+                50% { opacity: 0.7; }
+              }
+              .ghost-line {
+                animation: ghostPulse 2s ease-in-out infinite;
+              }
+            `}
+          </style>
+        </defs>
+        
+        {ghostProjections.map((proj, i) => {
+          const startPrice = proj.start?.price || 0;
+          const targetPrice = proj.target?.price || 0;
+          const direction = proj.direction || "BULLISH";
+          const method = proj.method || "unknown";
+          const confidence = proj.confidence || 50;
+          const strategic = proj.strategic_alignment || false;
+          
+          if (!startPrice || !targetPrice) return null;
+          
+          // Calculate Y positions
+          const startY = priceToY(startPrice);
+          const targetY = priceToY(targetPrice);
+          
+          // X positions - project into the future (right side of chart)
+          const startX = width - 200;  // Start from near right edge
+          const targetX = width - 80;  // End near price axis
+          
+          const color = direction === "BULLISH" ? "#00FF9D" : "#FF1E56";
+          const filter = direction === "BULLISH" ? "url(#ghost-glow-bullish)" : "url(#ghost-glow-bearish)";
+          
+          const midX = (startX + targetX) / 2;
+          const midY = (startY + targetY) / 2;
+          
+          return (
+            <g key={`ghost-${proj.projection_id || i}`} className="ghost-projection">
+              {/* Main projection line - dashed */}
+              <line
+                x1={startX}
+                y1={startY}
+                x2={targetX}
+                y2={targetY}
+                stroke={color}
+                strokeWidth="2"
+                strokeDasharray="8 4"
+                opacity="0.6"
+                filter={filter}
+                className="ghost-line"
+              />
+              
+              {/* Target zone indicator */}
+              <circle
+                cx={targetX}
+                cy={targetY}
+                r="8"
+                fill={color}
+                fillOpacity="0.3"
+                stroke={color}
+                strokeWidth="1.5"
+                strokeDasharray="4 2"
+                className="ghost-line"
+              />
+              
+              {/* Arrow head */}
+              <path
+                d={direction === "BULLISH" 
+                  ? `M${targetX-8},${targetY+5} L${targetX},${targetY} L${targetX-8},${targetY-5}`
+                  : `M${targetX-8},${targetY-5} L${targetX},${targetY} L${targetX-8},${targetY+5}`
+                }
+                fill="none"
+                stroke={color}
+                strokeWidth="2"
+                opacity="0.7"
+              />
+              
+              {/* Label box */}
+              <rect
+                x={midX - 50}
+                y={midY - 25}
+                width={100}
+                height={50}
+                rx="6"
+                fill="#18181b"
+                fillOpacity="0.9"
+                stroke={color}
+                strokeWidth="1"
+                strokeDasharray="4 2"
+              />
+              
+              {/* Method label */}
+              <text
+                x={midX}
+                y={midY - 10}
+                textAnchor="middle"
+                fill={color}
+                fontSize="9"
+                fontWeight="bold"
+              >
+                {method === "measured_move" ? "MEASURED MOVE" : 
+                 method === "wave_projection" ? "WAVE TARGET" :
+                 method === "liquidity_target" ? "LIQ TARGET" : method.toUpperCase()}
+              </text>
+              
+              {/* Target price */}
+              <text
+                x={midX}
+                y={midY + 5}
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="11"
+                fontWeight="bold"
+              >
+                ${targetPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}
+              </text>
+              
+              {/* Confidence */}
+              <text
+                x={midX}
+                y={midY + 18}
+                textAnchor="middle"
+                fill="#a1a1aa"
+                fontSize="8"
+              >
+                {confidence}% conf.
+              </text>
+              
+              {/* Strategic Alignment Badge */}
+              {strategic && (
+                <g transform={`translate(${midX + 45}, ${midY - 20})`}>
+                  <circle
+                    r="8"
+                    fill="#FFD700"
+                    fillOpacity="0.3"
+                    stroke="#FFD700"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x="0"
+                    y="4"
+                    textAnchor="middle"
+                    fill="#FFD700"
+                    fontSize="10"
+                    fontWeight="bold"
+                  >
+                    ⚡
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+        
+        {/* Ghost projections header */}
+        {ghostProjections.length > 0 && (
+          <g>
+            <rect
+              x={width - 210}
+              y={10}
+              width={130}
+              height={26}
+              rx="4"
+              fill="#18181b"
+              fillOpacity="0.8"
+              stroke="#8B5CF6"
+              strokeWidth="1"
+              strokeDasharray="4 2"
+            />
+            <text
+              x={width - 145}
+              y={27}
+              textAnchor="middle"
+              fill="#8B5CF6"
+              fontSize="10"
+              fontWeight="bold"
+            >
+              👻 GHOST PROJECTIONS
+            </text>
+          </g>
+        )}
+      </svg>
+    );
+  };
+
   // Render tooltip
   const renderTooltip = () => {
     if (!hoveredElement) return null;
@@ -903,6 +1159,22 @@ export function TradingChartWithSentinel({
           </div>
         )}
         
+        {/* Ghost Projections Toggle */}
+        <button
+          onClick={() => setGhostEnabled(!ghostEnabled)}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200",
+            ghostEnabled 
+              ? "bg-[#8B5CF6]/20 text-[#8B5CF6] border border-[#8B5CF6]/40"
+              : "bg-zinc-800/80 text-zinc-500 border border-zinc-700/50"
+          )}
+          data-testid="ghost-projections-toggle"
+          title="Toggle Ghost Projections"
+        >
+          <span className="text-sm">👻</span>
+          <span>{ghostEnabled ? "Ghost ON" : "Ghost OFF"}</span>
+        </button>
+        
         {/* Empty state hint */}
         {overlayEnabled && anchorCount === 0 && (
           <div className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-800/60 rounded-lg border border-zinc-700/30">
@@ -920,6 +1192,9 @@ export function TradingChartWithSentinel({
         style={{ height: `${height}px` }}
         data-testid="trading-chart-with-sentinel"
       >
+        {/* Ghost Projections - Future Pattern Predictions (dashed lines) */}
+        {renderGhostProjections()}
+        
         {/* SVG Overlay - Now uses Anchored Patterns (On-Demand) */}
         {renderAnchoredPatterns()}
         

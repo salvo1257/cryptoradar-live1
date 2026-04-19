@@ -25959,6 +25959,169 @@ async def toggle_fractal_analysis(enabled: bool = Query(default=True)):
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# GHOST PROJECTIONS - Future Pattern Predictions (NO FIBONACCI)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/sentinel/ghost-projections")
+async def get_ghost_projections(
+    timeframe: str = Query(default="4h"),
+    lang: str = Query(default="it")
+):
+    """
+    Get Ghost Projections - future price predictions based on forming patterns.
+    
+    Uses PURE PRICE ACTION + LIQUIDITY (NO FIBONACCI):
+    - Measured Move: Pattern height projected from breakout
+    - Elliott Wave: Wave length proportions + nearest liquidity
+    - Liquidity Hunt: Magnetic pull toward liquidity clusters
+    
+    Returns dashed/semi-transparent projections for incomplete patterns.
+    """
+    from sentinel_engine import ghost_engine
+    
+    try:
+        # Get current patterns and waves
+        all_patterns = sentinel_scanner.get_all_patterns()
+        
+        # Filter patterns by timeframe or get all
+        patterns = []
+        elliott_waves = []
+        
+        for p in all_patterns:
+            tf = p.get("timeframe", "4h")
+            ptype = p.get("type", "")
+            if isinstance(ptype, PatternType):
+                ptype = ptype.value
+            
+            if "elliott" in ptype.lower():
+                elliott_waves.append(p)
+            else:
+                patterns.append(p)
+        
+        # Get liquidity zones for strategic alignment
+        liquidity_zones = []
+        try:
+            # Use existing liquidity data
+            orderbook = await fetch_orderbook_depth()
+            if orderbook:
+                # Extract significant levels
+                for ask in orderbook.get("asks", [])[:5]:
+                    liquidity_zones.append({
+                        "price": float(ask[0]) if isinstance(ask, list) else ask.get("price", 0),
+                        "value": float(ask[1]) if isinstance(ask, list) else ask.get("value", 0),
+                        "type": "resistance"
+                    })
+                for bid in orderbook.get("bids", [])[:5]:
+                    liquidity_zones.append({
+                        "price": float(bid[0]) if isinstance(bid, list) else bid.get("price", 0),
+                        "value": float(bid[1]) if isinstance(bid, list) else bid.get("value", 0),
+                        "type": "support"
+                    })
+        except Exception as e:
+            logger.warning(f"[GHOST] Could not fetch liquidity zones: {e}")
+        
+        # Get current price
+        current_price = sentinel_scanner.current_price or 0
+        if current_price == 0:
+            current_price = getattr(data_aggregator, 'current_price', 0) or 71000
+        
+        # Generate projections
+        projections = ghost_engine.generate_projections(
+            patterns=patterns,
+            elliott_waves=elliott_waves,
+            current_price=current_price,
+            liquidity_zones=liquidity_zones,
+            timeframe=timeframe
+        )
+        
+        # Label texts based on language
+        labels = {
+            "it": {
+                "measured_move": "Measured Move",
+                "wave_projection": "Proiezione Onda",
+                "liquidity_target": "Target Liquidità",
+                "strategic_alignment": "ALLINEAMENTO STRATEGICO"
+            },
+            "en": {
+                "measured_move": "Measured Move",
+                "wave_projection": "Wave Projection",
+                "liquidity_target": "Liquidity Target",
+                "strategic_alignment": "STRATEGIC ALIGNMENT"
+            }
+        }
+        
+        l = labels.get(lang, labels["it"])
+        
+        # Enhance projections with display labels
+        for proj in projections:
+            method = proj.get("method", "")
+            proj["method_display"] = l.get(method, method)
+            if proj.get("strategic_alignment"):
+                proj["alignment_badge"] = l["strategic_alignment"]
+        
+        return {
+            "projections": projections,
+            "projection_count": len(projections),
+            "current_price": current_price,
+            "timeframe": timeframe,
+            "language": lang,
+            "draw_instructions": {
+                "style": "dashed",
+                "opacity": 0.6,
+                "color_bullish": "#00FF9D",
+                "color_bearish": "#FF1E56",
+                "stroke_dasharray": "8 4",
+                "animation": "pulse"
+            }
+        }
+    except Exception as e:
+        logger.error(f"[GHOST] Error generating projections: {e}")
+        return {
+            "projections": [],
+            "projection_count": 0,
+            "error": str(e),
+            "timeframe": timeframe
+        }
+
+
+@api_router.get("/sentinel/ghost-projections/elliott")
+async def get_elliott_ghost_projections(lang: str = Query(default="it")):
+    """
+    Get Ghost Projections specifically for Elliott Waves.
+    Projects Wave 5 from Wave 4, Wave C from Wave B, etc.
+    """
+    from sentinel_engine import ghost_engine
+    
+    # Get Elliott-specific patterns
+    elliott_patterns = sentinel_scanner.get_elliott_patterns()
+    
+    projections = []
+    current_price = sentinel_scanner.current_price or 71000
+    
+    # Get liquidity zones for targets
+    liquidity_zones = []
+    
+    for wave in elliott_patterns:
+        wave_label = wave.get("label", "")
+        # Only project from corrective positions
+        if wave_label in ["2", "4", "B"]:
+            proj = ghost_engine.calculate_elliott_projection(
+                wave,
+                current_price,
+                wave.get("timeframe", "4h"),
+                liquidity_zones
+            )
+            if proj:
+                projections.append(proj.to_dict())
+    
+    return {
+        "projections": projections,
+        "count": len(projections),
+        "current_price": current_price,
+        "language": lang
+    }
+
 
 async def test_v3_signal_validation(_: bool = Depends(verify_admin_access)):
     """

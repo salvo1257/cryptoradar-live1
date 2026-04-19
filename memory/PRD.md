@@ -348,3 +348,51 @@ Full UI integration for autonomous Telegram configuration:
 - Default settings fallback when admin not authenticated
 - All Telegram V4 API calls use proper `X-Admin-Key` authentication
 
+---
+## Update: April 19, 2025 - Ghost Projections & Sentinel Overhaul
+
+### ✅ Completed - The Sentinel Transformation
+
+**Dashboard Cleanup**:
+- Removed `SentinelPatternFeed` from main Dashboard
+- Sentinel only accessible via dedicated pages: Pattern, Candele, Onde di Elliott
+
+**No Fibonacci Policy**:
+- Removed all Fibonacci references (0.618, 1.618, etc.) from `sentinel_engine.py`
+- Elliott Wave projections now use:
+  - Wave length proportions (Wave 3 > 1.5x Wave 1)
+  - Liquidity Clusters as targets
+  - Historical S/R levels
+- Updated psychological texts to reference Liquidity instead of Fibonacci
+
+**Ghost Projections Engine**:
+- New `GhostProjectionEngine` class in `/app/backend/sentinel_engine.py`
+- Implements **future pattern predictions** using:
+  - **Measured Move**: Pattern height projected from breakout
+  - **Wave Projection**: Based on prior wave lengths + nearest liquidity
+  - **Liquidity Target**: Magnetic pull toward liquidity clusters
+- **Strategic Alignment**: Highlights when 5M/15M projections align with 4H/1D liquidity zones
+
+**New API Endpoints**:
+- `GET /api/sentinel/ghost-projections` - All ghost projections
+- `GET /api/sentinel/ghost-projections/elliott` - Elliott-specific projections
+
+**Frontend Updates**:
+- Added `ghostEnabled` state and fetch in `TradingChartWithSentinel.js`
+- New `renderGhostProjections()` function renders dashed/semi-transparent lines
+- "👻 Ghost ON/OFF" toggle button in chart header
+- Projections display: method, target price, confidence %, strategic alignment badge
+
+**Draw Instructions**:
+```json
+{
+  "style": "dashed",
+  "opacity": 0.6,
+  "color_bullish": "#00FF9D",
+  "color_bearish": "#FF1E56",
+  "stroke_dasharray": "8 4",
+  "animation": "pulse"
+}
+```
+
+

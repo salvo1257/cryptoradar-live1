@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAccess } from '../../contexts/AccessContext';
 import { TradingChartWithSentinel } from '../TradingChartWithSentinel';
-import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock, Eye } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wrench, LineChart, TrendingUp, Activity, Layers, Lock } from 'lucide-react';
 import { 
   MarketBiasCard, 
   SupportResistanceCard, 
@@ -17,8 +17,7 @@ import {
   LiquidityMagnetCard,
   PriceMeasurementTool,
   V3SignalCard,
-  DecisionEngineCard,
-  SentinelPatternFeed
+  DecisionEngineCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
 import { DataFreshnessIndicator } from '../cards/DataFreshnessIndicator';
@@ -245,23 +244,9 @@ export function DashboardPage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          THE SENTINEL - Multi-Timeframe Pattern Detection Engine
-          Autonomous pattern scanning across 6 timeframes (15M to 1M)
+          THE SENTINEL - MOVED TO DEDICATED PAGES
+          Access via Sidebar: Pattern, Candele, Onde di Elliott
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="space-y-5">
-        <div className="flex items-center gap-3 px-1">
-          <div className="w-2 h-6 bg-purple-500 rounded-full shadow-lg shadow-purple-500/30"></div>
-          <h3 className="text-base font-heading font-bold text-zinc-100 uppercase tracking-wider flex items-center gap-2">
-            <Eye className="w-4 h-4 text-purple-400" />
-            {t.patternDetection}
-          </h3>
-          <Badge className="text-[10px] text-purple-400 border-purple-500/40 bg-purple-500/10 px-2">
-            THE SENTINEL
-          </Badge>
-          <div className="flex-1 h-px bg-gradient-to-r from-purple-500/30 to-transparent"></div>
-        </div>
-        <SentinelPatternFeed />
-      </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
           SECTION: Primary Intelligence (Bias, OI, Funding) - COCKPIT ROW
