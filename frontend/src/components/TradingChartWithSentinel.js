@@ -1126,12 +1126,12 @@ export function TradingChartWithSentinel({
           {overlayEnabled ? (
             <>
               <Eye className="w-3.5 h-3.5" />
-              <span>Anchors ON</span>
+              <span>Ancoraggi ON</span>
             </>
           ) : (
             <>
               <EyeOff className="w-3.5 h-3.5" />
-              <span>Anchors OFF</span>
+              <span>Ancoraggi OFF</span>
             </>
           )}
         </button>
@@ -1169,10 +1169,10 @@ export function TradingChartWithSentinel({
               : "bg-zinc-800/80 text-zinc-500 border border-zinc-700/50"
           )}
           data-testid="ghost-projections-toggle"
-          title="Toggle Ghost Projections"
+          title="Proiezioni Future"
         >
           <span className="text-sm">👻</span>
-          <span>{ghostEnabled ? "Ghost ON" : "Ghost OFF"}</span>
+          <span>{ghostEnabled ? "Proiezioni ON" : "Proiezioni OFF"}</span>
         </button>
         
         {/* Empty state hint */}

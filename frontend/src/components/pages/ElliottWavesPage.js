@@ -1,49 +1,129 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAnchoredPatterns } from '../../contexts/AnchoredPatternsContext';
 import { TradingChartWithSentinel } from '../TradingChartWithSentinel';
 import { 
-  TrendingUp, TrendingDown, ChevronDown, ChevronUp,
+  TrendingUp, TrendingDown, ChevronLeft, ChevronRight,
   PenTool, EyeOff, RefreshCw, AlertCircle, Layers, Zap, 
-  GitBranch, Hash, Circle
+  GitBranch, Target, Brain, Shield, Filter, Sparkles, Hash
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Badge } from '../ui/badge';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 /**
- * ELLIOTT WAVES PAGE - Elliott Wave Analysis Only
- * Displays: Wave 1-5, Wave A-B-C, Impulse/Corrective, Fractal Sub-waves
- * Excludes: Chart patterns, Candlestick patterns
+ * ELLIOTT WAVES PAGE v4.5 - "Cockpit Orizzontale"
+ * 
+ * Layout:
+ * - TOP: Full-width interactive chart with Ghost Wave Projections
+ * - BOTTOM: Horizontal scrollable cards with Wave analysis "Cosa/Perché/Azione"
+ * 
+ * Features:
+ * - Wave 5 & Wave C Ghost Projections to Liquidity Targets
+ * - Noise Reduction: Only significant wave counts
+ * - Strategic Alignment for multi-TF wave confluence
+ * - 100% Italian localization
  */
 export function ElliottWavesPage() {
-  const { t, language } = useApp();
+  const { language } = useApp();
   const { anchorPattern, removeAnchor, isPatternAnchored, anchoredPatterns } = useAnchoredPatterns();
   
   const [patterns, setPatterns] = useState([]);
-  const [fractals, setFractals] = useState({});
+  const [ghostProjections, setGhostProjections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTimeframe, setSelectedTimeframe] = useState('all');
-  const [showFractals, setShowFractals] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('all'); // all, impulse, corrective
+  const [selectedPattern, setSelectedPattern] = useState(null);
+  const [showFractals, setShowFractals] = useState(false);
 
   // Elliott wave pattern types
   const ELLIOTT_TYPES = [
     'elliott_wave_1', 'elliott_wave_2', 'elliott_wave_3', 'elliott_wave_4', 'elliott_wave_5',
     'elliott_wave_a', 'elliott_wave_b', 'elliott_wave_c',
-    'elliott_impulse', 'elliott_corrective',
-    'elliott_subwave_1', 'elliott_subwave_2', 'elliott_subwave_3', 'elliott_subwave_4', 'elliott_subwave_5',
-    'elliott_subwave_a', 'elliott_subwave_b', 'elliott_subwave_c',
-    'elliott_fractal_complete', 'elliott_fractal_insight'
+    'elliott_impulse', 'elliott_corrective'
   ];
 
-  // Fetch Elliott patterns from backend
+  // Translations
+  const t = useMemo(() => ({
+    title: language === 'it' ? 'Onde di Elliott' : 'Elliott Waves',
+    subtitle: language === 'it' ? 'Analisi Frattale • Proiezioni Predittive verso Liquidità' : 'Fractal Analysis • Predictive Projections to Liquidity',
+    waves: language === 'it' ? 'Onde' : 'Waves',
+    anchored: language === 'it' ? 'Ancorate' : 'Anchored',
+    chart: language === 'it' ? 'Grafico' : 'Chart',
+    ghostProjections: language === 'it' ? 'Proiezioni Onde' : 'Wave Projections',
+    strategicAlignment: language === 'it' ? 'ALLINEAMENTO STRATEGICO' : 'STRATEGIC ALIGNMENT',
+    noWaves: language === 'it' ? 'Nessuna onda significativa rilevata' : 'No significant waves detected',
+    filterAll: language === 'it' ? 'Tutte' : 'All',
+    filterImpulse: language === 'it' ? 'Impulso (1-5)' : 'Impulse (1-5)',
+    filterCorrective: language === 'it' ? 'Correttive (A-B-C)' : 'Corrective (A-B-C)',
+    filter15m: '15 Min',
+    filter1h: '1 Ora',
+    filter4h: '4 Ore',
+    filter1d: language === 'it' ? 'Giornaliero' : 'Daily',
+    filter1w: language === 'it' ? 'Settimanale' : 'Weekly',
+    cosa: language === 'it' ? 'Cosa Succede' : 'What Happens',
+    perche: language === 'it' ? 'Perché' : 'Why',
+    azione: language === 'it' ? 'Azione' : 'Action',
+    waveProgress: language === 'it' ? 'Progresso Onda' : 'Wave Progress',
+    draw: language === 'it' ? 'Disegna' : 'Draw',
+    remove: language === 'it' ? 'Rimuovi' : 'Remove',
+    refresh: language === 'it' ? 'Aggiorna' : 'Refresh',
+    topWaves: language === 'it' ? 'Conteggio Onde Attivo' : 'Active Wave Count',
+    fractals: language === 'it' ? 'Frattali' : 'Fractals',
+    showFractals: language === 'it' ? 'Mostra Sub-onde' : 'Show Sub-waves',
+    hideFractals: language === 'it' ? 'Nascondi Sub-onde' : 'Hide Sub-waves',
+    nearLiquidity: language === 'it' ? 'Target Liquidità' : 'Liquidity Target',
+    multiTF: language === 'it' ? 'Multi-TF' : 'Multi-TF',
+    waveTheory: language === 'it' ? 'Teoria di Elliott' : 'Elliott Theory',
+    impulseDesc: language === 'it' ? '5 onde nella direzione del trend' : '5 waves in trend direction',
+    correctiveDesc: language === 'it' ? '3 onde contro il trend principale' : '3 waves against main trend',
+    wave5Projection: language === 'it' ? 'Proiezione Onda 5' : 'Wave 5 Projection',
+    waveCProjection: language === 'it' ? 'Proiezione Onda C' : 'Wave C Projection'
+  }), [language]);
+
+  // Wave labels in Italian
+  const getWaveLabel = useCallback((type) => {
+    const labels = {
+      'elliott_wave_1': language === 'it' ? 'Onda 1 - Inizio' : 'Wave 1 - Start',
+      'elliott_wave_2': language === 'it' ? 'Onda 2 - Ritracciamento' : 'Wave 2 - Retracement',
+      'elliott_wave_3': language === 'it' ? 'Onda 3 - Impulso Forte' : 'Wave 3 - Strong Impulse',
+      'elliott_wave_4': language === 'it' ? 'Onda 4 - Correzione' : 'Wave 4 - Correction',
+      'elliott_wave_5': language === 'it' ? 'Onda 5 - Finale' : 'Wave 5 - Final',
+      'elliott_wave_a': language === 'it' ? 'Onda A - Inizio Correzione' : 'Wave A - Correction Start',
+      'elliott_wave_b': language === 'it' ? 'Onda B - Rimbalzo Falso' : 'Wave B - False Bounce',
+      'elliott_wave_c': language === 'it' ? 'Onda C - Correzione Finale' : 'Wave C - Final Correction',
+      'elliott_impulse': language === 'it' ? 'Impulso Completo (1-5)' : 'Complete Impulse (1-5)',
+      'elliott_corrective': language === 'it' ? 'Correzione Completa (A-B-C)' : 'Complete Correction (A-B-C)'
+    };
+    return labels[type] || type;
+  }, [language]);
+
+  // Fetch patterns and ghost projections
   const fetchPatterns = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sentinel/patterns/elliott?lang=${language}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPatterns(data.patterns || []);
-        setFractals(data.fractals || {});
+      const [patternsRes, ghostRes] = await Promise.all([
+        fetch(`${API_URL}/api/sentinel/patterns/elliott?lang=${language}`),
+        fetch(`${API_URL}/api/sentinel/ghost-projections/elliott?lang=${language}`)
+      ]);
+      
+      if (patternsRes.ok) {
+        const data = await patternsRes.json();
+        // Sort by wave number and significance
+        const sortedPatterns = (data.patterns || [])
+          .filter(p => ELLIOTT_TYPES.includes(p.type))
+          .sort((a, b) => {
+            const waveOrder = { '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, 'a': 6, 'b': 7, 'c': 8 };
+            const waveA = a.type?.split('_').pop() || '';
+            const waveB = b.type?.split('_').pop() || '';
+            return (waveOrder[waveA] || 99) - (waveOrder[waveB] || 99);
+          });
+        setPatterns(sortedPatterns);
+      }
+      
+      if (ghostRes.ok) {
+        const ghostData = await ghostRes.json();
+        setGhostProjections(ghostData.projections || []);
       }
     } catch (error) {
       console.error('Error fetching Elliott patterns:', error);
@@ -58,274 +138,247 @@ export function ElliottWavesPage() {
     return () => clearInterval(interval);
   }, [fetchPatterns]);
 
-  // Filter patterns for chart overlay - only show anchored Elliott patterns
-  const chartFilteredPatterns = anchoredPatterns.filter(p => 
-    ELLIOTT_TYPES.includes(p.type)
+  // Filter patterns for chart overlay
+  const chartFilteredPatterns = useMemo(() => 
+    anchoredPatterns.filter(p => ELLIOTT_TYPES.includes(p.type)), 
+    [anchoredPatterns]
   );
 
-  // Separate impulse waves (1-5) from corrective (A-B-C)
-  const impulseWaves = patterns.filter(p => 
-    ['elliott_wave_1', 'elliott_wave_2', 'elliott_wave_3', 'elliott_wave_4', 'elliott_wave_5', 'elliott_impulse'].includes(p.type)
-  );
-  
-  const correctiveWaves = patterns.filter(p => 
-    ['elliott_wave_a', 'elliott_wave_b', 'elliott_wave_c', 'elliott_corrective'].includes(p.type)
-  );
-  
-  const subwaves = patterns.filter(p => 
-    p.type?.includes('subwave') || p.type?.includes('fractal')
-  );
-
-  // Filter by timeframe
-  const filterByTimeframe = (waves) => {
-    if (selectedTimeframe === 'all') return waves;
-    return waves.filter(p => p.timeframe === selectedTimeframe);
-  };
+  // Filter displayed patterns
+  const displayedPatterns = useMemo(() => {
+    let filtered = patterns;
+    
+    // Filter by category
+    if (selectedCategory === 'impulse') {
+      filtered = filtered.filter(p => 
+        ['elliott_wave_1', 'elliott_wave_2', 'elliott_wave_3', 'elliott_wave_4', 'elliott_wave_5', 'elliott_impulse'].includes(p.type)
+      );
+    } else if (selectedCategory === 'corrective') {
+      filtered = filtered.filter(p => 
+        ['elliott_wave_a', 'elliott_wave_b', 'elliott_wave_c', 'elliott_corrective'].includes(p.type)
+      );
+    }
+    
+    // Filter by timeframe
+    if (selectedTimeframe !== 'all') {
+      filtered = filtered.filter(p => p.timeframe === selectedTimeframe);
+    }
+    
+    return filtered;
+  }, [patterns, selectedCategory, selectedTimeframe]);
 
   const timeframes = [
-    { value: 'all', label: 'Tutti' },
-    { value: '15m', label: '15 Min' },
-    { value: '1h', label: '1 Ora' },
-    { value: '4h', label: '4 Ore' },
-    { value: '1d', label: 'Giornaliero' },
-    { value: '1w', label: 'Settimanale' },
-    { value: '1M', label: 'Mensile' }
+    { value: 'all', label: t.filterAll },
+    { value: '4h', label: t.filter4h },
+    { value: '1d', label: t.filter1d },
+    { value: '1w', label: t.filter1w }
   ];
 
-  const getWaveLabel = (type) => {
-    const labels = {
-      'elliott_wave_1': 'Onda 1',
-      'elliott_wave_2': 'Onda 2',
-      'elliott_wave_3': 'Onda 3',
-      'elliott_wave_4': 'Onda 4',
-      'elliott_wave_5': 'Onda 5',
-      'elliott_wave_a': 'Onda A',
-      'elliott_wave_b': 'Onda B',
-      'elliott_wave_c': 'Onda C',
-      'elliott_impulse': 'Impulso Completo (1-5)',
-      'elliott_corrective': 'Correzione Completa (A-B-C)',
-      'elliott_subwave_1': 'Sub-onda 1',
-      'elliott_subwave_2': 'Sub-onda 2',
-      'elliott_subwave_3': 'Sub-onda 3',
-      'elliott_subwave_4': 'Sub-onda 4',
-      'elliott_subwave_5': 'Sub-onda 5',
-      'elliott_subwave_a': 'Sub-onda A',
-      'elliott_subwave_b': 'Sub-onda B',
-      'elliott_subwave_c': 'Sub-onda C',
-      'elliott_fractal_complete': 'Frattale Completo',
-      'elliott_fractal_insight': 'Insight Frattale'
-    };
-    return labels[type] || type;
-  };
+  const categories = [
+    { value: 'all', label: t.filterAll },
+    { value: 'impulse', label: t.filterImpulse },
+    { value: 'corrective', label: t.filterCorrective }
+  ];
 
-  const getWaveNumber = (type) => {
-    const match = type?.match(/wave_(\d|[abc])/i) || type?.match(/subwave_(\d|[abc])/i);
-    if (match) return match[1].toUpperCase();
-    return null;
-  };
-
-  const getWaveColor = (type) => {
-    // Impulse waves (1-5) - green tones
-    if (type?.includes('wave_1') || type?.includes('wave_3') || type?.includes('wave_5')) {
-      return 'text-bullish';
-    }
-    // Corrective waves in impulse (2, 4) - yellow/orange
-    if (type?.includes('wave_2') || type?.includes('wave_4')) {
-      return 'text-amber-400';
-    }
-    // ABC waves - red tones
-    if (type?.includes('wave_a') || type?.includes('wave_b') || type?.includes('wave_c')) {
-      return 'text-bearish';
-    }
-    // Fractals/subwaves - cyan
-    if (type?.includes('subwave') || type?.includes('fractal')) {
-      return 'text-cyan-400';
-    }
-    return 'text-zinc-400';
-  };
+  // Horizontal scroll
+  const scrollContainer = React.useRef(null);
+  const scrollLeft = () => scrollContainer.current?.scrollBy({ left: -320, behavior: 'smooth' });
+  const scrollRight = () => scrollContainer.current?.scrollBy({ left: 320, behavior: 'smooth' });
 
   return (
-    <div className="p-4 space-y-4" data-testid="elliott-waves-page">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full min-h-screen bg-crypto-darker" data-testid="elliott-waves-page">
+      {/* ═══════════════════════════════════════════════════════════════════
+          HEADER
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-crypto-border/50 bg-crypto-card/30">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-bullish/20 to-bearish/20 rounded-lg">
-            <TrendingUp className="w-5 h-5 text-bullish" />
+          <div className="p-2 bg-cyan-500/20 rounded-lg">
+            <Layers className="w-5 h-5 text-cyan-400" />
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-tight">Onde di Elliott</h1>
-            <p className="text-sm text-zinc-500">Onde 1-5, Correzioni A-B-C, Frattali</p>
+            <h1 className="font-heading text-xl font-bold tracking-tight flex items-center gap-2">
+              {t.title}
+              <Badge className="text-[10px] bg-cyan-500/20 text-cyan-400 border-cyan-500/40">
+                <GitBranch className="w-3 h-3 mr-1" />
+                v4.5
+              </Badge>
+            </h1>
+            <p className="text-xs text-zinc-500">{t.subtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Fractal Toggle */}
+        
+        <div className="flex items-center gap-3">
+          {/* Category Filters */}
+          <div className="flex items-center gap-1 bg-zinc-900/50 rounded-lg p-1">
+            {categories.map(cat => (
+              <button
+                key={cat.value}
+                onClick={() => setSelectedCategory(cat.value)}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-md transition-all",
+                  selectedCategory === cat.value 
+                    ? "bg-cyan-500/30 text-cyan-300 font-medium"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Timeframe Filters */}
+          <div className="flex items-center gap-1 bg-zinc-900/50 rounded-lg p-1">
+            {timeframes.map(tf => (
+              <button
+                key={tf.value}
+                onClick={() => setSelectedTimeframe(tf.value)}
+                className={cn(
+                  "px-2 py-1 text-xs rounded-md transition-all",
+                  selectedTimeframe === tf.value 
+                    ? "bg-cyan-500/20 text-cyan-400 font-medium"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Fractals Toggle */}
           <button
             onClick={() => setShowFractals(!showFractals)}
             className={cn(
-              "px-2 py-1 text-xs rounded border transition-colors flex items-center gap-1",
+              "px-2.5 py-1.5 text-xs rounded-lg transition-all flex items-center gap-1.5",
               showFractals 
-                ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50"
-                : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                ? "bg-purple-500/20 text-purple-400 border border-purple-500/40"
+                : "bg-zinc-800/50 text-zinc-500 border border-zinc-700/50"
             )}
           >
-            <Layers className="w-3 h-3" />
-            Frattali
+            <Hash className="w-3 h-3" />
+            {t.fractals}
           </button>
-          <span className="px-2 py-1 text-xs font-mono bg-gradient-to-r from-bullish/20 to-bearish/20 text-white rounded">
-            {patterns.length} Onde
+          
+          {/* Stats */}
+          <span className="px-2 py-1 text-xs font-mono bg-cyan-500/20 text-cyan-400 rounded">
+            {patterns.length} {t.waves}
           </span>
-          <button 
-            onClick={fetchPatterns}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-            data-testid="refresh-elliott"
-          >
+          
+          <button onClick={fetchPatterns} className="p-2 hover:bg-white/5 rounded-lg transition-colors" title={t.refresh}>
             <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
           </button>
         </div>
       </div>
 
-      {/* Main Layout: Chart Left, Feed Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Chart Section (2/3 width) */}
-        <div className="lg:col-span-2 bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
-          <div className="p-2 border-b border-crypto-border flex items-center justify-between">
-            <span className="text-xs font-mono text-zinc-500">
-              CHART • {chartFilteredPatterns.length} Onde Ancorate
-            </span>
-            {/* Elliott Legend */}
-            <div className="flex items-center gap-3 text-[10px]">
-              <span className="flex items-center gap-1">
-                <div className="w-4 h-0.5 bg-bullish"></div>
-                <span className="text-bullish">Impulso (1-3-5)</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <div className="w-4 h-0.5 bg-amber-400"></div>
-                <span className="text-amber-400">Ritracciamento (2-4)</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <div className="w-4 h-0.5 bg-bearish"></div>
-                <span className="text-bearish">Correzione (A-B-C)</span>
-              </span>
+      {/* ═══════════════════════════════════════════════════════════════════
+          MAIN CHART with Ghost Wave Projections
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 p-4 pb-2">
+        <div className="h-full bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-crypto-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-zinc-500 uppercase">{t.chart}</span>
+              <span className="text-[10px] text-cyan-400">• {chartFilteredPatterns.length} {t.anchored}</span>
             </div>
+            {ghostProjections.length > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-500/10 rounded-md">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span className="text-[10px] text-cyan-400 font-medium">
+                  {ghostProjections.length} {t.ghostProjections}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="p-2">
+          <div className="p-2 h-[calc(100%-40px)]">
             <TradingChartWithSentinel 
-              height={500} 
+              height={400} 
               filterCategory="elliott_waves"
               filteredAnchoredPatterns={chartFilteredPatterns}
               showFractals={showFractals}
             />
           </div>
         </div>
+      </div>
 
-        {/* Elliott Feed Section (1/3 width) */}
-        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden flex flex-col max-h-[600px]">
-          {/* Feed Header */}
-          <div className="p-3 border-b border-crypto-border">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold bg-gradient-to-r from-bullish to-bearish bg-clip-text text-transparent">
-                ELLIOTT WAVE FEED
-              </span>
-              {chartFilteredPatterns.length > 0 && (
-                <span className="px-2 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded">
-                  {chartFilteredPatterns.length} Ancorati
-                </span>
-              )}
+      {/* ═══════════════════════════════════════════════════════════════════
+          BOTTOM COCKPIT - Horizontal Wave Cards
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="px-4 pb-4">
+        <div className="bg-crypto-card/40 border border-crypto-border rounded-lg">
+          {/* Section Header */}
+          <div className="px-4 py-2 border-b border-crypto-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm font-semibold text-zinc-300">{t.topWaves}</span>
             </div>
-            
-            {/* Timeframe Filter */}
-            <div className="flex flex-wrap gap-1">
-              {timeframes.map(tf => (
-                <button
-                  key={tf.value}
-                  onClick={() => setSelectedTimeframe(tf.value)}
-                  className={cn(
-                    "px-2 py-1 text-xs rounded transition-colors",
-                    selectedTimeframe === tf.value 
-                      ? "bg-gradient-to-r from-bullish/30 to-bearish/30 text-white border border-bullish/50"
-                      : "bg-zinc-800/50 text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  {tf.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button onClick={scrollLeft} className="p-1.5 bg-zinc-800/50 rounded hover:bg-zinc-700/50 transition-colors">
+                <ChevronLeft className="w-4 h-4 text-zinc-400" />
+              </button>
+              <button onClick={scrollRight} className="p-1.5 bg-zinc-800/50 rounded hover:bg-zinc-700/50 transition-colors">
+                <ChevronRight className="w-4 h-4 text-zinc-400" />
+              </button>
             </div>
           </div>
-
-          {/* Waves List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-3">
+          
+          {/* Horizontal Scrollable Cards */}
+          <div 
+            ref={scrollContainer}
+            className="flex gap-3 p-3 overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+            style={{ scrollSnapType: 'x mandatory' }}
+          >
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="w-6 h-6 text-bullish animate-spin" />
+              <div className="flex items-center justify-center w-full py-8">
+                <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
               </div>
-            ) : patterns.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+            ) : displayedPatterns.length === 0 ? (
+              <div className="flex flex-col items-center justify-center w-full py-8 text-zinc-500">
                 <AlertCircle className="w-8 h-8 mb-2" />
-                <span className="text-sm">Nessuna onda Elliott rilevata</span>
-                <span className="text-xs mt-1 text-center">
-                  Le onde Elliott richiedono sequenze specifiche di swings
-                </span>
+                <span className="text-sm">{t.noWaves}</span>
               </div>
             ) : (
-              <>
-                {/* Impulse Waves Section */}
-                {filterByTimeframe(impulseWaves).length > 0 && (
-                  <WaveSection 
-                    title="IMPULSO (1-5)"
-                    waves={filterByTimeframe(impulseWaves)}
-                    color="bullish"
-                    icon={Zap}
-                    getLabel={getWaveLabel}
-                    getNumber={getWaveNumber}
-                    getColor={getWaveColor}
-                    isAnchored={isPatternAnchored}
-                    onAnchor={anchorPattern}
-                    onRemove={removeAnchor}
-                  />
-                )}
-                
-                {/* Corrective Waves Section */}
-                {filterByTimeframe(correctiveWaves).length > 0 && (
-                  <WaveSection 
-                    title="CORREZIONE (A-B-C)"
-                    waves={filterByTimeframe(correctiveWaves)}
-                    color="bearish"
-                    icon={GitBranch}
-                    getLabel={getWaveLabel}
-                    getNumber={getWaveNumber}
-                    getColor={getWaveColor}
-                    isAnchored={isPatternAnchored}
-                    onAnchor={anchorPattern}
-                    onRemove={removeAnchor}
-                  />
-                )}
-                
-                {/* Fractals Section */}
-                {showFractals && filterByTimeframe(subwaves).length > 0 && (
-                  <WaveSection 
-                    title="FRATTALI (Sub-onde)"
-                    waves={filterByTimeframe(subwaves)}
-                    color="cyan"
-                    icon={Layers}
-                    getLabel={getWaveLabel}
-                    getNumber={getWaveNumber}
-                    getColor={getWaveColor}
-                    isAnchored={isPatternAnchored}
-                    onAnchor={anchorPattern}
-                    onRemove={removeAnchor}
-                  />
-                )}
-              </>
+              displayedPatterns.map((pattern, idx) => (
+                <HorizontalWaveCard 
+                  key={`${pattern.type}-${pattern.timeframe}-${idx}`}
+                  pattern={pattern}
+                  getLabel={getWaveLabel}
+                  t={t}
+                  language={language}
+                  isAnchored={isPatternAnchored(pattern)}
+                  onAnchor={() => anchorPattern(pattern)}
+                  onRemove={() => removeAnchor(pattern)}
+                  isSelected={selectedPattern === idx}
+                  onSelect={() => setSelectedPattern(selectedPattern === idx ? null : idx)}
+                  ghostProjections={ghostProjections}
+                />
+              ))
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Elliott Theory Info */}
-          <div className="border-t border-crypto-border p-3 bg-zinc-900/50">
-            <span className="text-xs font-semibold text-zinc-400 block mb-2">TEORIA DI ELLIOTT</span>
-            <div className="text-[10px] text-zinc-500 space-y-1">
-              <p><strong className="text-bullish">Impulso:</strong> 5 onde nella direzione del trend (1-2-3-4-5)</p>
-              <p><strong className="text-bearish">Correzione:</strong> 3 onde contro-trend (A-B-C)</p>
-              <p><strong className="text-cyan-400">Frattali:</strong> Ogni onda contiene onde più piccole</p>
+      {/* ═══════════════════════════════════════════════════════════════════
+          ELLIOTT THEORY INFO BOX
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="px-4 pb-4">
+        <div className="bg-gradient-to-r from-cyan-500/5 to-purple-500/5 border border-cyan-500/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="w-4 h-4 text-cyan-400" />
+            <span className="text-sm font-semibold text-cyan-400">{t.waveTheory}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="flex items-start gap-2">
+              <TrendingUp className="w-4 h-4 text-bullish mt-0.5" />
+              <div>
+                <span className="font-medium text-bullish">{t.filterImpulse}</span>
+                <p className="text-zinc-500 mt-0.5">{t.impulseDesc}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <TrendingDown className="w-4 h-4 text-bearish mt-0.5" />
+              <div>
+                <span className="font-medium text-bearish">{t.filterCorrective}</span>
+                <p className="text-zinc-500 mt-0.5">{t.correctiveDesc}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -334,136 +387,131 @@ export function ElliottWavesPage() {
   );
 }
 
-// Wave Section Component
-function WaveSection({ title, waves, color, icon: SectionIcon, getLabel, getNumber, getColor, isAnchored, onAnchor, onRemove }) {
-  const [expanded, setExpanded] = useState(true);
+/**
+ * Horizontal Wave Card Component
+ */
+function HorizontalWaveCard({ pattern, getLabel, t, language, isAnchored, onAnchor, onRemove, isSelected, onSelect, ghostProjections }) {
+  const isImpulse = ['elliott_wave_1', 'elliott_wave_2', 'elliott_wave_3', 'elliott_wave_4', 'elliott_wave_5', 'elliott_impulse'].includes(pattern.type);
+  const waveNumber = pattern.type?.split('_').pop()?.toUpperCase() || '';
   
-  const colorClasses = {
-    bullish: 'text-bullish border-bullish/30 bg-bullish/10',
-    bearish: 'text-bearish border-bearish/30 bg-bearish/10',
-    cyan: 'text-cyan-400 border-cyan-400/30 bg-cyan-400/10'
-  };
-
-  return (
-    <div className="border border-zinc-700/50 rounded overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={cn(
-          "w-full px-3 py-2 flex items-center justify-between",
-          colorClasses[color]
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <SectionIcon className="w-4 h-4" />
-          <span className="text-xs font-semibold">{title}</span>
-          <span className="text-[10px] opacity-70">({waves.length})</span>
-        </div>
-        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-      </button>
-      
-      {expanded && (
-        <div className="p-2 space-y-1 bg-zinc-900/50">
-          {waves.map((wave, idx) => (
-            <WaveCard 
-              key={`${wave.type}-${wave.timeframe}-${idx}`}
-              wave={wave}
-              getLabel={getLabel}
-              getNumber={getNumber}
-              getColor={getColor}
-              isAnchored={isAnchored(wave)}
-              onAnchor={() => onAnchor(wave)}
-              onRemove={() => onRemove(wave)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+  // Check if there's a ghost projection for this wave
+  const hasProjection = ghostProjections.some(p => 
+    p.forming_pattern?.includes(waveNumber) || 
+    p.pattern_type?.includes(waveNumber.toLowerCase())
   );
-}
-
-// Individual Wave Card Component
-function WaveCard({ wave, getLabel, getNumber, getColor, isAnchored, onAnchor, onRemove }) {
-  const [expanded, setExpanded] = useState(false);
-  const waveNum = getNumber(wave.type);
-
+  
+  const hasStrategicAlignment = pattern.multi_tf || pattern.near_liquidity || hasProjection;
+  
   return (
-    <div className={cn(
-      "p-2 rounded border transition-all",
-      isAnchored 
-        ? "bg-cyan-500/10 border-cyan-500/50" 
-        : "bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600"
-    )}>
-      {/* Wave Header */}
-      <div className="flex items-center justify-between">
+    <div 
+      className={cn(
+        "flex-shrink-0 w-[320px] rounded-lg border transition-all cursor-pointer",
+        isAnchored 
+          ? "bg-cyan-500/10 border-cyan-500/50" 
+          : "bg-zinc-900/50 border-zinc-700/50 hover:border-zinc-600",
+        isSelected && "ring-2 ring-cyan-500/50"
+      )}
+      style={{ scrollSnapAlign: 'start' }}
+      onClick={onSelect}
+    >
+      {/* Card Header */}
+      <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Wave Number Circle */}
-          {waveNum && (
-            <div className={cn(
-              "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-              getColor(wave.type),
-              "bg-current/20"
-            )}>
-              <span className="text-white">{waveNum}</span>
-            </div>
-          )}
-          <span className={cn("text-sm font-medium", getColor(wave.type))}>
-            {getLabel(wave.type)}
-          </span>
-          <span className="px-1.5 py-0.5 text-[10px] bg-zinc-700/50 text-zinc-400 rounded">
-            {wave.timeframe}
+          <div className={cn(
+            "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
+            isImpulse ? "bg-bullish/20 text-bullish" : "bg-bearish/20 text-bearish"
+          )}>
+            {waveNumber}
+          </div>
+          <span className={cn(
+            "text-sm font-semibold",
+            isImpulse ? "text-bullish" : "text-bearish"
+          )}>
+            {getLabel(pattern.type)}
           </span>
         </div>
-        
-        <div className="flex items-center gap-1">
-          {/* Anchor/Remove Button */}
+        <div className="flex items-center gap-1.5">
+          <Badge className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5">{pattern.timeframe}</Badge>
           <button
-            onClick={isAnchored ? onRemove : onAnchor}
+            onClick={(e) => { e.stopPropagation(); isAnchored ? onRemove() : onAnchor(); }}
             className={cn(
-              "p-1.5 rounded transition-colors",
-              isAnchored 
-                ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
-                : "bg-zinc-700/50 text-zinc-400 hover:text-white"
+              "p-1 rounded transition-colors",
+              isAnchored ? "bg-cyan-500/20 text-cyan-400" : "bg-zinc-700/50 text-zinc-400 hover:text-white"
             )}
-            data-testid={`anchor-wave-${wave.type}`}
+            title={isAnchored ? t.remove : t.draw}
           >
-            {isAnchored ? <EyeOff className="w-3.5 h-3.5" /> : <PenTool className="w-3.5 h-3.5" />}
-          </button>
-          
-          {/* Expand Button */}
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="p-1.5 bg-zinc-700/50 rounded hover:bg-zinc-700 transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {isAnchored ? <EyeOff className="w-3 h-3" /> : <PenTool className="w-3 h-3" />}
           </button>
         </div>
       </div>
-
-      {/* Price Range */}
-      {(wave.start_price || wave.end_price) && (
-        <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
-          {wave.start_price && <span>Da: ${wave.start_price?.toLocaleString()}</span>}
-          {wave.end_price && <span>A: ${wave.end_price?.toLocaleString()}</span>}
-        </div>
-      )}
-
-      {/* Expanded Psychology */}
-      {expanded && wave.psychology && (
-        <div className="mt-2 pt-2 border-t border-zinc-700/30 space-y-1">
-          <div className="text-xs">
-            <span className="text-bullish font-medium">Cosa:</span>
-            <span className="text-zinc-400 ml-1">{wave.psychology.cosa_succede}</span>
-          </div>
-          <div className="text-xs">
-            <span className="text-amber-400 font-medium">Perché:</span>
-            <span className="text-zinc-400 ml-1">{wave.psychology.perche}</span>
-          </div>
-          <div className="text-xs">
-            <span className="text-cyan-400 font-medium">Azione:</span>
-            <span className="text-zinc-300 ml-1">{wave.psychology.azione}</span>
+      
+      {/* Strategic Alignment Badge */}
+      {hasStrategicAlignment && (
+        <div className="px-3 py-1.5 bg-gradient-to-r from-cyan-500/20 to-purple-500/10 border-b border-cyan-500/30">
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3 h-3 text-cyan-400" />
+            <span className="text-[10px] font-bold text-cyan-400 tracking-wider">{t.strategicAlignment}</span>
+            {hasProjection && (
+              <Badge className="text-[8px] bg-purple-500/20 text-purple-300 px-1">
+                <Sparkles className="w-2 h-2 mr-0.5" />
+                {waveNumber === '4' || waveNumber === 'B' ? t.wave5Projection : t.waveCProjection}
+              </Badge>
+            )}
           </div>
         </div>
       )}
+      
+      {/* Wave Progress */}
+      <div className="px-3 py-2 border-b border-zinc-700/30">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-zinc-500">{t.waveProgress}</span>
+          <span className="text-xs font-mono text-cyan-400">{pattern.completion || 0}%</span>
+        </div>
+        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div 
+            className={cn(
+              "h-full rounded-full",
+              isImpulse ? "bg-gradient-to-r from-bullish to-cyan-400" : "bg-gradient-to-r from-bearish to-orange-400"
+            )}
+            style={{ width: `${pattern.completion || 0}%` }}
+          />
+        </div>
+      </div>
+      
+      {/* Cosa / Perché / Azione Content */}
+      <div className="p-3 space-y-2">
+        {pattern.psychology ? (
+          <>
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Target className="w-3 h-3 text-cyan-400" />
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">{t.cosa}</span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{pattern.psychology.cosa_succede}</p>
+            </div>
+            
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Brain className="w-3 h-3 text-purple-400" />
+                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">{t.perche}</span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{pattern.psychology.perche}</p>
+            </div>
+            
+            <div className="pt-1 border-t border-zinc-700/30">
+              <div className="flex items-center gap-1 mb-0.5">
+                <Shield className="w-3 h-3 text-amber-400" />
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">{t.azione}</span>
+              </div>
+              <p className="text-xs text-zinc-200 leading-relaxed font-medium line-clamp-2">{pattern.psychology.azione}</p>
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-zinc-500 text-center py-2">
+            {language === 'it' ? 'Analisi non disponibile' : 'Analysis not available'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

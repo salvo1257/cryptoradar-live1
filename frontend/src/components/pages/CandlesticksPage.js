@@ -1,43 +1,113 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAnchoredPatterns } from '../../contexts/AnchoredPatternsContext';
 import { TradingChartWithSentinel } from '../TradingChartWithSentinel';
 import { 
-  CandlestickChart, TrendingUp, TrendingDown, ChevronDown, ChevronUp,
-  PenTool, EyeOff, RefreshCw, AlertCircle, Flame
+  CandlestickChart, TrendingUp, TrendingDown, ChevronLeft, ChevronRight,
+  PenTool, EyeOff, RefreshCw, AlertCircle, Flame, Target, Brain, Shield,
+  Filter, Sparkles, Zap
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Badge } from '../ui/badge';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 /**
- * CANDLESTICKS PAGE - Japanese Candlestick Patterns Only
- * Displays: Engulfing, Doji, Hammer, Shooting Star, Morning/Evening Star
- * Excludes: Chart patterns, Elliott Waves
+ * CANDLESTICKS PAGE v4.5 - "Cockpit Orizzontale"
+ * 
+ * Layout:
+ * - TOP: Full-width interactive chart with Ghost Projections
+ * - BOTTOM: Horizontal scrollable cards with "Cosa/Perché/Azione" insights
+ * 
+ * Features:
+ * - Noise Reduction: Only Top 10 most significant candlestick patterns
+ * - Strategic Alignment badges for multi-TF confirmation
+ * - 100% Italian localization
  */
 export function CandlesticksPage() {
-  const { t, language } = useApp();
+  const { language } = useApp();
   const { anchorPattern, removeAnchor, isPatternAnchored, anchoredPatterns } = useAnchoredPatterns();
   
   const [patterns, setPatterns] = useState([]);
-  const [confluences, setConfluences] = useState({});
+  const [ghostProjections, setGhostProjections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTimeframe, setSelectedTimeframe] = useState('all');
+  const [selectedPattern, setSelectedPattern] = useState(null);
 
-  // Candlestick pattern types for filtering
+  // Candlestick pattern types
   const CANDLESTICK_TYPES = [
     'bullish_engulfing', 'bearish_engulfing', 'doji', 'hammer',
     'shooting_star', 'morning_star', 'evening_star'
   ];
 
-  // Fetch candlestick patterns from backend
+  // Translations
+  const t = useMemo(() => ({
+    title: language === 'it' ? 'Analisi Candele' : 'Candlestick Analysis',
+    subtitle: language === 'it' ? 'Pattern Giapponesi • Psicologia del Mercato' : 'Japanese Patterns • Market Psychology',
+    patterns: language === 'it' ? 'Candele' : 'Candles',
+    anchored: language === 'it' ? 'Ancorati' : 'Anchored',
+    chart: language === 'it' ? 'Grafico' : 'Chart',
+    ghostProjections: language === 'it' ? 'Proiezioni Future' : 'Ghost Projections',
+    strategicAlignment: language === 'it' ? 'ALLINEAMENTO STRATEGICO' : 'STRATEGIC ALIGNMENT',
+    noPatterns: language === 'it' ? 'Nessun pattern candela rilevato' : 'No candlestick patterns detected',
+    filterAll: language === 'it' ? 'Tutti' : 'All',
+    filter15m: '15 Min',
+    filter1h: '1 Ora',
+    filter4h: '4 Ore',
+    filter1d: language === 'it' ? 'Giornaliero' : 'Daily',
+    filter1w: language === 'it' ? 'Settimanale' : 'Weekly',
+    cosa: language === 'it' ? 'Cosa Succede' : 'What Happens',
+    perche: language === 'it' ? 'Perché' : 'Why',
+    azione: language === 'it' ? 'Azione' : 'Action',
+    completion: language === 'it' ? 'Affidabilità' : 'Reliability',
+    draw: language === 'it' ? 'Disegna' : 'Draw',
+    remove: language === 'it' ? 'Rimuovi' : 'Remove',
+    refresh: language === 'it' ? 'Aggiorna' : 'Refresh',
+    topPatterns: language === 'it' ? 'Top 10 Segnali Candlestick' : 'Top 10 Candlestick Signals',
+    nearSR: language === 'it' ? 'Su S/R' : 'At S/R',
+    multiTF: language === 'it' ? 'Multi-TF' : 'Multi-TF',
+    reversal: language === 'it' ? 'Inversione' : 'Reversal',
+    continuation: language === 'it' ? 'Continuazione' : 'Continuation'
+  }), [language]);
+
+  // Pattern labels in Italian
+  const getPatternLabel = useCallback((type) => {
+    const labels = {
+      'bullish_engulfing': language === 'it' ? 'Engulfing Rialzista' : 'Bullish Engulfing',
+      'bearish_engulfing': language === 'it' ? 'Engulfing Ribassista' : 'Bearish Engulfing',
+      'doji': 'Doji',
+      'hammer': 'Hammer',
+      'shooting_star': 'Shooting Star',
+      'morning_star': language === 'it' ? 'Stella del Mattino' : 'Morning Star',
+      'evening_star': language === 'it' ? 'Stella della Sera' : 'Evening Star'
+    };
+    return labels[type] || type;
+  }, [language]);
+
+  // Fetch patterns
   const fetchPatterns = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sentinel/patterns/candlestick?lang=${language}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPatterns(data.patterns || []);
-        setConfluences(data.confluences || {});
+      const [patternsRes, ghostRes] = await Promise.all([
+        fetch(`${API_URL}/api/sentinel/patterns/candlestick?lang=${language}`),
+        fetch(`${API_URL}/api/sentinel/ghost-projections?timeframe=4h&lang=${language}`)
+      ]);
+      
+      if (patternsRes.ok) {
+        const data = await patternsRes.json();
+        // Noise reduction: sort by significance and take top 10
+        const sortedPatterns = (data.patterns || [])
+          .sort((a, b) => {
+            const scoreA = (a.reliability || 0) + (a.near_sr ? 30 : 0) + (a.multi_tf ? 25 : 0);
+            const scoreB = (b.reliability || 0) + (b.near_sr ? 30 : 0) + (b.multi_tf ? 25 : 0);
+            return scoreB - scoreA;
+          })
+          .slice(0, 10);
+        setPatterns(sortedPatterns);
+      }
+      
+      if (ghostRes.ok) {
+        const ghostData = await ghostRes.json();
+        setGhostProjections(ghostData.projections || []);
       }
     } catch (error) {
       console.error('Error fetching candlestick patterns:', error);
@@ -52,180 +122,166 @@ export function CandlesticksPage() {
     return () => clearInterval(interval);
   }, [fetchPatterns]);
 
-  // Filter patterns for chart overlay - only show anchored candlestick patterns
-  const chartFilteredPatterns = anchoredPatterns.filter(p => 
-    CANDLESTICK_TYPES.includes(p.type)
+  // Filter patterns for chart overlay
+  const chartFilteredPatterns = useMemo(() => 
+    anchoredPatterns.filter(p => CANDLESTICK_TYPES.includes(p.type)), 
+    [anchoredPatterns]
   );
 
   // Filter displayed patterns by timeframe
-  const displayedPatterns = selectedTimeframe === 'all' 
-    ? patterns 
-    : patterns.filter(p => p.timeframe === selectedTimeframe);
+  const displayedPatterns = useMemo(() => {
+    if (selectedTimeframe === 'all') return patterns;
+    return patterns.filter(p => p.timeframe === selectedTimeframe);
+  }, [patterns, selectedTimeframe]);
 
   const timeframes = [
-    { value: 'all', label: 'Tutti' },
-    { value: '15m', label: '15 Min' },
-    { value: '1h', label: '1 Ora' },
-    { value: '4h', label: '4 Ore' },
-    { value: '1d', label: 'Giornaliero' },
-    { value: '1w', label: 'Settimanale' },
-    { value: '1M', label: 'Mensile' }
+    { value: 'all', label: t.filterAll },
+    { value: '15m', label: t.filter15m },
+    { value: '1h', label: t.filter1h },
+    { value: '4h', label: t.filter4h },
+    { value: '1d', label: t.filter1d },
+    { value: '1w', label: t.filter1w }
   ];
 
-  const getPatternLabel = (type) => {
-    const labels = {
-      'bullish_engulfing': 'Engulfing Rialzista',
-      'bearish_engulfing': 'Engulfing Ribassista',
-      'doji': 'Doji',
-      'hammer': 'Hammer',
-      'shooting_star': 'Shooting Star',
-      'morning_star': 'Morning Star',
-      'evening_star': 'Evening Star'
-    };
-    return labels[type] || type;
-  };
-
-  const getPatternIcon = (type) => {
-    const bullishPatterns = ['bullish_engulfing', 'hammer', 'morning_star'];
-    const bearishPatterns = ['bearish_engulfing', 'shooting_star', 'evening_star'];
-    
-    if (bullishPatterns.includes(type)) return { icon: TrendingUp, color: 'text-bullish' };
-    if (bearishPatterns.includes(type)) return { icon: TrendingDown, color: 'text-bearish' };
-    return { icon: CandlestickChart, color: 'text-amber-400' };
-  };
-
-  const getBiasColor = (bias) => {
-    if (bias === 'BULLISH') return 'text-bullish';
-    if (bias === 'BEARISH') return 'text-bearish';
-    return 'text-amber-400';
-  };
+  // Horizontal scroll
+  const scrollContainer = React.useRef(null);
+  const scrollLeft = () => scrollContainer.current?.scrollBy({ left: -320, behavior: 'smooth' });
+  const scrollRight = () => scrollContainer.current?.scrollBy({ left: 320, behavior: 'smooth' });
 
   return (
-    <div className="p-4 space-y-4" data-testid="candlesticks-page">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full min-h-screen bg-crypto-darker" data-testid="candlesticks-page">
+      {/* ═══════════════════════════════════════════════════════════════════
+          HEADER
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-crypto-border/50 bg-crypto-card/30">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-amber-500/20 rounded-lg">
             <CandlestickChart className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-tight">Candele Giapponesi</h1>
-            <p className="text-sm text-zinc-500">Engulfing, Doji, Hammer, Star Patterns</p>
+            <h1 className="font-heading text-xl font-bold tracking-tight flex items-center gap-2">
+              {t.title}
+              <Badge className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/40">
+                <Flame className="w-3 h-3 mr-1" />
+                v4.5
+              </Badge>
+            </h1>
+            <p className="text-xs text-zinc-500">{t.subtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="px-2 py-1 text-xs font-mono bg-amber-500/20 text-amber-400 rounded">
-            {patterns.length} Pattern
-          </span>
-          <button 
-            onClick={fetchPatterns}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-            data-testid="refresh-candlesticks"
-          >
+        
+        <div className="flex items-center gap-3">
+          {/* Timeframe Filters */}
+          <div className="flex items-center gap-1 bg-zinc-900/50 rounded-lg p-1">
+            {timeframes.map(tf => (
+              <button
+                key={tf.value}
+                onClick={() => setSelectedTimeframe(tf.value)}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-md transition-all",
+                  selectedTimeframe === tf.value 
+                    ? "bg-amber-500/30 text-amber-300 font-medium"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* Stats */}
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-1 text-xs font-mono bg-amber-500/20 text-amber-400 rounded">
+              {patterns.length} {t.patterns}
+            </span>
+          </div>
+          
+          <button onClick={fetchPatterns} className="p-2 hover:bg-white/5 rounded-lg transition-colors" title={t.refresh}>
             <RefreshCw className={cn("w-4 h-4 text-zinc-400", loading && "animate-spin")} />
           </button>
         </div>
       </div>
 
-      {/* Main Layout: Chart Left, Feed Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Chart Section (2/3 width) */}
-        <div className="lg:col-span-2 bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden">
-          <div className="p-2 border-b border-crypto-border">
-            <span className="text-xs font-mono text-zinc-500">
-              CHART • {chartFilteredPatterns.length} Pattern Ancorati
-            </span>
+      {/* ═══════════════════════════════════════════════════════════════════
+          MAIN CHART
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 p-4 pb-2">
+        <div className="h-full bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-crypto-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-zinc-500 uppercase">{t.chart}</span>
+              <span className="text-[10px] text-amber-400">• {chartFilteredPatterns.length} {t.anchored}</span>
+            </div>
+            {ghostProjections.length > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-500/10 rounded-md">
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span className="text-[10px] text-amber-400 font-medium">
+                  {ghostProjections.length} {t.ghostProjections}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="p-2">
+          <div className="p-2 h-[calc(100%-40px)]">
             <TradingChartWithSentinel 
-              height={500} 
+              height={400} 
               filterCategory="candlestick_patterns"
               filteredAnchoredPatterns={chartFilteredPatterns}
             />
           </div>
         </div>
+      </div>
 
-        {/* Pattern Feed Section (1/3 width) */}
-        <div className="bg-crypto-card/60 backdrop-blur-sm border border-crypto-border rounded-sm overflow-hidden flex flex-col max-h-[600px]">
-          {/* Feed Header */}
-          <div className="p-3 border-b border-crypto-border">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-amber-400">CANDLESTICK FEED</span>
-              {chartFilteredPatterns.length > 0 && (
-                <span className="px-2 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded">
-                  {chartFilteredPatterns.length} Ancorati
-                </span>
-              )}
+      {/* ═══════════════════════════════════════════════════════════════════
+          BOTTOM COCKPIT - Horizontal Candlestick Cards
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="px-4 pb-4">
+        <div className="bg-crypto-card/40 border border-crypto-border rounded-lg">
+          {/* Section Header */}
+          <div className="px-4 py-2 border-b border-crypto-border/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-amber-400" />
+              <span className="text-sm font-semibold text-zinc-300">{t.topPatterns}</span>
             </div>
-            
-            {/* Timeframe Filter */}
-            <div className="flex flex-wrap gap-1">
-              {timeframes.map(tf => (
-                <button
-                  key={tf.value}
-                  onClick={() => setSelectedTimeframe(tf.value)}
-                  className={cn(
-                    "px-2 py-1 text-xs rounded transition-colors",
-                    selectedTimeframe === tf.value 
-                      ? "bg-amber-500/30 text-amber-300 border border-amber-500/50"
-                      : "bg-zinc-800/50 text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  {tf.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button onClick={scrollLeft} className="p-1.5 bg-zinc-800/50 rounded hover:bg-zinc-700/50 transition-colors">
+                <ChevronLeft className="w-4 h-4 text-zinc-400" />
+              </button>
+              <button onClick={scrollRight} className="p-1.5 bg-zinc-800/50 rounded hover:bg-zinc-700/50 transition-colors">
+                <ChevronRight className="w-4 h-4 text-zinc-400" />
+              </button>
             </div>
           </div>
-
-          {/* Patterns List */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+          
+          {/* Horizontal Scrollable Cards */}
+          <div 
+            ref={scrollContainer}
+            className="flex gap-3 p-3 overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent"
+            style={{ scrollSnapType: 'x mandatory' }}
+          >
             {loading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex items-center justify-center w-full py-8">
                 <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />
               </div>
             ) : displayedPatterns.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+              <div className="flex flex-col items-center justify-center w-full py-8 text-zinc-500">
                 <AlertCircle className="w-8 h-8 mb-2" />
-                <span className="text-sm">Nessun pattern candela rilevato</span>
-                <span className="text-xs mt-1">I pattern candlestick appaiono su segnali specifici</span>
+                <span className="text-sm">{t.noPatterns}</span>
               </div>
             ) : (
               displayedPatterns.map((pattern, idx) => (
-                <CandlePatternCard 
+                <HorizontalCandlestickCard 
                   key={`${pattern.type}-${pattern.timeframe}-${idx}`}
                   pattern={pattern}
                   getLabel={getPatternLabel}
-                  getIcon={getPatternIcon}
-                  getBiasColor={getBiasColor}
+                  t={t}
                   isAnchored={isPatternAnchored(pattern)}
                   onAnchor={() => anchorPattern(pattern)}
                   onRemove={() => removeAnchor(pattern)}
+                  isSelected={selectedPattern === idx}
+                  onSelect={() => setSelectedPattern(selectedPattern === idx ? null : idx)}
                 />
               ))
             )}
-          </div>
-
-          {/* Legend Section */}
-          <div className="border-t border-crypto-border p-3">
-            <span className="text-xs font-semibold text-zinc-400 block mb-2">LEGENDA PATTERN</span>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-bullish"></div>
-                <span className="text-zinc-500">Bullish (Long)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-bearish"></div>
-                <span className="text-zinc-500">Bearish (Short)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-amber-400"></div>
-                <span className="text-zinc-500">Neutral (Doji)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Flame className="w-3 h-3 text-orange-400" />
-                <span className="text-zinc-500">Alta Probabilità</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -233,89 +289,112 @@ export function CandlesticksPage() {
   );
 }
 
-// Individual Candlestick Pattern Card Component
-function CandlePatternCard({ pattern, getLabel, getIcon, getBiasColor, isAnchored, onAnchor, onRemove }) {
-  const [expanded, setExpanded] = useState(false);
-  const { icon: PatternIcon, color } = getIcon(pattern.type);
-
+/**
+ * Horizontal Candlestick Card Component
+ */
+function HorizontalCandlestickCard({ pattern, getLabel, t, isAnchored, onAnchor, onRemove, isSelected, onSelect }) {
+  const isBullish = pattern.bias === 'BULLISH';
+  const isBearish = pattern.bias === 'BEARISH';
+  const hasStrategicAlignment = pattern.multi_tf || pattern.near_sr;
+  
   return (
-    <div className={cn(
-      "p-2 rounded border transition-all",
-      isAnchored 
-        ? "bg-cyan-500/10 border-cyan-500/50" 
-        : "bg-zinc-800/50 border-zinc-700/50 hover:border-zinc-600"
-    )}>
-      {/* Pattern Header */}
-      <div className="flex items-center justify-between">
+    <div 
+      className={cn(
+        "flex-shrink-0 w-[300px] rounded-lg border transition-all cursor-pointer",
+        isAnchored 
+          ? "bg-cyan-500/10 border-cyan-500/50" 
+          : "bg-zinc-900/50 border-zinc-700/50 hover:border-zinc-600",
+        isSelected && "ring-2 ring-amber-500/50"
+      )}
+      style={{ scrollSnapAlign: 'start' }}
+      onClick={onSelect}
+    >
+      {/* Card Header */}
+      <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <PatternIcon className={cn("w-4 h-4", color)} />
-          <span className={cn("text-sm font-medium", getBiasColor(pattern.bias))}>
+          {isBullish && <TrendingUp className="w-4 h-4 text-bullish" />}
+          {isBearish && <TrendingDown className="w-4 h-4 text-bearish" />}
+          {!isBullish && !isBearish && <CandlestickChart className="w-4 h-4 text-amber-400" />}
+          <span className={cn(
+            "text-sm font-semibold",
+            isBullish ? "text-bullish" : isBearish ? "text-bearish" : "text-amber-400"
+          )}>
             {getLabel(pattern.type)}
           </span>
-          <span className="px-1.5 py-0.5 text-[10px] bg-zinc-700/50 text-zinc-400 rounded">
-            {pattern.timeframe}
-          </span>
         </div>
-        
-        <div className="flex items-center gap-1">
-          {/* High Prob Badge */}
-          {pattern.high_probability && (
-            <Flame className="w-3.5 h-3.5 text-orange-400" />
-          )}
-          
-          {/* Anchor/Remove Button */}
+        <div className="flex items-center gap-1.5">
+          <Badge className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5">{pattern.timeframe}</Badge>
           <button
-            onClick={isAnchored ? onRemove : onAnchor}
+            onClick={(e) => { e.stopPropagation(); isAnchored ? onRemove() : onAnchor(); }}
             className={cn(
-              "p-1.5 rounded transition-colors",
-              isAnchored 
-                ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
-                : "bg-zinc-700/50 text-zinc-400 hover:text-white"
+              "p-1 rounded transition-colors",
+              isAnchored ? "bg-cyan-500/20 text-cyan-400" : "bg-zinc-700/50 text-zinc-400 hover:text-white"
             )}
-            data-testid={`anchor-candle-${pattern.type}`}
+            title={isAnchored ? t.remove : t.draw}
           >
-            {isAnchored ? <EyeOff className="w-3.5 h-3.5" /> : <PenTool className="w-3.5 h-3.5" />}
-          </button>
-          
-          {/* Expand Button */}
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="p-1.5 bg-zinc-700/50 rounded hover:bg-zinc-700 transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {isAnchored ? <EyeOff className="w-3 h-3" /> : <PenTool className="w-3 h-3" />}
           </button>
         </div>
       </div>
-
-      {/* Price Level */}
-      {pattern.price && (
-        <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
-          <span>Prezzo: ${pattern.price?.toLocaleString()}</span>
-          {pattern.strength && (
-            <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">
-              Forza: {pattern.strength}%
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Expanded Details */}
-      {expanded && pattern.psychology && (
-        <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1">
-          <div className="text-xs">
-            <span className="text-amber-400 font-medium">Cosa:</span>
-            <span className="text-zinc-400 ml-1">{pattern.psychology.cosa_succede}</span>
-          </div>
-          <div className="text-xs">
-            <span className="text-amber-400 font-medium">Perché:</span>
-            <span className="text-zinc-400 ml-1">{pattern.psychology.perche}</span>
-          </div>
-          <div className="text-xs">
-            <span className="text-cyan-400 font-medium">Azione:</span>
-            <span className="text-zinc-300 ml-1">{pattern.psychology.azione}</span>
+      
+      {/* Strategic Alignment Badge */}
+      {hasStrategicAlignment && (
+        <div className="px-3 py-1.5 bg-gradient-to-r from-amber-500/20 to-orange-500/10 border-b border-amber-500/30">
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3 h-3 text-amber-400" />
+            <span className="text-[10px] font-bold text-amber-400 tracking-wider">{t.strategicAlignment}</span>
           </div>
         </div>
       )}
+      
+      {/* Reliability Bar */}
+      <div className="px-3 py-2 border-b border-zinc-700/30">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] text-zinc-500">{t.completion}</span>
+          <span className="text-xs font-mono text-amber-400">{pattern.reliability || pattern.completion || 0}%</span>
+        </div>
+        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div 
+            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
+            style={{ width: `${pattern.reliability || pattern.completion || 0}%` }}
+          />
+        </div>
+      </div>
+      
+      {/* Cosa / Perché / Azione Content */}
+      <div className="p-3 space-y-2">
+        {pattern.psychology ? (
+          <>
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Target className="w-3 h-3 text-amber-400" />
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">{t.cosa}</span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{pattern.psychology.cosa_succede}</p>
+            </div>
+            
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Brain className="w-3 h-3 text-orange-400" />
+                <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">{t.perche}</span>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">{pattern.psychology.perche}</p>
+            </div>
+            
+            <div className="pt-1 border-t border-zinc-700/30">
+              <div className="flex items-center gap-1 mb-0.5">
+                <Shield className="w-3 h-3 text-cyan-400" />
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">{t.azione}</span>
+              </div>
+              <p className="text-xs text-zinc-200 leading-relaxed font-medium line-clamp-2">{pattern.psychology.azione}</p>
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-zinc-500 text-center py-2">
+            {language === 'it' ? 'Analisi non disponibile' : 'Analysis not available'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
