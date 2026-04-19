@@ -130,15 +130,46 @@ const REGIME_CONFIG = {
 export function V3SignalCard({ language = 'it' }) {
   const { learnMode } = useApp();
   const [v3Data, setV3Data] = useState(null);
+  const [intelligenceState, setIntelligenceState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
 
   const fetchV3Signal = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`);
-      const data = await response.json();
-      setV3Data(data);
+      // V3.7: Use intelligence-state as Single Source of Truth for sync
+      const [signalRes, stateRes] = await Promise.all([
+        fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`${API_URL}/api/intelligence-state`).then(r => r.ok ? r.json() : null).catch(() => null)
+      ]);
+      
+      // Merge data: use intelligence state for regime/bias, signal for setup details
+      if (stateRes?.is_synchronized) {
+        const mergedData = {
+          ...signalRes,
+          // Override with synchronized state
+          market_regime: stateRes.market_regime?.regime || signalRes?.market_regime,
+          market_bias: stateRes.market_bias?.bias || signalRes?.market_bias,
+          bias_confidence: stateRes.market_bias?.confidence || signalRes?.bias_confidence,
+          has_active_setup: stateRes.v3_setup?.has_active_setup ?? signalRes?.has_active_setup,
+          recommended_action: stateRes.final_action || signalRes?.recommended_action,
+          // Setup details from signal or state
+          active_setup: signalRes?.active_setup || (stateRes.v3_setup?.has_active_setup ? {
+            direction: stateRes.v3_setup.direction,
+            phase: stateRes.v3_setup.phase,
+            quality_tier: stateRes.v3_setup.quality_tier
+          } : null),
+          // Additional synchronized data
+          liquidity_direction: stateRes.liquidity_zones?.bias_direction,
+          liquidity_imbalance: stateRes.liquidity_zones?.imbalance_ratio,
+          whale_buy_pressure: stateRes.whale_activity?.buy_pressure
+        };
+        setV3Data(mergedData);
+      } else {
+        setV3Data(signalRes);
+      }
+      
+      setIntelligenceState(stateRes);
       setLastUpdate(new Date());
     } catch (error) {
       console.error('Error fetching V3 signal:', error);

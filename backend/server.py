@@ -3757,6 +3757,71 @@ NEWS_CACHE_TTL = 300  # 5 minutes
 COINGLASS_CACHE_TTL = 60  # 60 seconds for CoinGlass data (prevents 429 rate limits)
 TRADE_SIGNAL_CACHE_TTL = 180  # 3 minutes - Trade signal refresh rate
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTELLIGENCE STATE CACHE - Single Source of Truth for all UI components
+# Updated by V3 engine, read by UI cards for perfect synchronization
+# ═══════════════════════════════════════════════════════════════════════════════
+intelligence_state = {
+    "last_update": None,
+    "current_price": 0,
+    # Market Regime
+    "market_regime": {
+        "regime": "UNKNOWN",
+        "regime_strength": 0,
+        "trend_score": 0,
+        "range_score": 0,
+        "compression_score": 0,
+        "expansion_score": 0,
+        "directional_bias": "NEUTRAL",
+        "suggested_setup": None
+    },
+    # Market Bias
+    "market_bias": {
+        "bias": "NEUTRAL",
+        "confidence": 50,
+        "derivatives_bias": None,
+        "whale_aligned": False
+    },
+    # Liquidity Zones (Primary Source - Zones > Magnet)
+    "liquidity_zones": {
+        "total_above": 0,
+        "total_below": 0,
+        "imbalance_ratio": 1.0,
+        "bias_direction": "NEUTRAL",
+        "zones_above": [],
+        "zones_below": [],
+        "primary_target": None
+    },
+    # Legacy Magnet (Secondary - for comparison only)
+    "liquidity_magnet": {
+        "target_direction": "NEUTRAL",
+        "magnet_score": 0,
+        "primary_level": None
+    },
+    # Energy
+    "market_energy": {
+        "energy_score": 50,
+        "compression_level": "MEDIUM",
+        "breakout_probability": "MEDIUM"
+    },
+    # Whale Activity
+    "whale_activity": {
+        "direction": None,
+        "strength": 0,
+        "buy_pressure": 50,
+        "momentum_score": 50
+    },
+    # V3 Setup Status
+    "v3_setup": {
+        "has_active_setup": False,
+        "recommended_action": "WAIT",
+        "direction": None,
+        "phase": None,
+        "quality_tier": None
+    }
+}
+INTELLIGENCE_STATE_TTL = 30  # seconds - how long to trust cached state
+
 # ============== MULTILINGUAL SYSTEM ==============
 # Supported languages: it, en, de, pl
 BACKEND_TRANSLATIONS = {
@@ -18262,6 +18327,95 @@ async def get_v3_trade_signal(
     if "active_setup" in response and response["active_setup"]:
         response["active_setup"].pop("_id", None)
     
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SYNC INTELLIGENCE STATE - Single Source of Truth for all UI components
+    # This ensures all UI cards show the SAME data as V3 engine
+    # ═══════════════════════════════════════════════════════════════════════════════
+    global intelligence_state
+    
+    # Calculate liquidity zone imbalance and direction
+    liq_imbalance_ratio = max(liquidity_above, liquidity_below) / max(min(liquidity_above, liquidity_below), 1) if (liquidity_above > 0 or liquidity_below > 0) else 1.0
+    liq_zone_direction = "BULLISH" if liquidity_above > liquidity_below * 2 else ("BEARISH" if liquidity_below > liquidity_above * 2 else "NEUTRAL")
+    
+    # If Zones show >2x imbalance, Zones override Legacy Magnet
+    final_liquidity_direction = liq_zone_direction
+    if liq_imbalance_ratio >= 2.0:
+        # Zones override Magnet
+        final_liquidity_direction = liq_zone_direction
+        logger.info(f"[Intelligence Sync] Liquidity Zones override Magnet: {liq_zone_direction} (imbalance {liq_imbalance_ratio:.1f}x)")
+    elif liquidity_magnet and liquidity_magnet.target_direction:
+        # Fallback to Magnet if zones are balanced
+        final_liquidity_direction = liquidity_magnet.target_direction
+    
+    intelligence_state["last_update"] = datetime.now(timezone.utc)
+    intelligence_state["current_price"] = current_price
+    
+    # Market Regime
+    intelligence_state["market_regime"] = {
+        "regime": market_regime.regime,
+        "regime_strength": market_regime.regime_strength,
+        "trend_score": market_regime.trend_score,
+        "range_score": market_regime.range_score,
+        "compression_score": market_regime.compression_score,
+        "expansion_score": market_regime.expansion_score,
+        "directional_bias": market_regime.directional_bias,
+        "suggested_setup": market_regime.suggested_setup
+    }
+    
+    # Market Bias
+    intelligence_state["market_bias"] = {
+        "bias": market_bias.bias if market_bias else "NEUTRAL",
+        "confidence": market_bias.confidence if market_bias else 50,
+        "derivatives_bias": market_bias.derivatives_bias if market_bias else None,
+        "whale_aligned": (whale_activity and whale_activity.direction == (
+            "BUY" if market_bias and market_bias.bias == "BULLISH" else "SELL" if market_bias and market_bias.bias == "BEARISH" else None
+        ))
+    }
+    
+    # Liquidity Zones (PRIMARY SOURCE - Zones > Magnet per new hierarchy)
+    intelligence_state["liquidity_zones"] = {
+        "total_above": liquidity_above,
+        "total_below": liquidity_below,
+        "imbalance_ratio": liq_imbalance_ratio,
+        "bias_direction": final_liquidity_direction,
+        "zones_above": [{"level": c.price, "value": c.estimated_value} for c in clusters if c.side == "above"][:5],
+        "zones_below": [{"level": c.price, "value": c.estimated_value} for c in clusters if c.side == "below"][:5],
+        "primary_target": liquidity_magnet.nearest_magnet_price if liquidity_magnet else None
+    }
+    
+    # Legacy Magnet (Secondary - only for comparison)
+    intelligence_state["liquidity_magnet"] = {
+        "target_direction": liquidity_magnet.target_direction if liquidity_magnet else "NEUTRAL",
+        "magnet_score": liquidity_magnet.magnet_score if liquidity_magnet else 0,
+        "primary_level": liquidity_magnet.nearest_magnet_price if liquidity_magnet else None
+    }
+    
+    # Energy
+    intelligence_state["market_energy"] = {
+        "energy_score": market_energy.energy_score if market_energy else 50,
+        "compression_level": market_energy.compression_level if market_energy else "MEDIUM",
+        "breakout_probability": market_energy.breakout_probability if market_energy else "MEDIUM"
+    }
+    
+    # Whale Activity (for Whale Flow Integration)
+    intelligence_state["whale_activity"] = {
+        "direction": whale_activity.direction if whale_activity else None,
+        "strength": whale_activity.strength if whale_activity else 0,
+        "buy_pressure": whale_activity.buy_pressure if whale_activity else 50,
+        "momentum_score": whale_activity.strength if whale_activity else 50  # Use strength as proxy
+    }
+    
+    # V3 Setup Status
+    intelligence_state["v3_setup"] = {
+        "has_active_setup": response.get("has_active_setup", False),
+        "recommended_action": response.get("recommended_action", "WAIT"),
+        "direction": response.get("active_setup", {}).get("direction") if response.get("active_setup") else None,
+        "phase": response.get("active_setup", {}).get("phase") if response.get("active_setup") else None,
+        "quality_tier": response.get("quality_tier")
+    }
+    
+    logger.info(f"[Intelligence Sync] State updated: Regime={market_regime.regime}, Bias={market_bias.bias if market_bias else 'NEUTRAL'}({market_bias.confidence if market_bias else 0}%), Liq={final_liquidity_direction}")
+    
     return response
 
 
@@ -18285,6 +18439,121 @@ async def get_v3_active_setups(_: bool = Depends(verify_admin_access)):
             "ready": len([s for s in setups if s["phase"] == SetupEventPhase.ENTRY_READY.value])
         }
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTELLIGENCE STATE ENDPOINT - Single Source of Truth for all UI components
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/intelligence-state")
+async def get_intelligence_state():
+    """
+    SINGLE SOURCE OF TRUTH - Returns synchronized intelligence state.
+    
+    All UI components should use this endpoint to ensure consistency.
+    Data is updated by the V3 engine every ~30 seconds.
+    
+    Hierarchy Rules:
+    - Liquidity Zones > Legacy Magnet (if zones have >2x imbalance)
+    - V3 Setup status is authoritative for Final Action
+    - Whale Flow affects Opportunity Mode caution level
+    """
+    global intelligence_state
+    
+    # Check if state is stale
+    is_stale = False
+    stale_seconds = 0
+    if intelligence_state.get("last_update"):
+        stale_seconds = (datetime.now(timezone.utc) - intelligence_state["last_update"]).seconds
+        is_stale = stale_seconds > INTELLIGENCE_STATE_TTL
+    else:
+        is_stale = True
+        stale_seconds = 999
+    
+    return {
+        "is_synchronized": not is_stale,
+        "last_update": intelligence_state["last_update"].isoformat() if intelligence_state.get("last_update") else None,
+        "stale_seconds": stale_seconds,
+        "current_price": intelligence_state["current_price"],
+        "market_regime": intelligence_state["market_regime"],
+        "market_bias": intelligence_state["market_bias"],
+        "liquidity_zones": intelligence_state["liquidity_zones"],
+        "liquidity_magnet": intelligence_state["liquidity_magnet"],
+        "market_energy": intelligence_state["market_energy"],
+        "whale_activity": intelligence_state["whale_activity"],
+        "v3_setup": intelligence_state["v3_setup"],
+        # Computed fields for UI convenience
+        "final_action": compute_final_action(intelligence_state),
+        "action_reason": compute_action_reason(intelligence_state)
+    }
+
+
+def compute_final_action(state: dict) -> str:
+    """
+    Compute final action based on V3 setup and market conditions.
+    
+    Rules:
+    - If V3 has active setup in ENTRY_READY phase → direction (LONG/SHORT)
+    - If V3 is in WAITING_FOR_RETEST → ATTENDI (waiting for retest)
+    - If no setup → ATTENDI
+    - If Whale selling heavily (< 35%) and suggesting LONG → add caution
+    """
+    v3 = state.get("v3_setup", {})
+    whale = state.get("whale_activity", {})
+    
+    if not v3.get("has_active_setup"):
+        return "ATTENDI"
+    
+    phase = v3.get("phase")
+    direction = v3.get("direction")
+    
+    # Only show direction if in ENTRY_READY or PREPARE_ENTRY phase
+    if phase == "ENTRY_READY":
+        # Check whale caution for Opportunity Mode
+        if direction == "LONG" and whale.get("buy_pressure", 50) < 35:
+            return f"{direction}_CAUTION"  # Whale selling, be careful
+        return direction
+    elif phase == "PREPARE_ENTRY":
+        return f"PREPARE_{direction}"
+    elif phase == "WAITING_FOR_RETEST":
+        return "ATTENDI"
+    else:
+        return "ATTENDI"
+
+
+def compute_action_reason(state: dict) -> str:
+    """Generate human-readable reason for the action."""
+    v3 = state.get("v3_setup", {})
+    regime = state.get("market_regime", {})
+    bias = state.get("market_bias", {})
+    whale = state.get("whale_activity", {})
+    liq = state.get("liquidity_zones", {})
+    
+    if not v3.get("has_active_setup"):
+        return "In attesa di evento 4H"
+    
+    phase = v3.get("phase")
+    direction = v3.get("direction")
+    
+    if phase == "ENTRY_READY":
+        base_reason = f"Entry {direction} confermato"
+        
+        # Add whale caution if needed
+        if direction == "LONG" and whale.get("buy_pressure", 50) < 35:
+            base_reason += f" [ATTENZIONE: Whale in vendita {whale.get('buy_pressure', 0)}%]"
+        elif direction == "SHORT" and whale.get("buy_pressure", 50) > 65:
+            base_reason += f" [ATTENZIONE: Whale in acquisto {whale.get('buy_pressure', 0)}%]"
+        
+        return base_reason
+    
+    elif phase == "PREPARE_ENTRY":
+        return f"Prepara entry {direction} - attendi conferma 5M"
+    
+    elif phase == "WAITING_FOR_RETEST":
+        return f"Setup {direction} attivo - attendi retest zona"
+    
+    else:
+        return "In attesa di evento 4H"
 
 
 @api_router.post("/v3/expire-setup/{setup_id}")

@@ -109,3 +109,36 @@ Build a professional BTC market intelligence dashboard with multi-timeframe sign
 
 ### Sidebar Updated
 - Added "Onde di Elliott" with TrendingUp icon after "Candele"
+
+---
+## Update: April 19, 2025 - V3.7 Single Source of Truth
+
+### ✅ Completed - System Synchronization
+**Problem**: Dashboard showed inconsistent data (UNKNOWN, NEUTRAL 0%, conflicts)
+
+**Solution**: Created "Intelligence State" cache as Single Source of Truth
+
+### Changes Made:
+1. **Backend - Intelligence State Cache**
+   - Global `intelligence_state` object updated by V3 engine
+   - New endpoint `/api/intelligence-state` (public)
+   - Liquidity Zones > Legacy Magnet hierarchy (if >2x imbalance)
+
+2. **Backend - Computed Final Action**
+   - `compute_final_action()` - Maps V3 phase to UI action
+   - `compute_action_reason()` - Human-readable reason with warnings
+   - Whale Flow integration: LONG_CAUTION if whale selling < 35%
+
+3. **Frontend - DecisionEngineCard**
+   - Uses `/api/intelligence-state` as primary source
+   - Falls back to original logic if state not synced
+
+4. **Frontend - V3SignalCard**  
+   - Merges intelligence-state with trade-signal
+   - Shows synchronized regime/bias values
+
+### Result:
+- Regime: UNKNOWN → **TREND**
+- Bias: NEUTRAL (0%) → **BEARISH (71%)**
+- Liquidity: Conflict → **BULLISH (122.9x)**
+- Action: Inconsistent → **LONG + Whale caution**

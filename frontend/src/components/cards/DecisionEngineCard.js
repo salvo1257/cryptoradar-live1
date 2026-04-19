@@ -31,6 +31,7 @@ export function DecisionEngineCard({ language = 'it' }) {
   const [energyData, setEnergyData] = useState(null);
   const [magnetData, setMagnetData] = useState(null);
   const [whaleData, setWhaleData] = useState(null);
+  const [intelligenceState, setIntelligenceState] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Get translations from centralized system
@@ -58,24 +59,42 @@ export function DecisionEngineCard({ language = 'it' }) {
     insufficientSignals: lang.insufficientSignals || 'Insufficient signals'
   };
 
-  // Fetch all required data
+  // Fetch all required data - using intelligence-state as Single Source of Truth
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // V3.6: Use admin headers when available for full signal access
+        // V3.7: Use intelligence-state as Single Source of Truth
         const headers = isAdmin ? getAdminHeaders() : {};
         
-        const [v3Res, energyRes, magnetRes, whaleRes] = await Promise.all([
-          fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`, { headers }).then(r => r.json()).catch(() => null),
-          fetch(`${API_URL}/api/market-energy?lang=${language}`, { headers }).then(r => r.json()).catch(() => null),
-          fetch(`${API_URL}/api/liquidity-magnet`, { headers }).then(r => r.json()).catch(() => null),
+        // Primary: Synchronized Intelligence State
+        const intelligenceRes = await fetch(`${API_URL}/api/intelligence-state`).then(r => r.json()).catch(() => null);
+        setIntelligenceState(intelligenceRes);
+        
+        // Also fetch V3 for detailed setup info (admin only)
+        const [v3Res, whaleRes] = await Promise.all([
+          isAdmin ? fetch(`${API_URL}/api/v3/trade-signal?lang=${language}`, { headers }).then(r => r.json()).catch(() => null) : null,
           fetch(`${API_URL}/api/whale-activity`, { headers }).then(r => r.json()).catch(() => null)
         ]);
         
-        setV3Data(v3Res);
-        setEnergyData(energyRes);
-        setMagnetData(magnetRes);
-        setWhaleData(whaleRes);
+        // Use intelligence state data for consistency
+        if (intelligenceRes?.is_synchronized) {
+          setEnergyData(intelligenceRes.market_energy);
+          setMagnetData({
+            target_direction: intelligenceRes.liquidity_zones?.bias_direction,
+            magnet_strength: intelligenceRes.liquidity_zones?.imbalance_ratio > 2 ? 'HIGH' : 'MEDIUM',
+            liquidity_above: intelligenceRes.liquidity_zones?.total_above,
+            liquidity_below: intelligenceRes.liquidity_zones?.total_below
+          });
+          setWhaleData({
+            direction: intelligenceRes.whale_activity?.direction,
+            buy_pressure: intelligenceRes.whale_activity?.buy_pressure,
+            momentum_score: intelligenceState?.whale_activity?.momentum_score
+          });
+        } else {
+          setWhaleData(whaleRes);
+        }
+        
+        setV3Data(v3Res || intelligenceRes?.v3_setup);
       } catch (error) {
         console.error('Decision Engine fetch error:', error);
       } finally {
@@ -89,7 +108,7 @@ export function DecisionEngineCard({ language = 'it' }) {
   }, [language, isAdmin, getAdminHeaders]);
 
   // ═══════════════════════════════════════════════════════════════════
-  // DECISION ENGINE LOGIC
+  // DECISION ENGINE LOGIC - V3.7 Single Source of Truth
   // ═══════════════════════════════════════════════════════════════════
   
   const computeDecision = () => {
@@ -99,6 +118,78 @@ export function DecisionEngineCard({ language = 'it' }) {
     let reason = '';
     let isConflict = false;
 
+    // ═══════════════════════════════════════════════════════════════════
+    // V3.7: Use Intelligence State as Single Source of Truth when available
+    // ═══════════════════════════════════════════════════════════════════
+    if (intelligenceState?.is_synchronized) {
+      // Use pre-computed values from backend
+      const syncedAction = intelligenceState.final_action;
+      const syncedReason = intelligenceState.action_reason;
+      const syncedV3 = intelligenceState.v3_setup;
+      const syncedWhale = intelligenceState.whale_activity;
+      const syncedLiq = intelligenceState.liquidity_zones;
+      const syncedRegime = intelligenceState.market_regime;
+      const syncedBias = intelligenceState.market_bias;
+      
+      // Map backend action to frontend format
+      if (syncedAction === 'LONG' || syncedAction === 'LONG_CAUTION') {
+        finalAction = 'LONG';
+        reason = syncedReason;
+        alignedSignals.push({ type: 'bullish', text: `V3 Setup LONG`, icon: TrendingUp });
+        
+        // Add whale caution warning
+        if (syncedAction === 'LONG_CAUTION') {
+          warnings.push({ 
+            type: 'warning', 
+            text: `Whale selling (${syncedWhale?.buy_pressure || 0}%) - cautela`, 
+            icon: AlertTriangle 
+          });
+        }
+      } else if (syncedAction === 'SHORT' || syncedAction === 'SHORT_CAUTION') {
+        finalAction = 'SHORT';
+        reason = syncedReason;
+        alignedSignals.push({ type: 'bearish', text: `V3 Setup SHORT`, icon: TrendingDown });
+        
+        if (syncedAction === 'SHORT_CAUTION') {
+          warnings.push({ 
+            type: 'warning', 
+            text: `Whale buying (${syncedWhale?.buy_pressure || 0}%) - cautela`, 
+            icon: AlertTriangle 
+          });
+        }
+      } else if (syncedAction?.startsWith('PREPARE_')) {
+        finalAction = syncedAction.replace('PREPARE_', '');
+        reason = syncedReason;
+        warnings.push({ type: 'info', text: 'Prepara entry - attendi conferma', icon: Activity });
+      } else {
+        finalAction = 'WAIT';
+        reason = syncedReason;
+      }
+      
+      // Add liquidity zone info (Zones > Magnet per new hierarchy)
+      if (syncedLiq?.imbalance_ratio >= 2) {
+        const liqDir = syncedLiq.bias_direction;
+        alignedSignals.push({ 
+          type: liqDir === 'BULLISH' ? 'bullish' : liqDir === 'BEARISH' ? 'bearish' : 'neutral',
+          text: `Liquidità ${liqDir} (${syncedLiq.imbalance_ratio?.toFixed(1)}x)`,
+          icon: Activity 
+        });
+      } else if (syncedLiq?.bias_direction === 'NEUTRAL') {
+        warnings.push({ type: 'warning', text: t.neutralLiquidity, icon: AlertTriangle });
+      }
+      
+      // Add regime info
+      if (syncedRegime?.regime === 'COMPRESSION') {
+        warnings.push({ type: 'warning', text: t.compression, icon: Activity });
+      }
+      
+      return { finalAction, reason, warnings, alignedSignals, isConflict: false, isWeakRR: false, hasV3Setup: syncedV3?.has_active_setup };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FALLBACK: Original logic when intelligence state is not synchronized
+    // ═══════════════════════════════════════════════════════════════════
+    
     // Extract data safely
     const regime = energyData?.regime || energyData?.market_regime || 'UNKNOWN';
     const bias = v3Data?.market_context?.bias || marketBias?.bias || 'NEUTRAL';
@@ -126,7 +217,7 @@ export function DecisionEngineCard({ language = 'it' }) {
       finalAction = v3Direction; // 'LONG' or 'SHORT'
       
       // Build reason based on phase
-      if (v3Phase === 'ENTRY_NOW') {
+      if (v3Phase === 'ENTRY_NOW' || v3Phase === 'ENTRY_READY') {
         reason = `Entry V3: ${v3Direction} (${v3QualityTier || 'SIGNAL'})`;
       } else if (v3Phase === 'PREPARE_ENTRY') {
         reason = `Prepara Entry: ${v3Direction}`;
@@ -137,7 +228,7 @@ export function DecisionEngineCard({ language = 'it' }) {
       }
       
       // Add aligned signals from V3
-      alignedSignals.push({ type: 'bullish' === v3Direction ? 'bullish' : 'bearish', 
+      alignedSignals.push({ type: v3Direction === 'LONG' ? 'bullish' : 'bearish', 
                            text: `V3 Setup ${v3Direction}`, 
                            icon: v3Direction === 'LONG' ? TrendingUp : TrendingDown });
       
