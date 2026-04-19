@@ -176,6 +176,12 @@ telegram_settings_collection = db["telegram_settings"]
 setup_events_collection = db["setup_events_v3"]  # V3 Multi-Timeframe Setup Events
 mentor_analysis_collection = db["mentor_analysis"]  # Mentor analysis cache
 
+# V4 Analytics Suite Collections
+v4_signals_collection = db["v4_signals"]  # Unified signal journal (SNIPER + HUNTER)
+v4_analytics_collection = db["v4_analytics"]  # Aggregated metrics cache
+v4_equity_curve_collection = db["v4_equity_curve"]  # Equity curve data
+v4_mentor_summaries_collection = db["v4_mentor_summaries"]  # AI-generated summaries
+
 # Import Mentor Engine (isolated module)
 from mentor_engine import get_mentor_analysis, mentor_engine
 from sentinel_engine import sentinel_scanner, Timeframe, PatternType, PATTERN_PSYCHOLOGY
@@ -873,6 +879,205 @@ class SignalOutcomeStats(BaseModel):
     # Time-based
     last_7d_win_rate: float = 0.0
     last_30d_win_rate: float = 0.0
+
+
+# ============== V4 ANALYTICS SUITE MODELS ==============
+
+class V4SignalType(str, Enum):
+    """Signal type for V4 Analytics"""
+    SNIPER = "sniper"  # V3 Normal - single entry
+    HUNTER = "hunter"  # V3 Hunter - 10-20-70 legs
+
+
+class V4SignalOutcome(str, Enum):
+    """Possible outcomes for V4 signals"""
+    PENDING = "pending"
+    WIN = "win"
+    LOSS = "loss"
+    PARTIAL = "partial"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class V4PricePoint(BaseModel):
+    """Price point for mini-chart/sparkline"""
+    timestamp: datetime
+    price: float
+    event: Optional[str] = None  # "entry", "stop_hit", "target_1", "target_2", "leg_1", "leg_2", "leg_3"
+
+
+class V4SniperSignal(BaseModel):
+    """V4 Signal record for SNIPER (V3 Normal) strategy"""
+    signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    signal_type: str = "sniper"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Direction & Setup
+    direction: str  # LONG or SHORT
+    setup_type: str  # trend_continuation, sweep_reversal, etc.
+    
+    # Entry Details
+    entry_price: float
+    entry_zone_low: float
+    entry_zone_high: float
+    entry_timestamp: Optional[datetime] = None
+    
+    # Risk Management
+    stop_loss: float
+    target_1: float
+    target_2: float
+    target_3: Optional[float] = None
+    
+    # Quality Metrics
+    quality_score: int = 0  # 0-100
+    risk_reward_ratio: float = 0.0
+    confidence: float = 0.0
+    
+    # Market Context at Signal Time
+    market_regime: str = "UNKNOWN"
+    market_bias: str = "NEUTRAL"
+    bias_confidence: float = 0.0
+    btc_price_at_signal: float = 0.0
+    
+    # Outcome Tracking
+    outcome: str = "pending"
+    outcome_timestamp: Optional[datetime] = None
+    outcome_price: Optional[float] = None
+    pnl_percent: Optional[float] = None
+    target_1_hit: bool = False
+    target_2_hit: bool = False
+    stop_hit: bool = False
+    max_favorable_excursion: Optional[float] = None  # Best price reached
+    max_adverse_excursion: Optional[float] = None  # Worst price reached
+    
+    # Price History for Mini-Chart
+    price_history: List[V4PricePoint] = []
+    
+    # Metadata
+    notes: str = ""
+    tags: List[str] = []
+
+
+class V4HunterLegRecord(BaseModel):
+    """Record of a single leg in Hunter strategy"""
+    leg_number: int
+    allocation_percent: int
+    target_price: float
+    filled_price: Optional[float] = None
+    filled_at: Optional[datetime] = None
+    status: str = "pending"  # pending, filled, cancelled
+
+
+class V4HunterSignal(BaseModel):
+    """V4 Signal record for HUNTER (10-20-70) strategy"""
+    signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    signal_type: str = "hunter"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Direction
+    direction: str  # LONG or SHORT
+    
+    # The Three Legs
+    leg_1: V4HunterLegRecord  # 10% - Structural Entry
+    leg_2: V4HunterLegRecord  # 20% - Liquidation Cluster
+    leg_3: V4HunterLegRecord  # 70% - Institutional Wall
+    
+    # Calculated Metrics (dynamic)
+    average_entry_price: float = 0.0
+    total_allocated_percent: int = 0
+    
+    # Risk Management
+    take_profit: float = 0.0
+    stop_loss: Optional[float] = None  # Only for SHORT
+    leverage: float = 1.0
+    
+    # Quality Metrics
+    quality_score: int = 0
+    hunter_confidence: str = "LOW"
+    
+    # Market Context
+    market_regime: str = "UNKNOWN"
+    market_bias: str = "NEUTRAL"
+    btc_price_at_signal: float = 0.0
+    
+    # Outcome Tracking
+    outcome: str = "pending"
+    outcome_timestamp: Optional[datetime] = None
+    final_pnl_percent: Optional[float] = None
+    legs_filled: int = 0
+    
+    # Price History for Mini-Chart
+    price_history: List[V4PricePoint] = []
+    
+    # Metadata
+    notes: str = ""
+    tags: List[str] = []
+
+
+class V4AnalyticsMetrics(BaseModel):
+    """Aggregated metrics for V4 Analytics Hub"""
+    # Overall Performance
+    total_signals: int = 0
+    total_wins: int = 0
+    total_losses: int = 0
+    win_rate: float = 0.0
+    
+    # Profit Metrics
+    total_pnl_percent: float = 0.0
+    average_pnl_percent: float = 0.0
+    best_trade_pnl: float = 0.0
+    worst_trade_pnl: float = 0.0
+    
+    # Risk Metrics
+    average_rr_ratio: float = 0.0
+    max_drawdown_percent: float = 0.0
+    profit_factor: float = 0.0  # Gross profit / Gross loss
+    
+    # By Direction
+    long_signals: int = 0
+    long_wins: int = 0
+    long_win_rate: float = 0.0
+    short_signals: int = 0
+    short_wins: int = 0
+    short_win_rate: float = 0.0
+    
+    # Time-based
+    last_7d_pnl: float = 0.0
+    last_30d_pnl: float = 0.0
+    
+    # Streaks
+    current_streak: int = 0  # Positive = wins, negative = losses
+    best_streak: int = 0
+    worst_streak: int = 0
+
+
+class V4EquityCurvePoint(BaseModel):
+    """Point on the equity curve"""
+    timestamp: datetime
+    equity: float
+    pnl_trade: float = 0.0
+    signal_id: Optional[str] = None
+    signal_type: Optional[str] = None
+
+
+class V4MentorSummary(BaseModel):
+    """AI-generated mentor summary"""
+    summary_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    period: str  # "weekly" or "monthly"
+    period_start: datetime
+    period_end: datetime
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Metrics for the period
+    metrics: V4AnalyticsMetrics
+    
+    # AI-generated content
+    summary_text: str = ""
+    key_insights: List[str] = []
+    recommendations: List[str] = []
+    
+    # Comparison
+    vs_previous_period: Optional[dict] = None
 
 
 # ============== TELEGRAM MODELS ==============
@@ -13425,6 +13630,401 @@ async def process_v3_signal(
     )
 
 
+# ============== V4 ANALYTICS SUITE ENGINE ==============
+
+async def record_v4_sniper_signal(
+    direction: str,
+    setup_type: str,
+    entry_price: float,
+    entry_zone_low: float,
+    entry_zone_high: float,
+    stop_loss: float,
+    target_1: float,
+    target_2: float,
+    quality_score: int,
+    risk_reward_ratio: float,
+    market_regime: str,
+    market_bias: str,
+    bias_confidence: float,
+    btc_price: float,
+    target_3: float = None,
+    notes: str = ""
+) -> str:
+    """Record a new SNIPER signal to V4 Analytics"""
+    signal = {
+        "signal_id": str(uuid.uuid4()),
+        "signal_type": "sniper",
+        "created_at": datetime.now(timezone.utc),
+        "direction": direction,
+        "setup_type": setup_type,
+        "entry_price": entry_price,
+        "entry_zone_low": entry_zone_low,
+        "entry_zone_high": entry_zone_high,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+        "target_2": target_2,
+        "target_3": target_3,
+        "quality_score": quality_score,
+        "risk_reward_ratio": risk_reward_ratio,
+        "confidence": quality_score,
+        "market_regime": market_regime,
+        "market_bias": market_bias,
+        "bias_confidence": bias_confidence,
+        "btc_price_at_signal": btc_price,
+        "outcome": "pending",
+        "price_history": [{"timestamp": datetime.now(timezone.utc), "price": btc_price, "event": "signal_created"}],
+        "notes": notes,
+        "tags": []
+    }
+    
+    await v4_signals_collection.insert_one(signal)
+    logger.info(f"[V4 Analytics] Recorded SNIPER signal: {signal['signal_id']} - {direction}")
+    return signal["signal_id"]
+
+
+async def record_v4_hunter_signal(
+    direction: str,
+    leg_1_price: float,
+    leg_2_price: float,
+    leg_3_price: float,
+    take_profit: float,
+    stop_loss: float,
+    quality_score: int,
+    hunter_confidence: str,
+    market_regime: str,
+    market_bias: str,
+    btc_price: float,
+    leverage: float = 1.0,
+    notes: str = ""
+) -> str:
+    """Record a new HUNTER signal to V4 Analytics"""
+    signal = {
+        "signal_id": str(uuid.uuid4()),
+        "signal_type": "hunter",
+        "created_at": datetime.now(timezone.utc),
+        "direction": direction,
+        "leg_1": {"leg_number": 1, "allocation_percent": 10, "target_price": leg_1_price, "status": "pending"},
+        "leg_2": {"leg_number": 2, "allocation_percent": 20, "target_price": leg_2_price, "status": "pending"},
+        "leg_3": {"leg_number": 3, "allocation_percent": 70, "target_price": leg_3_price, "status": "pending"},
+        "average_entry_price": leg_1_price,  # Initial estimate
+        "total_allocated_percent": 0,
+        "take_profit": take_profit,
+        "stop_loss": stop_loss,
+        "leverage": leverage,
+        "quality_score": quality_score,
+        "hunter_confidence": hunter_confidence,
+        "market_regime": market_regime,
+        "market_bias": market_bias,
+        "btc_price_at_signal": btc_price,
+        "outcome": "pending",
+        "legs_filled": 0,
+        "price_history": [{"timestamp": datetime.now(timezone.utc), "price": btc_price, "event": "signal_created"}],
+        "notes": notes,
+        "tags": []
+    }
+    
+    await v4_signals_collection.insert_one(signal)
+    logger.info(f"[V4 Analytics] Recorded HUNTER signal: {signal['signal_id']} - {direction}")
+    return signal["signal_id"]
+
+
+async def update_v4_signal_outcome(
+    signal_id: str,
+    outcome: str,
+    outcome_price: float,
+    pnl_percent: float,
+    target_1_hit: bool = False,
+    target_2_hit: bool = False,
+    stop_hit: bool = False,
+    notes: str = ""
+):
+    """Update the outcome of a V4 signal"""
+    update_data = {
+        "outcome": outcome,
+        "outcome_timestamp": datetime.now(timezone.utc),
+        "outcome_price": outcome_price,
+        "pnl_percent": pnl_percent if outcome != "pending" else None
+    }
+    
+    # Add sniper-specific fields
+    if target_1_hit is not None:
+        update_data["target_1_hit"] = target_1_hit
+    if target_2_hit is not None:
+        update_data["target_2_hit"] = target_2_hit
+    if stop_hit is not None:
+        update_data["stop_hit"] = stop_hit
+    if notes:
+        update_data["notes"] = notes
+    
+    # Add price point to history
+    await v4_signals_collection.update_one(
+        {"signal_id": signal_id},
+        {
+            "$set": update_data,
+            "$push": {
+                "price_history": {
+                    "timestamp": datetime.now(timezone.utc),
+                    "price": outcome_price,
+                    "event": f"outcome_{outcome}"
+                }
+            }
+        }
+    )
+    
+    logger.info(f"[V4 Analytics] Updated signal {signal_id}: outcome={outcome}, pnl={pnl_percent:.2f}%")
+
+
+async def get_v4_analytics_metrics(
+    signal_type: str = None,  # "sniper", "hunter", or None for all
+    days: int = 30
+) -> dict:
+    """
+    Get aggregated V4 analytics metrics using MongoDB aggregation pipeline.
+    Optimized for performance.
+    """
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    match_stage = {"created_at": {"$gte": cutoff_date}}
+    if signal_type:
+        match_stage["signal_type"] = signal_type
+    
+    pipeline = [
+        {"$match": match_stage},
+        {"$facet": {
+            "totals": [
+                {"$group": {
+                    "_id": None,
+                    "total_signals": {"$sum": 1},
+                    "total_wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "win"]}, 1, 0]}},
+                    "total_losses": {"$sum": {"$cond": [{"$eq": ["$outcome", "loss"]}, 1, 0]}},
+                    "total_pnl": {"$sum": {"$ifNull": ["$pnl_percent", 0]}},
+                    "avg_pnl": {"$avg": {"$ifNull": ["$pnl_percent", 0]}},
+                    "max_pnl": {"$max": {"$ifNull": ["$pnl_percent", 0]}},
+                    "min_pnl": {"$min": {"$ifNull": ["$pnl_percent", 0]}},
+                    "avg_rr": {"$avg": {"$ifNull": ["$risk_reward_ratio", 0]}}
+                }}
+            ],
+            "by_direction": [
+                {"$group": {
+                    "_id": "$direction",
+                    "count": {"$sum": 1},
+                    "wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "win"]}, 1, 0]}},
+                    "pnl": {"$sum": {"$ifNull": ["$pnl_percent", 0]}}
+                }}
+            ],
+            "by_type": [
+                {"$group": {
+                    "_id": "$signal_type",
+                    "count": {"$sum": 1},
+                    "wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "win"]}, 1, 0]}},
+                    "pnl": {"$sum": {"$ifNull": ["$pnl_percent", 0]}}
+                }}
+            ],
+            "recent_7d": [
+                {"$match": {"created_at": {"$gte": datetime.now(timezone.utc) - timedelta(days=7)}}},
+                {"$group": {
+                    "_id": None,
+                    "pnl": {"$sum": {"$ifNull": ["$pnl_percent", 0]}},
+                    "count": {"$sum": 1}
+                }}
+            ]
+        }}
+    ]
+    
+    result = await v4_signals_collection.aggregate(pipeline).to_list(length=1)
+    
+    if not result or not result[0]:
+        return V4AnalyticsMetrics().model_dump()
+    
+    data = result[0]
+    totals = data.get("totals", [{}])[0] if data.get("totals") else {}
+    by_direction = {d["_id"]: d for d in data.get("by_direction", [])}
+    recent_7d = data.get("recent_7d", [{}])[0] if data.get("recent_7d") else {}
+    
+    total_signals = totals.get("total_signals", 0)
+    total_wins = totals.get("total_wins", 0)
+    total_losses = totals.get("total_losses", 0)
+    
+    # Calculate derived metrics
+    win_rate = (total_wins / total_signals * 100) if total_signals > 0 else 0
+    
+    long_data = by_direction.get("LONG", {"count": 0, "wins": 0})
+    short_data = by_direction.get("SHORT", {"count": 0, "wins": 0})
+    
+    metrics = {
+        "total_signals": total_signals,
+        "total_wins": total_wins,
+        "total_losses": total_losses,
+        "win_rate": round(win_rate, 1),
+        "total_pnl_percent": round(totals.get("total_pnl", 0), 2),
+        "average_pnl_percent": round(totals.get("avg_pnl", 0), 2),
+        "best_trade_pnl": round(totals.get("max_pnl", 0), 2),
+        "worst_trade_pnl": round(totals.get("min_pnl", 0), 2),
+        "average_rr_ratio": round(totals.get("avg_rr", 0), 2),
+        "long_signals": long_data.get("count", 0),
+        "long_wins": long_data.get("wins", 0),
+        "long_win_rate": round((long_data.get("wins", 0) / long_data.get("count", 1)) * 100, 1) if long_data.get("count", 0) > 0 else 0,
+        "short_signals": short_data.get("count", 0),
+        "short_wins": short_data.get("wins", 0),
+        "short_win_rate": round((short_data.get("wins", 0) / short_data.get("count", 1)) * 100, 1) if short_data.get("count", 0) > 0 else 0,
+        "last_7d_pnl": round(recent_7d.get("pnl", 0), 2),
+        "last_30d_pnl": round(totals.get("total_pnl", 0), 2)
+    }
+    
+    return metrics
+
+
+async def get_v4_equity_curve(days: int = 30) -> List[dict]:
+    """
+    Build equity curve from V4 signals.
+    Returns list of equity points over time.
+    """
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    # Get all closed signals ordered by outcome timestamp
+    cursor = v4_signals_collection.find(
+        {
+            "created_at": {"$gte": cutoff_date},
+            "outcome": {"$in": ["win", "loss", "partial"]}
+        }
+    ).sort("outcome_timestamp", 1)
+    
+    signals = await cursor.to_list(length=1000)
+    
+    equity = 100.0  # Start with 100% base
+    curve = [{"timestamp": cutoff_date, "equity": equity, "pnl_trade": 0}]
+    
+    for signal in signals:
+        pnl = signal.get("pnl_percent", 0) or 0
+        if signal.get("signal_type") == "hunter":
+            pnl = signal.get("final_pnl_percent", 0) or 0
+        
+        equity += pnl
+        curve.append({
+            "timestamp": signal.get("outcome_timestamp", signal.get("created_at")),
+            "equity": round(equity, 2),
+            "pnl_trade": round(pnl, 2),
+            "signal_id": signal.get("signal_id"),
+            "signal_type": signal.get("signal_type")
+        })
+    
+    return curve
+
+
+async def generate_v4_mentor_summary(period: str = "weekly") -> dict:
+    """
+    Generate AI-powered mentor summary using Claude.
+    Uses Emergent LLM Key for Claude integration.
+    """
+    from emergentintegrations.llm.chat import chat, Message, Model
+    
+    # Determine period
+    if period == "weekly":
+        days = 7
+        period_label = "settimana"
+    else:
+        days = 30
+        period_label = "mese"
+    
+    # Get metrics for the period
+    metrics = await get_v4_analytics_metrics(days=days)
+    
+    # Get recent signals for context
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    recent_signals = await v4_signals_collection.find(
+        {"created_at": {"$gte": cutoff_date}}
+    ).sort("created_at", -1).limit(20).to_list(length=20)
+    
+    # Build prompt
+    prompt = f"""Sei il Radar Mentor, un analista di trading professionale per CryptoRadar.
+    
+Analizza le performance dell'ultima {period_label} e fornisci un riassunto in italiano.
+
+METRICHE:
+- Segnali totali: {metrics['total_signals']}
+- Win rate: {metrics['win_rate']}%
+- PnL totale: {metrics['total_pnl_percent']:.2f}%
+- Miglior trade: {metrics['best_trade_pnl']:.2f}%
+- Peggior trade: {metrics['worst_trade_pnl']:.2f}%
+- R:R medio: {metrics['average_rr_ratio']:.2f}
+
+LONG: {metrics['long_signals']} segnali, {metrics['long_win_rate']:.1f}% win rate
+SHORT: {metrics['short_signals']} segnali, {metrics['short_win_rate']:.1f}% win rate
+
+Segnali recenti: {len(recent_signals)}
+
+Fornisci:
+1. Un riassunto di 2-3 frasi sulle performance generali
+2. 3 insight chiave (punti di forza o debolezza)
+3. 2-3 raccomandazioni per migliorare
+
+Rispondi in formato JSON:
+{{
+  "summary": "...",
+  "insights": ["...", "...", "..."],
+  "recommendations": ["...", "...", "..."]
+}}"""
+
+    try:
+        # Get Emergent LLM Key
+        emergent_key = os.environ.get("EMERGENT_LLM_KEY", "")
+        
+        response = await chat(
+            api_key=emergent_key,
+            messages=[Message(role="user", content=prompt)],
+            model=Model.CLAUDE_SONNET
+        )
+        
+        # Parse response
+        import json
+        response_text = response.content.strip()
+        
+        # Extract JSON from response
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        parsed = json.loads(response_text)
+        
+        summary = {
+            "summary_id": str(uuid.uuid4()),
+            "period": period,
+            "period_start": cutoff_date,
+            "period_end": datetime.now(timezone.utc),
+            "generated_at": datetime.now(timezone.utc),
+            "metrics": metrics,
+            "summary_text": parsed.get("summary", ""),
+            "key_insights": parsed.get("insights", []),
+            "recommendations": parsed.get("recommendations", [])
+        }
+        
+        # Store summary
+        await v4_mentor_summaries_collection.insert_one(summary)
+        
+        logger.info(f"[V4 Analytics] Generated {period} mentor summary")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"[V4 Analytics] Error generating mentor summary: {e}")
+        # Return basic summary without AI
+        return {
+            "summary_id": str(uuid.uuid4()),
+            "period": period,
+            "period_start": cutoff_date,
+            "period_end": datetime.now(timezone.utc),
+            "generated_at": datetime.now(timezone.utc),
+            "metrics": metrics,
+            "summary_text": f"Performance {period_label}: {metrics['total_signals']} segnali, {metrics['win_rate']:.1f}% win rate, {metrics['total_pnl_percent']:.2f}% PnL",
+            "key_insights": [
+                f"Win rate complessivo: {metrics['win_rate']:.1f}%",
+                f"LONG performance: {metrics['long_win_rate']:.1f}% win rate",
+                f"SHORT performance: {metrics['short_win_rate']:.1f}% win rate"
+            ],
+            "recommendations": ["Continua a monitorare le performance", "Analizza i trade perdenti per pattern comuni"]
+        }
+
+
 # ============== V3 HUNTER ENGINE - THE 10-20-70 PREDATOR ==============
 
 # Hunter Engine Configuration
@@ -19312,6 +19912,446 @@ async def get_hunter_deals(_: bool = Depends(verify_admin_access)):
         "completed_count": len(completed),
         "active_deals": active,
         "completed_deals": completed
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V4 ANALYTICS SUITE ENDPOINTS - Signal Journal, Analytics Hub, Strategy Lab
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/v4/signals")
+async def get_v4_signals(
+    signal_type: str = Query(default=None, description="Filter by type: sniper, hunter"),
+    outcome: str = Query(default=None, description="Filter by outcome: pending, win, loss"),
+    direction: str = Query(default=None, description="Filter by direction: LONG, SHORT"),
+    days: int = Query(default=30, description="Days to look back"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Signal Journal - Get all signals with filtering and pagination.
+    Returns Deal Cards data for SNIPER and HUNTER signals.
+    """
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    query = {"created_at": {"$gte": cutoff_date}}
+    if signal_type:
+        query["signal_type"] = signal_type
+    if outcome:
+        query["outcome"] = outcome
+    if direction:
+        query["direction"] = direction
+    
+    # Count total
+    total_count = await v4_signals_collection.count_documents(query)
+    
+    # Fetch with pagination
+    skip = (page - 1) * page_size
+    cursor = v4_signals_collection.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(page_size)
+    signals = await cursor.to_list(length=page_size)
+    
+    # Convert datetime to ISO strings for JSON serialization
+    for signal in signals:
+        for key, value in signal.items():
+            if isinstance(value, datetime):
+                signal[key] = value.isoformat()
+            elif key == "price_history" and isinstance(value, list):
+                for point in value:
+                    if "timestamp" in point and isinstance(point["timestamp"], datetime):
+                        point["timestamp"] = point["timestamp"].isoformat()
+            elif key in ["leg_1", "leg_2", "leg_3"] and isinstance(value, dict):
+                for lk, lv in value.items():
+                    if isinstance(lv, datetime):
+                        value[lk] = lv.isoformat()
+    
+    return {
+        "signals": signals,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 0
+    }
+
+
+@api_router.post("/v4/signals/record-sniper")
+async def record_sniper_signal(
+    direction: str = Query(..., description="LONG or SHORT"),
+    entry_price: float = Query(...),
+    stop_loss: float = Query(...),
+    target_1: float = Query(...),
+    target_2: float = Query(...),
+    quality_score: int = Query(default=70),
+    setup_type: str = Query(default="manual"),
+    notes: str = Query(default=""),
+    _: bool = Depends(verify_admin_access)
+):
+    """Record a new SNIPER signal manually"""
+    ticker = await fetch_kraken_ticker()
+    current_price = ticker.get("price", entry_price) if ticker else entry_price
+    
+    # Calculate R:R
+    risk = abs(entry_price - stop_loss)
+    reward = abs(target_1 - entry_price)
+    rr = reward / risk if risk > 0 else 0
+    
+    signal_id = await record_v4_sniper_signal(
+        direction=direction,
+        setup_type=setup_type,
+        entry_price=entry_price,
+        entry_zone_low=entry_price * 0.995,
+        entry_zone_high=entry_price * 1.005,
+        stop_loss=stop_loss,
+        target_1=target_1,
+        target_2=target_2,
+        quality_score=quality_score,
+        risk_reward_ratio=rr,
+        market_regime="MANUAL",
+        market_bias=direction,
+        bias_confidence=quality_score,
+        btc_price=current_price,
+        notes=notes
+    )
+    
+    return {"success": True, "signal_id": signal_id}
+
+
+@api_router.post("/v4/signals/record-hunter")
+async def record_hunter_signal(
+    direction: str = Query(..., description="LONG or SHORT"),
+    leg_1_price: float = Query(...),
+    leg_2_price: float = Query(...),
+    leg_3_price: float = Query(...),
+    take_profit: float = Query(...),
+    stop_loss: float = Query(default=None),
+    quality_score: int = Query(default=70),
+    notes: str = Query(default=""),
+    _: bool = Depends(verify_admin_access)
+):
+    """Record a new HUNTER signal manually"""
+    ticker = await fetch_kraken_ticker()
+    current_price = ticker.get("price", leg_1_price) if ticker else leg_1_price
+    
+    confidence = "HIGH" if quality_score >= 70 else "MEDIUM" if quality_score >= 50 else "LOW"
+    
+    signal_id = await record_v4_hunter_signal(
+        direction=direction,
+        leg_1_price=leg_1_price,
+        leg_2_price=leg_2_price,
+        leg_3_price=leg_3_price,
+        take_profit=take_profit,
+        stop_loss=stop_loss,
+        quality_score=quality_score,
+        hunter_confidence=confidence,
+        market_regime="MANUAL",
+        market_bias=direction,
+        btc_price=current_price,
+        notes=notes
+    )
+    
+    return {"success": True, "signal_id": signal_id}
+
+
+@api_router.patch("/v4/signals/{signal_id}/outcome")
+async def update_signal_outcome(
+    signal_id: str,
+    outcome: str = Query(..., description="win, loss, partial, expired, cancelled"),
+    outcome_price: float = Query(...),
+    pnl_percent: float = Query(default=0),
+    target_1_hit: bool = Query(default=False),
+    target_2_hit: bool = Query(default=False),
+    stop_hit: bool = Query(default=False),
+    notes: str = Query(default=""),
+    _: bool = Depends(verify_admin_access)
+):
+    """Update the outcome of a V4 signal"""
+    await update_v4_signal_outcome(
+        signal_id=signal_id,
+        outcome=outcome,
+        outcome_price=outcome_price,
+        pnl_percent=pnl_percent,
+        target_1_hit=target_1_hit,
+        target_2_hit=target_2_hit,
+        stop_hit=stop_hit,
+        notes=notes
+    )
+    
+    return {"success": True, "signal_id": signal_id, "outcome": outcome}
+
+
+@api_router.get("/v4/analytics/metrics")
+async def get_analytics_metrics(
+    signal_type: str = Query(default=None, description="sniper, hunter, or all"),
+    days: int = Query(default=30),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Analytics Hub - Get aggregated performance metrics.
+    Uses MongoDB aggregation pipeline for optimal performance.
+    """
+    metrics = await get_v4_analytics_metrics(signal_type=signal_type, days=days)
+    return metrics
+
+
+@api_router.get("/v4/analytics/equity-curve")
+async def get_equity_curve_endpoint(
+    days: int = Query(default=30),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Analytics - Get equity curve data for visualization.
+    Returns points showing account growth over time.
+    """
+    curve = await get_v4_equity_curve(days=days)
+    
+    # Convert datetimes for JSON
+    for point in curve:
+        if "timestamp" in point and isinstance(point["timestamp"], datetime):
+            point["timestamp"] = point["timestamp"].isoformat()
+    
+    return {"equity_curve": curve}
+
+
+@api_router.get("/v4/analytics/mentor-summary")
+async def get_mentor_summary(
+    period: str = Query(default="weekly", description="weekly or monthly"),
+    force_refresh: bool = Query(default=False),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Analytics - Get AI-generated mentor summary.
+    Uses Claude to analyze performance and provide insights.
+    """
+    # Check for existing recent summary
+    if not force_refresh:
+        if period == "weekly":
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)  # Cache for 24h
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=3)  # Cache for 3 days
+        
+        existing = await v4_mentor_summaries_collection.find_one(
+            {"period": period, "generated_at": {"$gte": cutoff}},
+            {"_id": 0}
+        )
+        
+        if existing:
+            # Convert datetimes
+            for key, value in existing.items():
+                if isinstance(value, datetime):
+                    existing[key] = value.isoformat()
+            return existing
+    
+    # Generate new summary
+    summary = await generate_v4_mentor_summary(period=period)
+    
+    # Convert datetimes
+    for key, value in summary.items():
+        if isinstance(value, datetime):
+            summary[key] = value.isoformat()
+    
+    return summary
+
+
+@api_router.get("/v4/strategy-lab/historical-data")
+async def get_historical_data_for_backtest(
+    days: int = Query(default=90),
+    interval: str = Query(default="4h", description="1h, 4h, 1d"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Strategy Lab - Fetch historical candle data for backtesting.
+    Returns 90 days of data by default.
+    """
+    # Map interval to minutes for Kraken API
+    interval_map = {"1h": 60, "4h": 240, "1d": 1440}
+    interval_minutes = interval_map.get(interval, 240)
+    
+    try:
+        candles = await fetch_kraken_ohlc(interval_minutes)
+        
+        if candles:
+            # Filter to requested days
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            filtered = []
+            for candle in candles:
+                # Note: Kraken returns 'time' not 'timestamp'
+                candle_timestamp = candle.get("time") or candle.get("timestamp", 0)
+                candle_time = datetime.fromtimestamp(candle_timestamp, tz=timezone.utc)
+                if candle_time >= cutoff:
+                    filtered.append({
+                        "timestamp": candle_timestamp,
+                        "open": candle["open"],
+                        "high": candle["high"],
+                        "low": candle["low"],
+                        "close": candle["close"],
+                        "volume": candle.get("volume", 0)
+                    })
+            
+            return {
+                "candles": filtered,
+                "count": len(filtered),
+                "interval": interval,
+                "days": days
+            }
+        
+        return {"candles": [], "count": 0, "interval": interval, "days": days}
+        
+    except Exception as e:
+        logger.error(f"[V4 Strategy Lab] Error fetching historical data: {e}")
+        return {"error": str(e), "candles": [], "count": 0}
+
+
+@api_router.post("/v4/strategy-lab/simulate")
+async def simulate_strategy(
+    strategy: str = Query(..., description="sniper or hunter"),
+    direction: str = Query(..., description="LONG or SHORT"),
+    entry_price: float = Query(...),
+    stop_loss: float = Query(...),
+    target_1: float = Query(...),
+    target_2: float = Query(default=None),
+    leg_2_price: float = Query(default=None),
+    leg_3_price: float = Query(default=None),
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V4 Strategy Lab - Simulate a strategy on historical data.
+    Returns timeline of events and final outcome.
+    """
+    # Fetch historical data
+    candles = await fetch_kraken_ohlc(240)  # 4H candles
+    
+    if not candles:
+        return {"error": "Cannot fetch historical data"}
+    
+    # Simulation logic
+    events = []
+    outcome = "pending"
+    final_price = None
+    pnl = 0
+    
+    # Find entry, stop, and target hits
+    entry_hit = False
+    stop_hit = False
+    target_1_hit = False
+    target_2_hit = False
+    
+    for candle in candles[-200:]:  # Last 200 candles for simulation
+        candle_time = datetime.fromtimestamp(candle["timestamp"], tz=timezone.utc)
+        high = candle["high"]
+        low = candle["low"]
+        close = candle["close"]
+        
+        if not entry_hit:
+            # Check for entry
+            if direction == "LONG" and low <= entry_price <= high:
+                entry_hit = True
+                events.append({
+                    "timestamp": candle_time.isoformat(),
+                    "type": "entry",
+                    "price": entry_price,
+                    "label": "Entry Eseguito"
+                })
+            elif direction == "SHORT" and low <= entry_price <= high:
+                entry_hit = True
+                events.append({
+                    "timestamp": candle_time.isoformat(),
+                    "type": "entry",
+                    "price": entry_price,
+                    "label": "Entry Eseguito"
+                })
+        elif entry_hit and not stop_hit and not target_1_hit:
+            # Check for stop or target
+            if direction == "LONG":
+                if low <= stop_loss:
+                    stop_hit = True
+                    outcome = "loss"
+                    final_price = stop_loss
+                    pnl = ((stop_loss - entry_price) / entry_price) * 100
+                    events.append({
+                        "timestamp": candle_time.isoformat(),
+                        "type": "stop_hit",
+                        "price": stop_loss,
+                        "label": "Stop Loss"
+                    })
+                elif high >= target_1:
+                    target_1_hit = True
+                    events.append({
+                        "timestamp": candle_time.isoformat(),
+                        "type": "target_1",
+                        "price": target_1,
+                        "label": "Target 1"
+                    })
+                    if target_2 and high >= target_2:
+                        target_2_hit = True
+                        outcome = "win"
+                        final_price = target_2
+                        pnl = ((target_2 - entry_price) / entry_price) * 100
+                        events.append({
+                            "timestamp": candle_time.isoformat(),
+                            "type": "target_2",
+                            "price": target_2,
+                            "label": "Target 2"
+                        })
+                    else:
+                        outcome = "partial"
+                        final_price = target_1
+                        pnl = ((target_1 - entry_price) / entry_price) * 100
+            else:  # SHORT
+                if high >= stop_loss:
+                    stop_hit = True
+                    outcome = "loss"
+                    final_price = stop_loss
+                    pnl = ((entry_price - stop_loss) / entry_price) * 100
+                    events.append({
+                        "timestamp": candle_time.isoformat(),
+                        "type": "stop_hit",
+                        "price": stop_loss,
+                        "label": "Stop Loss"
+                    })
+                elif low <= target_1:
+                    target_1_hit = True
+                    events.append({
+                        "timestamp": candle_time.isoformat(),
+                        "type": "target_1",
+                        "price": target_1,
+                        "label": "Target 1"
+                    })
+                    if target_2 and low <= target_2:
+                        target_2_hit = True
+                        outcome = "win"
+                        final_price = target_2
+                        pnl = ((entry_price - target_2) / entry_price) * 100
+                        events.append({
+                            "timestamp": candle_time.isoformat(),
+                            "type": "target_2",
+                            "price": target_2,
+                            "label": "Target 2"
+                        })
+                    else:
+                        outcome = "partial"
+                        final_price = target_1
+                        pnl = ((entry_price - target_1) / entry_price) * 100
+        
+        if outcome not in ["pending"]:
+            break
+    
+    return {
+        "strategy": strategy,
+        "direction": direction,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "target_1": target_1,
+        "target_2": target_2,
+        "events": events,
+        "outcome": outcome,
+        "final_price": final_price,
+        "pnl_percent": round(pnl, 2),
+        "entry_hit": entry_hit,
+        "target_1_hit": target_1_hit,
+        "target_2_hit": target_2_hit,
+        "stop_hit": stop_hit
     }
 
 

@@ -11,3 +11,6 @@ export { AlertHistoryPage } from './AlertHistoryPage';
 export { NotesPage } from './NotesPage';
 export { SettingsPage } from './SettingsPage';
 export { BacktestPage } from './BacktestPage';
+export { default as SignalJournalV4Page } from './SignalJournalV4Page';
+export { default as AnalyticsHubV4Page } from './AnalyticsHubV4Page';
+export { default as StrategyLabV4Page } from './StrategyLabV4Page';

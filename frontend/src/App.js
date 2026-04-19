@@ -21,6 +21,9 @@ import {
   NotesPage,
   SettingsPage,
   BacktestPage,
+  SignalJournalV4Page,
+  AnalyticsHubV4Page,
+  StrategyLabV4Page,
 } from "./components/pages";
 import ManualPage from "./components/pages/ManualPage";
 import ReliabilityAnalyticsPage from "./components/pages/ReliabilityAnalyticsPage";
@@ -92,6 +95,9 @@ function App() {
               
               {/* ADMIN-ONLY ROUTES */}
               <Route path="/v3-hunter" element={<AdminRoute><V3HunterPage /></AdminRoute>} />
+              <Route path="/signal-journal" element={<AdminRoute><SignalJournalV4Page /></AdminRoute>} />
+              <Route path="/analytics-hub" element={<AdminRoute><AnalyticsHubV4Page /></AdminRoute>} />
+              <Route path="/strategy-lab" element={<AdminRoute><StrategyLabV4Page /></AdminRoute>} />
               <Route path="/alerts" element={<AdminRoute><AlertsPage /></AdminRoute>} />
               <Route path="/alert-history" element={<AdminRoute><AlertHistoryPage /></AdminRoute>} />
               <Route path="/backtest" element={<AdminRoute><BacktestPage /></AdminRoute>} />

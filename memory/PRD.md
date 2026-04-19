@@ -1,18 +1,52 @@
-# CryptoRadar v3.6.2 - BTC Market Intelligence Dashboard
+# CryptoRadar v4.0 - BTC Market Intelligence Dashboard
 
 ## Original Problem Statement
 Build a professional BTC market intelligence dashboard with multi-timeframe signal engine, pattern detection, and AI-powered insights.
 
 ## Core Requirements
-1. **V3 Multi-Timeframe Signal Engine** - Primary trading logic
-2. **The Sentinel** - Autonomous pattern detection with Elliott Wave & Fractals
-3. **Manual Anchor Mode** - On-demand pattern drawing
-4. **Radar Mentor AI** - Educational trading insights
-5. **Liquidity Zone Engine** - Liquidation heatmap and magnet detection
+1. **V3 Multi-Timeframe Signal Engine (SNIPER)** - Primary trading logic with single entry
+2. **V3 Hunter Engine (10-20-70)** - Stop-loss hunting strategy with layered capital allocation
+3. **The Sentinel** - Autonomous pattern detection with Elliott Wave & Fractals
+4. **Manual Anchor Mode** - On-demand pattern drawing
+5. **Radar Mentor AI** - Educational trading insights
+6. **Liquidity Zone Engine** - Liquidation heatmap and magnet detection
+7. **V4 Analytics Suite** - Signal Journal, Analytics Hub, Strategy Lab
 
 ## What's Been Implemented
 
-### ✅ Completed - V3.6 Opportunity Mode (April 18, 2025)
+### ✅ Completed - V4 Analytics Suite (April 19, 2025)
+Complete reconstruction of History/Backtest modules:
+
+**Signal Journal V4** (replaces old Storico Segnali):
+- Dual view tabs: SNIPER / HUNTER
+- Interactive Deal Cards with mini-charts (sparklines)
+- Advanced filtering: outcome, direction
+- CSV Export functionality
+- Premium neon color scheme
+
+**Analytics Hub V4** (new unified metrics center):
+- Aggregated metrics: Total Signals, Win Rate, P&L, R:R
+- Direction-specific performance (LONG/SHORT)
+- Equity Curve visualization
+- Mentor AI Summary with Claude integration (Emergent LLM Key)
+- Tabs: COMBINATO / SNIPER / HUNTER
+
+**Strategy Lab V4** (replaces old Backtest):
+- Static Timeline Replay with event visualization
+- 90 days historical data support (4H candles)
+- SNIPER and HUNTER strategy simulation
+- Auto-filled price inputs from current market
+- Outcome tracking with PnL calculation
+
+**Backend V4 Schema**:
+- `v4_signals` collection (MongoDB)
+- `v4_analytics` collection
+- `v4_equity_curve` collection
+- `v4_mentor_summaries` collection
+- Optimized MongoDB aggregation pipelines
+
+### ✅ Completed - V3 HUNTER Engine (April 19, 2025)
+Professional stop-loss hunting strategy:
 - **Liquidity Lead Logic**: Override neutral bias when liquidity imbalance > 2x
 - **Bias Sensitivity**: Lowered threshold from 70% to 55%
 - **Removed Hard Blocks**: NEUTRAL liquidity and COMPRESSION regime now warnings, not blocks

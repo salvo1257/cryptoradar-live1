@@ -18,7 +18,9 @@ import {
   FlaskConical,
   Lock,
   TrendingUp,
-  Crosshair
+  Crosshair,
+  BookMarked,
+  PieChart
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAccess } from '../contexts/AccessContext';
@@ -40,10 +42,10 @@ const publicNavItems = [
 // ADMIN-ONLY items - require authentication
 const adminNavItems = [
   { path: '/v3-hunter', icon: Crosshair, label: 'v3Hunter' },
+  { path: '/signal-journal', icon: BookMarked, label: 'signalJournal' },
+  { path: '/analytics-hub', icon: PieChart, label: 'analyticsHub' },
+  { path: '/strategy-lab', icon: FlaskConical, label: 'strategyLab' },
   { path: '/alerts', icon: Bell, label: 'alerts' },
-  { path: '/alert-history', icon: History, label: 'alertHistory' },
-  { path: '/backtest', icon: FlaskConical, label: 'backtest' },
-  { path: '/reliability', icon: BarChart3, label: 'reliabilityAnalytics' },
   { path: '/notes', icon: StickyNote, label: 'notes' },
   { path: '/settings', icon: Settings, label: 'settings' },
 ];
