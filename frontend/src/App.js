@@ -24,6 +24,7 @@ import {
 } from "./components/pages";
 import ManualPage from "./components/pages/ManualPage";
 import ReliabilityAnalyticsPage from "./components/pages/ReliabilityAnalyticsPage";
+import V3HunterPage from "./components/pages/V3HunterPage";
 
 // Protected route wrapper - redirects to dashboard if not admin
 function AdminRoute({ children }) {
@@ -90,6 +91,7 @@ function App() {
               <Route path="/manual" element={<ManualPage />} />
               
               {/* ADMIN-ONLY ROUTES */}
+              <Route path="/v3-hunter" element={<AdminRoute><V3HunterPage /></AdminRoute>} />
               <Route path="/alerts" element={<AdminRoute><AlertsPage /></AdminRoute>} />
               <Route path="/alert-history" element={<AdminRoute><AlertHistoryPage /></AdminRoute>} />
               <Route path="/backtest" element={<AdminRoute><BacktestPage /></AdminRoute>} />

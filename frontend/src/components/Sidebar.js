@@ -17,7 +17,8 @@ import {
   BarChart3,
   FlaskConical,
   Lock,
-  TrendingUp
+  TrendingUp,
+  Crosshair
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAccess } from '../contexts/AccessContext';
@@ -38,6 +39,7 @@ const publicNavItems = [
 
 // ADMIN-ONLY items - require authentication
 const adminNavItems = [
+  { path: '/v3-hunter', icon: Crosshair, label: 'v3Hunter' },
   { path: '/alerts', icon: Bell, label: 'alerts' },
   { path: '/alert-history', icon: History, label: 'alertHistory' },
   { path: '/backtest', icon: FlaskConical, label: 'backtest' },

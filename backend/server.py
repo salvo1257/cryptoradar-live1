@@ -689,6 +689,113 @@ class SignalV3(BaseModel):
     data_freshness: Optional[Dict[str, Any]] = None
 
 
+# ============== V3 HUNTER ENGINE MODELS (10-20-70) ==============
+
+class HunterLeg(BaseModel):
+    """Single leg in the 10-20-70 capital allocation strategy"""
+    leg_number: int  # 1, 2, or 3
+    allocation_percent: int  # 10, 20, or 70
+    price: float
+    status: str = "PENDING"  # PENDING, FILLED, CANCELLED
+    order_type: str = "LIMIT"  # MARKET for leg 1, LIMIT for leg 2/3
+    reason: str = ""  # Why this level was chosen
+    distance_from_current_pct: float = 0.0
+    liquidity_value_usd: float = 0.0  # Liquidation cluster size at this level
+    filled_at: Optional[datetime] = None
+    filled_price: Optional[float] = None
+
+
+class HunterDeal(BaseModel):
+    """
+    V3 HUNTER - The 10-20-70 Predator Deal Structure
+    
+    A complete layered deal for stop-loss hunting strategy.
+    Designed to accumulate position as price hunts retail stops.
+    """
+    deal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Direction
+    direction: str  # LONG or SHORT
+    
+    # The Three Legs
+    leg_1: HunterLeg  # 10% - Initial entry on 4H structure
+    leg_2: HunterLeg  # 20% - First liquidation cluster
+    leg_3: HunterLeg  # 70% - Primary Institutional Wall
+    
+    # Dynamic Calculations
+    current_price: float
+    average_entry_price: float = 0.0  # Weighted average of filled legs
+    total_allocated_percent: int = 0  # Sum of filled legs
+    
+    # Risk Management
+    leverage: float = 1.0  # Default 1x
+    stop_loss: Optional[float] = None  # For shorts: 0.5% above leg 3
+    liquidation_price: Optional[float] = None  # Our position liquidation
+    
+    # Take Profit (Dynamic)
+    take_profit: float = 0.0  # Calculated to ensure profit from average entry
+    take_profit_percent: float = 0.0  # % gain from average entry
+    min_rr_ratio: float = 1.5  # Minimum R:R to maintain
+    
+    # Status
+    deal_status: str = "PLANNING"  # PLANNING, LEG_1_ACTIVE, LEG_2_ACTIVE, LEG_3_ACTIVE, FULLY_LOADED, CLOSED
+    deal_phase: str = "INITIAL"  # INITIAL, ACCUMULATING, LOADED, PROFIT_TAKING, STOPPED
+    
+    # Market Context
+    market_regime: str = "UNKNOWN"
+    bias_direction: str = "NEUTRAL"
+    bias_confidence: float = 0.0
+    
+    # Quality & Confidence
+    setup_quality: int = 0  # 0-100
+    hunter_confidence: str = "LOW"  # LOW, MEDIUM, HIGH, EXTREME
+    
+    # Outcome Tracking
+    outcome: str = "PENDING"  # PENDING, WIN, LOSS, PARTIAL, CANCELLED
+    pnl_percent: Optional[float] = None
+    closed_at: Optional[datetime] = None
+
+
+class V3HunterSignal(BaseModel):
+    """
+    V3 HUNTER Engine Response - The 10-20-70 Predator
+    
+    Separate from V3 Normal (Sniper). Focuses on accumulating
+    positions at liquidation clusters for stop-hunt plays.
+    """
+    engine_version: str = "v3-hunter-1.0"
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    # Current Market State
+    current_price: float
+    market_regime: str
+    market_bias: str
+    bias_confidence: float
+    
+    # Active Hunt
+    has_active_hunt: bool = False
+    active_deal: Optional[HunterDeal] = None
+    
+    # Identified Targets
+    liquidation_clusters: List[Dict[str, Any]] = []  # Ordered by strength
+    primary_wall_above: Optional[Dict[str, Any]] = None  # Biggest cluster above
+    primary_wall_below: Optional[Dict[str, Any]] = None  # Biggest cluster below
+    
+    # Engine Status
+    recommended_action: str = "WAIT"  # WAIT, INITIATE_LONG_HUNT, INITIATE_SHORT_HUNT, MONITOR_HUNT
+    action_reason: str = ""
+    
+    # CoinGlass Integration Status
+    coinglass_connected: bool = False
+    liquidation_data_fresh: bool = False
+    last_liquidation_update: Optional[datetime] = None
+    
+    # Deal History
+    active_deals_count: int = 0
+    completed_deals_today: int = 0
+
+
 class SignalHistoryEntry(BaseModel):
     """Stored trade signal for history tracking"""
     signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -13318,6 +13425,507 @@ async def process_v3_signal(
     )
 
 
+# ============== V3 HUNTER ENGINE - THE 10-20-70 PREDATOR ==============
+
+# Hunter Engine Configuration
+HUNTER_DEFAULT_LEVERAGE = 1.0
+HUNTER_SHORT_STOP_BUFFER_PCT = 0.5  # 0.5% above 70% wall for shorts
+HUNTER_MIN_CLUSTER_VALUE_USD = 100000  # Min $100k for a valid cluster (lowered for orderbook-only mode)
+HUNTER_LEG2_DISTANCE_PCT = (0.5, 2.0)  # 0.5% - 2.0% from current
+HUNTER_LEG3_DISTANCE_PCT = (2.0, 5.0)  # 2.0% - 5.0% from current (institutional wall)
+
+# Active Hunter Deals Cache
+v3_hunter_deals: Dict[str, HunterDeal] = {}
+
+
+def identify_liquidation_clusters_for_hunter(
+    current_price: float,
+    direction: str,  # LONG or SHORT
+    liquidity_clusters: List[Dict] = None,
+    liquidation_heatmap: Dict = None,
+    aggregated_orderbook: Dict = None
+) -> Dict[str, Any]:
+    """
+    Identify the best liquidation clusters for 10-20-70 leg placement.
+    
+    For LONG:
+      - Leg 2: First strong cluster BELOW current price (retail stops)
+      - Leg 3: Primary Wall BELOW (biggest cluster = institutional)
+    
+    For SHORT:
+      - Leg 2: First strong cluster ABOVE current price
+      - Leg 3: Primary Wall ABOVE
+    
+    Returns dict with leg2_cluster, leg3_wall, all_clusters
+    """
+    clusters_in_direction = []
+    
+    # Combine all liquidation sources
+    all_sources = []
+    
+    # 1. From CoinGlass heatmap (most reliable)
+    if liquidation_heatmap and liquidation_heatmap.get("liquidation_levels"):
+        for level in liquidation_heatmap["liquidation_levels"]:
+            all_sources.append({
+                "price": level["price"],
+                "value_usd": level.get("value", 0),
+                "source": "coinglass_heatmap",
+                "reliability": 1.0
+            })
+    
+    # 2. From liquidity clusters (orderbook analysis)
+    if liquidity_clusters:
+        for cluster in liquidity_clusters:
+            price = cluster.get("price", 0)
+            value = cluster.get("value_usd", 0) or cluster.get("estimated_value", 0)
+            if price > 0 and value > 0:
+                all_sources.append({
+                    "price": price,
+                    "value_usd": value,
+                    "source": cluster.get("source", "orderbook"),
+                    "reliability": 0.7
+                })
+    
+    # 3. From orderbook walls
+    if aggregated_orderbook:
+        for bid in aggregated_orderbook.get("bids", [])[:50]:
+            price = float(bid[0])
+            volume_btc = float(bid[1])
+            value_usd = price * volume_btc
+            if value_usd >= HUNTER_MIN_CLUSTER_VALUE_USD * 0.5:
+                all_sources.append({
+                    "price": price,
+                    "value_usd": value_usd,
+                    "source": "orderbook_bid",
+                    "reliability": 0.5
+                })
+        
+        for ask in aggregated_orderbook.get("asks", [])[:50]:
+            price = float(ask[0])
+            volume_btc = float(ask[1])
+            value_usd = price * volume_btc
+            if value_usd >= HUNTER_MIN_CLUSTER_VALUE_USD * 0.5:
+                all_sources.append({
+                    "price": price,
+                    "value_usd": value_usd,
+                    "source": "orderbook_ask",
+                    "reliability": 0.5
+                })
+    
+    # Filter by direction
+    for source in all_sources:
+        price = source["price"]
+        distance_pct = abs((price - current_price) / current_price) * 100
+        
+        # Skip clusters too close (< 0.3%) or too far (> 6%)
+        if distance_pct < 0.3 or distance_pct > 6.0:
+            continue
+        
+        # For LONG: we need clusters BELOW current price (where retail longs have stops)
+        # For SHORT: we need clusters ABOVE current price (where retail shorts have stops)
+        if direction == "LONG" and price < current_price:
+            source["distance_pct"] = distance_pct
+            source["is_target_zone"] = True
+            clusters_in_direction.append(source)
+        elif direction == "SHORT" and price > current_price:
+            source["distance_pct"] = distance_pct
+            source["is_target_zone"] = True
+            clusters_in_direction.append(source)
+    
+    # Sort by value (descending) for wall identification
+    clusters_in_direction.sort(key=lambda x: x["value_usd"], reverse=True)
+    
+    # Aggregate nearby clusters (within 0.3%)
+    aggregated = []
+    used_prices = set()
+    
+    for cluster in clusters_in_direction:
+        price = cluster["price"]
+        rounded = round(price, -1)  # Round to nearest 10
+        
+        if rounded in used_prices:
+            # Add value to existing
+            for agg in aggregated:
+                if abs(agg["price"] - rounded) < current_price * 0.003:
+                    agg["value_usd"] += cluster["value_usd"]
+                    break
+        else:
+            used_prices.add(rounded)
+            aggregated.append(cluster.copy())
+    
+    # Re-sort after aggregation
+    aggregated.sort(key=lambda x: x["value_usd"], reverse=True)
+    
+    # Identify Leg 2 (first mid-distance cluster) and Leg 3 (primary wall)
+    leg2_cluster = None
+    leg3_wall = None
+    
+    for cluster in aggregated:
+        dist = cluster["distance_pct"]
+        value = cluster["value_usd"]
+        
+        # Leg 3 = Primary Wall (2-5% away, biggest cluster)
+        if HUNTER_LEG3_DISTANCE_PCT[0] <= dist <= HUNTER_LEG3_DISTANCE_PCT[1]:
+            if leg3_wall is None or value > leg3_wall["value_usd"]:
+                leg3_wall = cluster
+        
+        # Leg 2 = First strong cluster (0.5-2% away)
+        if HUNTER_LEG2_DISTANCE_PCT[0] <= dist <= HUNTER_LEG2_DISTANCE_PCT[1]:
+            if value >= HUNTER_MIN_CLUSTER_VALUE_USD:
+                if leg2_cluster is None:
+                    leg2_cluster = cluster
+    
+    # If no leg2 found but leg3 exists, create synthetic leg2 at midpoint
+    if leg3_wall and not leg2_cluster:
+        if direction == "LONG":
+            leg2_price = current_price - (current_price - leg3_wall["price"]) * 0.4
+        else:
+            leg2_price = current_price + (leg3_wall["price"] - current_price) * 0.4
+        
+        leg2_cluster = {
+            "price": leg2_price,
+            "value_usd": leg3_wall["value_usd"] * 0.3,  # Estimated
+            "distance_pct": abs((leg2_price - current_price) / current_price) * 100,
+            "source": "synthetic_midpoint",
+            "reliability": 0.3
+        }
+    
+    return {
+        "leg2_cluster": leg2_cluster,
+        "leg3_wall": leg3_wall,
+        "all_clusters": aggregated[:10],  # Top 10 by value
+        "total_clusters_found": len(aggregated),
+        "direction": direction
+    }
+
+
+def calculate_hunter_deal_metrics(deal: HunterDeal) -> HunterDeal:
+    """
+    Calculate dynamic metrics for a Hunter deal:
+    - Average entry price (weighted by allocation)
+    - Take profit level
+    - Stop loss (for shorts)
+    - Liquidation price
+    """
+    filled_legs = []
+    total_weight = 0
+    weighted_price_sum = 0
+    
+    for leg in [deal.leg_1, deal.leg_2, deal.leg_3]:
+        if leg.status == "FILLED":
+            price = leg.filled_price or leg.price
+            weight = leg.allocation_percent
+            filled_legs.append((price, weight))
+            weighted_price_sum += price * weight
+            total_weight += weight
+    
+    # Average Entry Price
+    if total_weight > 0:
+        deal.average_entry_price = weighted_price_sum / total_weight
+        deal.total_allocated_percent = total_weight
+    else:
+        deal.average_entry_price = deal.leg_1.price  # Use leg 1 as estimate
+        deal.total_allocated_percent = 0
+    
+    # Take Profit Calculation
+    # For LONG: TP above average entry
+    # For SHORT: TP below average entry
+    # Default: 2% move from average entry
+    tp_move_pct = 2.0  # Base TP target
+    
+    if deal.direction == "LONG":
+        deal.take_profit = deal.average_entry_price * (1 + tp_move_pct / 100)
+    else:
+        deal.take_profit = deal.average_entry_price * (1 - tp_move_pct / 100)
+    
+    deal.take_profit_percent = tp_move_pct
+    
+    # Stop Loss (for SHORTS only - 0.5% above 70% wall)
+    if deal.direction == "SHORT":
+        deal.stop_loss = deal.leg_3.price * (1 + HUNTER_SHORT_STOP_BUFFER_PCT / 100)
+    else:
+        # LONGS: Macro invalidation only (no hard stop)
+        deal.stop_loss = None
+    
+    # Liquidation Price (simplified for 1x leverage = no liquidation)
+    if deal.leverage > 1:
+        # Rough liquidation estimate
+        liquidation_buffer = 100 / deal.leverage  # e.g., 10x = 10% move
+        if deal.direction == "LONG":
+            deal.liquidation_price = deal.average_entry_price * (1 - liquidation_buffer / 100)
+        else:
+            deal.liquidation_price = deal.average_entry_price * (1 + liquidation_buffer / 100)
+    else:
+        deal.liquidation_price = None  # 1x = no liquidation
+    
+    # Calculate R:R if stop exists
+    if deal.stop_loss and deal.average_entry_price > 0:
+        risk = abs(deal.average_entry_price - deal.stop_loss)
+        reward = abs(deal.take_profit - deal.average_entry_price)
+        if risk > 0:
+            deal.min_rr_ratio = reward / risk
+    
+    return deal
+
+
+def create_hunter_deal(
+    direction: str,
+    current_price: float,
+    leg2_cluster: Dict,
+    leg3_wall: Dict,
+    market_regime: str = "UNKNOWN",
+    market_bias: str = "NEUTRAL",
+    bias_confidence: float = 0.0,
+    leverage: float = 1.0
+) -> HunterDeal:
+    """
+    Create a complete 10-20-70 Hunter Deal with all three legs.
+    """
+    # Leg 1: 10% Market Entry at current structure
+    leg_1 = HunterLeg(
+        leg_number=1,
+        allocation_percent=10,
+        price=current_price,
+        status="PENDING",
+        order_type="MARKET",
+        reason="4H structural entry point",
+        distance_from_current_pct=0.0,
+        liquidity_value_usd=0
+    )
+    
+    # Leg 2: 20% Limit at first liquidation cluster
+    leg_2 = HunterLeg(
+        leg_number=2,
+        allocation_percent=20,
+        price=leg2_cluster["price"],
+        status="PENDING",
+        order_type="LIMIT",
+        reason=f"First liquidation cluster ({leg2_cluster.get('source', 'identified')})",
+        distance_from_current_pct=leg2_cluster.get("distance_pct", 0),
+        liquidity_value_usd=leg2_cluster.get("value_usd", 0)
+    )
+    
+    # Leg 3: 70% Limit at Primary Institutional Wall
+    leg_3 = HunterLeg(
+        leg_number=3,
+        allocation_percent=70,
+        price=leg3_wall["price"],
+        status="PENDING",
+        order_type="LIMIT",
+        reason=f"Primary Institutional Wall (${leg3_wall.get('value_usd', 0)/1e6:.1f}M liquidity)",
+        distance_from_current_pct=leg3_wall.get("distance_pct", 0),
+        liquidity_value_usd=leg3_wall.get("value_usd", 0)
+    )
+    
+    # Calculate quality score
+    quality = 0
+    
+    # Leg 3 wall size contributes most
+    if leg3_wall.get("value_usd", 0) >= 5_000_000:  # $5M+
+        quality += 40
+    elif leg3_wall.get("value_usd", 0) >= 2_000_000:  # $2M+
+        quality += 25
+    elif leg3_wall.get("value_usd", 0) >= 1_000_000:  # $1M+
+        quality += 15
+    
+    # Leg 2 cluster adds
+    if leg2_cluster.get("value_usd", 0) >= 1_000_000:
+        quality += 20
+    elif leg2_cluster.get("value_usd", 0) >= 500_000:
+        quality += 10
+    
+    # Bias alignment
+    if (direction == "LONG" and market_bias == "BULLISH") or \
+       (direction == "SHORT" and market_bias == "BEARISH"):
+        quality += 20
+    elif market_bias == "NEUTRAL":
+        quality += 5
+    
+    # Regime alignment
+    if market_regime == "TREND":
+        quality += 15
+    elif market_regime == "RANGE":
+        quality += 10
+    
+    # CoinGlass source bonus
+    if leg3_wall.get("source") == "coinglass_heatmap":
+        quality += 5
+    
+    quality = min(100, quality)
+    
+    # Confidence tier
+    if quality >= 80:
+        confidence = "EXTREME"
+    elif quality >= 60:
+        confidence = "HIGH"
+    elif quality >= 40:
+        confidence = "MEDIUM"
+    else:
+        confidence = "LOW"
+    
+    # Create the deal
+    deal = HunterDeal(
+        direction=direction,
+        leg_1=leg_1,
+        leg_2=leg_2,
+        leg_3=leg_3,
+        current_price=current_price,
+        leverage=leverage,
+        market_regime=market_regime,
+        bias_direction=market_bias,
+        bias_confidence=bias_confidence,
+        setup_quality=quality,
+        hunter_confidence=confidence,
+        deal_status="PLANNING",
+        deal_phase="INITIAL"
+    )
+    
+    # Calculate metrics
+    deal = calculate_hunter_deal_metrics(deal)
+    
+    return deal
+
+
+async def generate_v3_hunter_signal(
+    current_price: float,
+    market_regime: str,
+    market_bias: str,
+    bias_confidence: float,
+    candles_4h: List[dict],
+    aggregated_orderbook: dict,
+    liquidity_clusters: List = None,
+    liquidation_heatmap: dict = None,
+    lang: str = "it"
+) -> V3HunterSignal:
+    """
+    V3 HUNTER ENGINE - Generate 10-20-70 Predator signals.
+    
+    This engine is SEPARATE from V3 Normal (Sniper).
+    It identifies stop-hunt opportunities and creates layered deals.
+    """
+    global v3_hunter_deals
+    
+    # Check CoinGlass connectivity
+    coinglass_connected = bool(liquidation_heatmap and liquidation_heatmap.get("liquidation_levels"))
+    liquidation_fresh = False
+    last_liq_update = None
+    
+    if liquidation_heatmap:
+        timestamp_str = liquidation_heatmap.get("timestamp")
+        if timestamp_str:
+            try:
+                last_liq_update = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                age = (datetime.now(timezone.utc) - last_liq_update).seconds
+                liquidation_fresh = age < 120  # Fresh if < 2 minutes
+            except:
+                pass
+    
+    # Identify primary walls for both directions
+    long_clusters = identify_liquidation_clusters_for_hunter(
+        current_price=current_price,
+        direction="LONG",
+        liquidity_clusters=liquidity_clusters,
+        liquidation_heatmap=liquidation_heatmap,
+        aggregated_orderbook=aggregated_orderbook
+    )
+    
+    short_clusters = identify_liquidation_clusters_for_hunter(
+        current_price=current_price,
+        direction="SHORT",
+        liquidity_clusters=liquidity_clusters,
+        liquidation_heatmap=liquidation_heatmap,
+        aggregated_orderbook=aggregated_orderbook
+    )
+    
+    # Determine recommended action
+    recommended_action = "WAIT"
+    action_reason = ""
+    active_deal = None
+    
+    # Check for active deals first
+    active_deals = [d for d in v3_hunter_deals.values() if d.deal_status not in ["CLOSED", "CANCELLED"]]
+    
+    if active_deals:
+        active_deal = active_deals[0]  # For now, support single active deal
+        recommended_action = "MONITOR_HUNT"
+        action_reason = f"Active {active_deal.direction} hunt in progress"
+    else:
+        # Determine best direction for new hunt
+        long_wall_strength = long_clusters["leg3_wall"]["value_usd"] if long_clusters.get("leg3_wall") else 0
+        short_wall_strength = short_clusters["leg3_wall"]["value_usd"] if short_clusters.get("leg3_wall") else 0
+        
+        # Minimum wall size required
+        min_wall_size = 1_000_000  # $1M minimum
+        
+        # Check LONG hunt viability
+        if long_wall_strength >= min_wall_size and long_clusters.get("leg2_cluster"):
+            # LONG setup: hunt stops below, expecting bounce
+            if market_bias in ["BULLISH", "NEUTRAL"] or bias_confidence < 60:
+                if long_wall_strength > short_wall_strength * 1.5:  # Clear winner
+                    recommended_action = "INITIATE_LONG_HUNT"
+                    action_reason = f"Strong wall below at ${long_clusters['leg3_wall']['price']:,.0f} (${long_wall_strength/1e6:.1f}M)"
+                    
+                    # Create the deal
+                    active_deal = create_hunter_deal(
+                        direction="LONG",
+                        current_price=current_price,
+                        leg2_cluster=long_clusters["leg2_cluster"],
+                        leg3_wall=long_clusters["leg3_wall"],
+                        market_regime=market_regime,
+                        market_bias=market_bias,
+                        bias_confidence=bias_confidence
+                    )
+        
+        # Check SHORT hunt viability
+        if short_wall_strength >= min_wall_size and short_clusters.get("leg2_cluster"):
+            if market_bias in ["BEARISH", "NEUTRAL"] or bias_confidence < 60:
+                if short_wall_strength > long_wall_strength * 1.5:
+                    recommended_action = "INITIATE_SHORT_HUNT"
+                    action_reason = f"Strong wall above at ${short_clusters['leg3_wall']['price']:,.0f} (${short_wall_strength/1e6:.1f}M)"
+                    
+                    active_deal = create_hunter_deal(
+                        direction="SHORT",
+                        current_price=current_price,
+                        leg2_cluster=short_clusters["leg2_cluster"],
+                        leg3_wall=short_clusters["leg3_wall"],
+                        market_regime=market_regime,
+                        market_bias=market_bias,
+                        bias_confidence=bias_confidence
+                    )
+        
+        # If no clear setup
+        if recommended_action == "WAIT":
+            if long_wall_strength < min_wall_size and short_wall_strength < min_wall_size:
+                action_reason = "No significant liquidation walls detected"
+            else:
+                action_reason = "No clear directional edge - walls balanced"
+    
+    # Build all clusters list
+    all_clusters = []
+    for cluster in (long_clusters.get("all_clusters", []) + short_clusters.get("all_clusters", [])):
+        all_clusters.append(cluster)
+    all_clusters.sort(key=lambda x: x.get("value_usd", 0), reverse=True)
+    
+    return V3HunterSignal(
+        current_price=current_price,
+        market_regime=market_regime,
+        market_bias=market_bias,
+        bias_confidence=bias_confidence,
+        has_active_hunt=active_deal is not None,
+        active_deal=active_deal,
+        liquidation_clusters=all_clusters[:15],
+        primary_wall_above=short_clusters.get("leg3_wall"),
+        primary_wall_below=long_clusters.get("leg3_wall"),
+        recommended_action=recommended_action,
+        action_reason=action_reason,
+        coinglass_connected=coinglass_connected,
+        liquidation_data_fresh=liquidation_fresh,
+        last_liquidation_update=last_liq_update,
+        active_deals_count=len(active_deals),
+        completed_deals_today=0  # TODO: Track from history
+    )
+
+
 # ============== LIQUIDITY MAGNET ENGINE ==============
 
 def analyze_liquidity_magnet(
@@ -18438,6 +19046,272 @@ async def get_v3_active_setups(_: bool = Depends(verify_admin_access)):
             "waiting": len([s for s in setups if s["phase"] == SetupEventPhase.WAITING_FOR_RETEST.value]),
             "ready": len([s for s in setups if s["phase"] == SetupEventPhase.ENTRY_READY.value])
         }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3 HUNTER ENDPOINTS - The 10-20-70 Predator Engine
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/v3/hunter-signal")
+async def get_v3_hunter_signal(
+    lang: str = Query(default="it", description="Language: it, en, de, pl"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    V3 HUNTER - The 10-20-70 Predator Engine.
+    
+    Professional stop-hunt strategy using layered capital allocation:
+    - Leg 1 (10%): Market entry at 4H structure
+    - Leg 2 (20%): Limit at first liquidation cluster
+    - Leg 3 (70%): Limit at Primary Institutional Wall
+    
+    Risk Management:
+    - Default 1x leverage
+    - LONG: Macro-invalidation only (no hard stop)
+    - SHORT: Hard stop 0.5% above 70% wall
+    
+    Returns complete deal structure with dynamic TP calculation.
+    """
+    if lang not in ["it", "en", "de", "pl"]:
+        lang = "it"
+    
+    try:
+        # Fetch all required data
+        ticker_task = fetch_kraken_ticker()
+        candles_4h_task = fetch_kraken_ohlc(240)
+        aggregated_ob_task = get_aggregated_orderbook()
+        heatmap_task = fetch_coinglass_liquidation_heatmap()
+        
+        ticker, candles_4h, aggregated_orderbook, liquidation_heatmap = await asyncio.gather(
+            ticker_task, candles_4h_task, aggregated_ob_task, heatmap_task
+        )
+        
+        current_price = ticker["price"] if ticker else 0
+        
+        if current_price == 0:
+            return V3HunterSignal(
+                current_price=0,
+                market_regime="UNKNOWN",
+                market_bias="NEUTRAL",
+                bias_confidence=0,
+                recommended_action="WAIT",
+                action_reason="API non disponibile"
+            )
+        
+        # Generate intelligence components
+        derivatives_context = await fetch_coinglass_derivatives_context()
+        market_bias = calculate_market_bias(candles_4h, aggregated_orderbook, derivatives_context)
+        clusters, _ = generate_liquidity_clusters_enhanced(candles_4h, current_price, aggregated_orderbook, lang)
+        
+        # Convert clusters to list of dicts
+        clusters_list = []
+        for c in clusters:
+            clusters_list.append({
+                "price": c.price,
+                "value_usd": c.estimated_value,
+                "side": c.side,
+                "distance_pct": c.distance_percent,
+                "source": getattr(c, 'source', 'orderbook')  # Default to orderbook if no source attr
+            })
+        
+        # Detect market regime
+        sr_levels = calculate_support_resistance_enhanced(candles_4h, current_price, aggregated_orderbook)
+        oi_data = await fetch_coinglass_open_interest()
+        oi_data_dict = {"change_1h": oi_data.get("change_1h", 0) if oi_data else 0, "change_24h": oi_data.get("change_24h", 0) if oi_data else 0}
+        
+        market_energy = analyze_market_energy(
+            candles=candles_4h,
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            open_interest_data=oi_data_dict,
+            liquidity_clusters=clusters,
+            derivatives_context=derivatives_context,
+            lang=lang
+        )
+        
+        liquidity_magnet = analyze_liquidity_magnet(
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            liquidity_clusters=clusters,
+            derivatives_context=derivatives_context,
+            lang=lang
+        )
+        
+        whale_activity = analyze_whale_activity(
+            candles=candles_4h,
+            current_price=current_price,
+            aggregated_orderbook=aggregated_orderbook,
+            open_interest_data=oi_data_dict,
+            lang=lang
+        )
+        
+        liquidity_ladder = build_liquidity_ladder(
+            current_price=current_price,
+            sr_levels=sr_levels,
+            liquidity_clusters=clusters,
+            aggregated_orderbook=aggregated_orderbook,
+            lang=lang
+        )
+        
+        # Compute expected move and trap risk for regime detection
+        supports = [l for l in sr_levels if l.level_type == "support"]
+        resistances = [l for l in sr_levels if l.level_type == "resistance"]
+        expected_move = market_energy.energy_score if market_energy else 50
+        trap_risk = False  # Simplified for Hunter
+        
+        market_regime = detect_market_regime(
+            market_bias=market_bias,
+            market_energy=market_energy,
+            liquidity_magnet=liquidity_magnet,
+            liquidity_ladder=liquidity_ladder,
+            whale_activity=whale_activity,
+            open_interest_data=oi_data_dict,
+            expected_move=expected_move,
+            trap_risk_detected=trap_risk,
+            current_price=current_price,
+            supports=supports,
+            resistances=resistances,
+            lang=lang
+        )
+        
+        # Generate Hunter signal
+        hunter_signal = await generate_v3_hunter_signal(
+            current_price=current_price,
+            market_regime=market_regime.regime,
+            market_bias=market_bias.bias if market_bias else "NEUTRAL",
+            bias_confidence=market_bias.confidence if market_bias else 0,
+            candles_4h=candles_4h,
+            aggregated_orderbook=aggregated_orderbook,
+            liquidity_clusters=clusters_list,
+            liquidation_heatmap=liquidation_heatmap,
+            lang=lang
+        )
+        
+        return hunter_signal
+        
+    except Exception as e:
+        logger.error(f"[V3 Hunter] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return V3HunterSignal(
+            current_price=0,
+            market_regime="UNKNOWN",
+            market_bias="NEUTRAL",
+            bias_confidence=0,
+            recommended_action="WAIT",
+            action_reason=f"Errore interno: {str(e)}"
+        )
+
+
+@api_router.post("/v3/hunter-deal/activate")
+async def activate_hunter_deal(
+    direction: str = Query(..., description="LONG or SHORT"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Activate a Hunter Deal - starts the 10-20-70 accumulation.
+    
+    This creates the deal structure with:
+    - Leg 1 executed immediately (10% market)
+    - Leg 2 and Leg 3 as pending limits
+    
+    Returns the activated deal for UI display.
+    """
+    global v3_hunter_deals
+    
+    if direction not in ["LONG", "SHORT"]:
+        return {"error": "Direction must be LONG or SHORT"}
+    
+    try:
+        # Get current hunter signal to get deal structure
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker["price"] if ticker else 0
+        
+        if current_price == 0:
+            return {"error": "Cannot fetch current price"}
+        
+        # Fetch required data
+        candles_4h = await fetch_kraken_ohlc(240)
+        aggregated_orderbook = await get_aggregated_orderbook()
+        liquidation_heatmap = await fetch_coinglass_liquidation_heatmap()
+        derivatives_context = await fetch_coinglass_derivatives_context()
+        market_bias = calculate_market_bias(candles_4h, aggregated_orderbook, derivatives_context)
+        
+        clusters, _ = generate_liquidity_clusters_enhanced(candles_4h, current_price, aggregated_orderbook)
+        clusters_list = [{"price": c.price, "value_usd": c.estimated_value, "side": c.side, "distance_pct": c.distance_percent, "source": c.source} for c in clusters]
+        
+        # Identify clusters for the requested direction
+        identified = identify_liquidation_clusters_for_hunter(
+            current_price=current_price,
+            direction=direction,
+            liquidity_clusters=clusters_list,
+            liquidation_heatmap=liquidation_heatmap,
+            aggregated_orderbook=aggregated_orderbook
+        )
+        
+        if not identified.get("leg2_cluster") or not identified.get("leg3_wall"):
+            return {"error": f"No valid liquidation clusters for {direction} hunt"}
+        
+        # Create and activate the deal
+        deal = create_hunter_deal(
+            direction=direction,
+            current_price=current_price,
+            leg2_cluster=identified["leg2_cluster"],
+            leg3_wall=identified["leg3_wall"],
+            market_regime=market_bias.regime if hasattr(market_bias, 'regime') else "UNKNOWN",
+            market_bias=market_bias.bias if market_bias else "NEUTRAL",
+            bias_confidence=market_bias.confidence if market_bias else 0
+        )
+        
+        # Simulate Leg 1 execution (market order)
+        deal.leg_1.status = "FILLED"
+        deal.leg_1.filled_at = datetime.now(timezone.utc)
+        deal.leg_1.filled_price = current_price
+        deal.deal_status = "LEG_1_ACTIVE"
+        deal.deal_phase = "ACCUMULATING"
+        
+        # Recalculate metrics with leg 1 filled
+        deal = calculate_hunter_deal_metrics(deal)
+        
+        # Store the deal
+        v3_hunter_deals[deal.deal_id] = deal
+        
+        logger.info(f"[V3 Hunter] Activated {direction} deal: ID={deal.deal_id}, Leg1=${current_price:,.0f}, Leg2=${deal.leg_2.price:,.0f}, Leg3=${deal.leg_3.price:,.0f}")
+        
+        return {
+            "success": True,
+            "deal_id": deal.deal_id,
+            "deal": deal.model_dump()
+        }
+        
+    except Exception as e:
+        logger.error(f"[V3 Hunter] Activation error: {e}")
+        return {"error": str(e)}
+
+
+@api_router.get("/v3/hunter-deals")
+async def get_hunter_deals(_: bool = Depends(verify_admin_access)):
+    """
+    Get all Hunter deals (active and completed).
+    """
+    global v3_hunter_deals
+    
+    active = []
+    completed = []
+    
+    for deal in v3_hunter_deals.values():
+        deal_dict = deal.model_dump()
+        if deal.deal_status in ["CLOSED", "CANCELLED"]:
+            completed.append(deal_dict)
+        else:
+            active.append(deal_dict)
+    
+    return {
+        "active_count": len(active),
+        "completed_count": len(completed),
+        "active_deals": active,
+        "completed_deals": completed
     }
 
 

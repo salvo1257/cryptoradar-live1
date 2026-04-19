@@ -218,3 +218,45 @@ Redesigned the expandable details section with high-contrast, premium aesthetics
 - High legibility with clear visual hierarchy
 - Premium aesthetic matching CryptoRadar brand
 - Consistent neon theming across all data points
+
+---
+## Update: April 19, 2025 - V3 HUNTER Engine (10-20-70 Strategy)
+
+### ✅ NEW ENGINE: V3 Hunter - The 10-20-70 Predator
+
+**Purpose**: Professional stop-loss hunting strategy using layered capital allocation to profit from retail liquidations.
+
+### Strategy Logic:
+1. **Leg 1 (10%)**: Market Entry at 4H structural point
+2. **Leg 2 (20%)**: Limit order at first liquidation cluster
+3. **Leg 3 (70%)**: Limit order at Primary Institutional Wall
+
+### Risk Management:
+- **Default Leverage**: 1x
+- **LONG Trades**: No hard stop - macro invalidation only
+- **SHORT Trades**: Mandatory stop 0.5% above 70% wall
+
+### Backend Implementation:
+- New models: `HunterLeg`, `HunterDeal`, `V3HunterSignal`
+- Engine: `generate_v3_hunter_signal()` - identifies liquidation clusters
+- Functions: `identify_liquidation_clusters_for_hunter()`, `create_hunter_deal()`, `calculate_hunter_deal_metrics()`
+- Endpoints:
+  - `GET /api/v3/hunter-signal` - Get current hunter analysis
+  - `POST /api/v3/hunter-deal/activate` - Activate a hunt
+  - `GET /api/v3/hunter-deals` - List all deals
+
+### Frontend Implementation:
+- `V3HunterCard.js` - Premium card showing 10-20-70 legs
+- `V3HunterPage.js` - Dedicated page with educational panel
+- Sidebar: "V3 Hunter" in ADMIN section
+
+### CoinGlass Integration Ready:
+- Structure prepared for CoinGlass Startup plan ($79)
+- Falls back to orderbook-based cluster detection when CoinGlass unavailable
+- `coinglass_connected` status badge in UI
+
+### Visual Features:
+- Neon color palette (#00FF9D, #FF1E56, #00D4FF)
+- Color-coded allocation badges (10% blue, 20% orange, 70% purple)
+- Dynamic metrics: Average Entry, Take Profit, Stop Loss
+- Liquidation clusters list with values and distances
