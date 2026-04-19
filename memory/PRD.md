@@ -307,3 +307,44 @@ Redesigned the expandable details section with high-contrast, premium aesthetics
 - Color-coded allocation badges (10% blue, 20% orange, 70% purple)
 - Dynamic metrics: Average Entry, Take Profit, Stop Loss
 - Liquidation clusters list with values and distances
+
+---
+## Update: April 19, 2025 - Telegram V4 Settings UI
+
+### ✅ Completed - Frontend Telegram V4 Configuration
+Full UI integration for autonomous Telegram configuration:
+
+**Settings Page Enhancements**:
+- New `TelegramV4SettingsSection` component in `/app/frontend/src/components/pages/SettingsPage.js`
+- Located after Sound Settings, before Documentation
+
+**Configuration Options**:
+1. **Bot Token**: Masked input with show/hide toggle
+2. **Chat ID Principale**: Primary chat ID for notifications
+3. **Chat ID Aggiuntivi**: Comma-separated additional recipients
+4. **Notifiche SNIPER** (green): Toggle for SNIPER signals and outcomes
+5. **Notifiche HUNTER** (orange): Toggle for HUNTER signals and outcomes
+6. **Segnali LONG/SHORT**: Direction filters
+7. **Soglia Qualità Minima**: Slider 0-100% quality threshold
+
+**Actions**:
+- **Salva Impostazioni**: Save all V4 settings to MongoDB
+- **Test SNIPER**: Send test SNIPER notification
+- **Test HUNTER**: Send test HUNTER notification
+
+**Statistics Display**:
+- Total notifications sent
+- SNIPER notifications sent
+- HUNTER notifications sent
+
+**Backend Endpoints (already implemented)**:
+- `GET /api/telegram/v4-settings`
+- `POST /api/telegram/v4-settings`
+- `POST /api/telegram/v4-test-sniper`
+- `POST /api/telegram/v4-test-hunter`
+
+**Authentication Fix**:
+- Updated `AppContext.fetchSettings()` to include admin headers
+- Default settings fallback when admin not authenticated
+- All Telegram V4 API calls use proper `X-Admin-Key` authentication
+

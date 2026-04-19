@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, Check, X, Info, MessageCircle, Bell, BellOff, Database, RefreshCw, Shield, AlertTriangle, CheckCircle, Wifi, WifiOff } from 'lucide-react';
+import { Save, Send, Check, X, Info, MessageCircle, Bell, BellOff, Database, RefreshCw, Shield, AlertTriangle, CheckCircle, Wifi, WifiOff, Target, Crosshair, Zap, Eye, EyeOff } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Switch } from '../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Separator } from '../ui/separator';
+import { Slider } from '../ui/slider';
 import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
 import { translations } from '../../translations';
@@ -293,6 +294,9 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {/* V4 Telegram Settings - SNIPER & HUNTER */}
+      <TelegramV4SettingsSection language={language} />
+
       {/* Documentation Downloads */}
       <div className="bg-crypto-card/60 border border-crypto-border rounded-sm p-4 space-y-4">
         <h2 className="font-heading font-semibold text-lg">{t('documentation')}</h2>
@@ -348,6 +352,498 @@ export function SettingsPage() {
           Shows current API/data-source configuration and connection status
       ═══════════════════════════════════════════════════════════════════ */}
       <ApiDataSourcesSection language={language} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V4 TELEGRAM SETTINGS COMPONENT - SNIPER & HUNTER ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function TelegramV4SettingsSection({ language }) {
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testingSniper, setTestingSniper] = useState(false);
+  const [testingHunter, setTestingHunter] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [localToken, setLocalToken] = useState('');
+  
+  const lang = translations[language] || translations.en;
+  
+  // Get admin token from localStorage
+  const getAdminHeaders = () => {
+    const token = localStorage.getItem('cryptoradar_admin_token');
+    return token ? { 'X-Admin-Key': token } : {};
+  };
+  
+  const t = {
+    title: language === 'it' ? 'Telegram V4 - Alert SNIPER & HUNTER' : 'Telegram V4 - SNIPER & HUNTER Alerts',
+    subtitle: language === 'it' ? 'Configura le tue notifiche per i segnali V3' : 'Configure your V3 signal notifications',
+    botToken: language === 'it' ? 'Bot Token' : 'Bot Token',
+    chatId: language === 'it' ? 'Chat ID Principale' : 'Primary Chat ID',
+    additionalIds: language === 'it' ? 'Chat ID Aggiuntivi' : 'Additional Chat IDs',
+    additionalIdsHint: language === 'it' ? 'Separati da virgola (opzionale)' : 'Comma-separated (optional)',
+    sniperSection: language === 'it' ? 'Notifiche SNIPER' : 'SNIPER Notifications',
+    hunterSection: language === 'it' ? 'Notifiche HUNTER' : 'HUNTER Notifications',
+    notifySniper: language === 'it' ? 'Segnali SNIPER' : 'SNIPER Signals',
+    notifySniperDesc: language === 'it' ? 'Ricevi alert quando un segnale SNIPER diventa operativo' : 'Receive alerts when a SNIPER signal becomes operational',
+    notifyHunter: language === 'it' ? 'Segnali HUNTER' : 'HUNTER Signals',
+    notifyHunterDesc: language === 'it' ? 'Ricevi alert quando un HUNT 10-20-70 viene attivato' : 'Receive alerts when a 10-20-70 HUNT is activated',
+    notifyOutcomes: language === 'it' ? 'Esiti Trade' : 'Trade Outcomes',
+    notifyOutcomesDesc: language === 'it' ? 'WIN, LOSS, Partial Win, Expired' : 'WIN, LOSS, Partial Win, Expired',
+    notifyLong: language === 'it' ? 'Segnali LONG' : 'LONG Signals',
+    notifyShort: language === 'it' ? 'Segnali SHORT' : 'SHORT Signals',
+    qualityThreshold: language === 'it' ? 'Soglia Qualità Minima' : 'Minimum Quality Threshold',
+    qualityHint: language === 'it' ? 'Ricevi solo segnali con qualità ≥ questo valore' : 'Only receive signals with quality ≥ this value',
+    testSniper: language === 'it' ? 'Test SNIPER' : 'Test SNIPER',
+    testHunter: language === 'it' ? 'Test HUNTER' : 'Test HUNTER',
+    save: language === 'it' ? 'Salva Impostazioni' : 'Save Settings',
+    saved: language === 'it' ? 'Impostazioni salvate!' : 'Settings saved!',
+    errorSaving: language === 'it' ? 'Errore nel salvataggio' : 'Error saving settings',
+    testSent: language === 'it' ? 'Test inviato!' : 'Test sent!',
+    testFailed: language === 'it' ? 'Test fallito' : 'Test failed',
+    notConfigured: language === 'it' ? 'Inserisci Bot Token e Chat ID prima di testare' : 'Enter Bot Token and Chat ID before testing',
+    howToSetup: language === 'it' ? 'Come configurare' : 'How to setup',
+    enabled: language === 'it' ? 'Abilitato' : 'Enabled',
+    stats: language === 'it' ? 'Statistiche' : 'Statistics',
+    totalSent: language === 'it' ? 'Totali Inviate' : 'Total Sent',
+    sniperSent: language === 'it' ? 'SNIPER Inviate' : 'SNIPER Sent',
+    hunterSent: language === 'it' ? 'HUNTER Inviate' : 'HUNTER Sent',
+    tokenConfigured: language === 'it' ? 'Token Configurato' : 'Token Configured',
+    enterNewToken: language === 'it' ? 'Inserisci nuovo token per aggiornare' : 'Enter new token to update'
+  };
+
+  // Fetch V4 settings
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/telegram/v4-settings`, {
+          headers: getAdminHeaders()
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setSettings(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch V4 telegram settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  // Save settings
+  const handleSave = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      const params = new URLSearchParams({
+        enabled: settings.enabled,
+        chat_id: settings.chat_id || '',
+        additional_chat_ids: (settings.additional_chat_ids || []).join(','),
+        language: settings.language || 'it',
+        notify_sniper_signals: settings.preferences?.notify_sniper_signals ?? true,
+        notify_sniper_outcomes: settings.preferences?.notify_sniper_outcomes ?? true,
+        notify_hunter_signals: settings.preferences?.notify_hunter_signals ?? true,
+        notify_hunter_outcomes: settings.preferences?.notify_hunter_outcomes ?? true,
+        notify_long_signals: settings.preferences?.notify_long_signals ?? true,
+        notify_short_signals: settings.preferences?.notify_short_signals ?? true,
+        min_quality_threshold: settings.preferences?.min_quality_threshold ?? 50
+      });
+      
+      // Only send token if user entered a new one
+      if (localToken && localToken.trim()) {
+        params.set('bot_token', localToken.trim());
+      }
+
+      const response = await fetch(`${API_URL}/api/telegram/v4-settings?${params.toString()}`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      
+      if (response.ok) {
+        toast.success(t.saved);
+        setLocalToken(''); // Clear local token after save
+        // Refresh settings
+        const refreshResp = await fetch(`${API_URL}/api/telegram/v4-settings`, {
+          headers: getAdminHeaders()
+        });
+        if (refreshResp.ok) {
+          setSettings(await refreshResp.json());
+        }
+      } else {
+        toast.error(t.errorSaving);
+      }
+    } catch (error) {
+      toast.error(t.errorSaving);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Test SNIPER notification
+  const handleTestSniper = async () => {
+    if (!settings?.bot_token_configured && !localToken) {
+      toast.error(t.notConfigured);
+      return;
+    }
+    setTestingSniper(true);
+    try {
+      const response = await fetch(`${API_URL}/api/telegram/v4-test-sniper`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`🎯 ${t.testSent}`);
+      } else {
+        toast.error(`${t.testFailed}: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      toast.error(t.testFailed);
+    } finally {
+      setTestingSniper(false);
+    }
+  };
+
+  // Test HUNTER notification
+  const handleTestHunter = async () => {
+    if (!settings?.bot_token_configured && !localToken) {
+      toast.error(t.notConfigured);
+      return;
+    }
+    setTestingHunter(true);
+    try {
+      const response = await fetch(`${API_URL}/api/telegram/v4-test-hunter`, {
+        method: 'POST',
+        headers: getAdminHeaders()
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`🏹 ${t.testSent}`);
+      } else {
+        toast.error(`${t.testFailed}: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      toast.error(t.testFailed);
+    } finally {
+      setTestingHunter(false);
+    }
+  };
+
+  // Update preference helper
+  const updatePref = (key, value) => {
+    setSettings(prev => ({
+      ...prev,
+      preferences: { ...prev.preferences, [key]: value }
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-crypto-card border border-crypto-border rounded-sm p-4 animate-pulse">
+        <div className="h-8 bg-zinc-800 rounded w-1/3 mb-4" />
+        <div className="space-y-3">
+          <div className="h-12 bg-zinc-800 rounded" />
+          <div className="h-12 bg-zinc-800 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!settings) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-crypto-card/80 to-zinc-900/60 border border-[#0088cc]/30 rounded-sm overflow-hidden" data-testid="telegram-v4-settings">
+      {/* Header */}
+      <div className="p-4 border-b border-[#0088cc]/30 bg-gradient-to-r from-[#0088cc]/10 to-transparent">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[#0088cc]/20 rounded-lg">
+              <MessageCircle className="w-5 h-5 text-[#0088cc]" />
+            </div>
+            <div>
+              <h3 className="font-heading font-semibold text-[#0088cc]">{t.title}</h3>
+              <p className="text-xs text-zinc-500">{t.subtitle}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-zinc-400">{t.enabled}</span>
+            <Switch
+              checked={settings.enabled}
+              onCheckedChange={(v) => setSettings({...settings, enabled: v})}
+              data-testid="telegram-v4-enabled"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-5">
+        {/* Bot Token & Chat ID */}
+        <div className="space-y-4">
+          {/* Instructions */}
+          <div className="bg-zinc-900/50 border border-zinc-700/50 rounded p-3">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-[#0088cc] mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-zinc-400 space-y-1">
+                <p className="font-medium text-zinc-300">{t.howToSetup}:</p>
+                <ol className="list-decimal ml-4 space-y-0.5">
+                  <li>Apri Telegram e cerca <span className="text-[#0088cc]">@BotFather</span></li>
+                  <li>Invia <code className="bg-zinc-800 px-1 rounded">/newbot</code> e segui le istruzioni</li>
+                  <li>Copia il Bot Token fornito</li>
+                  <li>Per ottenere il Chat ID, invia un messaggio al tuo bot, poi visita:</li>
+                </ol>
+                <code className="block text-[10px] bg-zinc-800 p-1 rounded mt-1 break-all text-[#0088cc]">
+                  https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+                </code>
+              </div>
+            </div>
+          </div>
+
+          {/* Bot Token */}
+          <div className="space-y-2">
+            <label className="text-sm text-zinc-400 flex items-center gap-2">
+              {t.botToken}
+              {settings.bot_token_configured && (
+                <span className="text-xs px-2 py-0.5 bg-bullish/20 text-bullish rounded-full">
+                  <CheckCircle className="w-3 h-3 inline mr-1" />
+                  {t.tokenConfigured}
+                </span>
+              )}
+            </label>
+            <div className="relative">
+              <Input
+                type={showToken ? "text" : "password"}
+                value={localToken}
+                onChange={(e) => setLocalToken(e.target.value)}
+                placeholder={settings.bot_token_configured ? t.enterNewToken : "123456789:ABCdefGHIjklmnOPQrstUVwxyz"}
+                className="bg-zinc-900/80 border-zinc-700 font-mono text-sm pr-10"
+                data-testid="telegram-v4-token"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {settings.bot_token_configured && (
+              <p className="text-xs text-zinc-500">Token attuale: {settings.bot_token_masked}</p>
+            )}
+          </div>
+
+          {/* Chat ID */}
+          <div className="space-y-2">
+            <label className="text-sm text-zinc-400">{t.chatId}</label>
+            <Input
+              value={settings.chat_id || ''}
+              onChange={(e) => setSettings({...settings, chat_id: e.target.value})}
+              placeholder="123456789"
+              className="bg-zinc-900/80 border-zinc-700 font-mono text-sm"
+              data-testid="telegram-v4-chatid"
+            />
+          </div>
+
+          {/* Additional Chat IDs */}
+          <div className="space-y-2">
+            <label className="text-sm text-zinc-400">{t.additionalIds}</label>
+            <Input
+              value={(settings.additional_chat_ids || []).join(', ')}
+              onChange={(e) => setSettings({
+                ...settings, 
+                additional_chat_ids: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+              })}
+              placeholder="987654321, 555555555"
+              className="bg-zinc-900/80 border-zinc-700 font-mono text-sm"
+              data-testid="telegram-v4-additional-ids"
+            />
+            <p className="text-xs text-zinc-500">{t.additionalIdsHint}</p>
+          </div>
+        </div>
+
+        <Separator className="bg-zinc-700/50" />
+
+        {/* SNIPER & HUNTER Toggles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* SNIPER Section */}
+          <div className="bg-zinc-900/40 border border-zinc-700/50 rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-3">
+              <Target className="w-5 h-5 text-[#00FF9D]" />
+              <h4 className="font-semibold text-[#00FF9D]">{t.sniperSection}</h4>
+            </div>
+            
+            <div className="flex items-center justify-between p-2 bg-zinc-800/30 rounded">
+              <div>
+                <span className="text-sm">{t.notifySniper}</span>
+                <p className="text-xs text-zinc-500">{t.notifySniperDesc}</p>
+              </div>
+              <Switch
+                checked={settings.preferences?.notify_sniper_signals ?? true}
+                onCheckedChange={(v) => updatePref('notify_sniper_signals', v)}
+                data-testid="notify-sniper-signals"
+              />
+            </div>
+            
+            <div className="flex items-center justify-between p-2 bg-zinc-800/30 rounded">
+              <div>
+                <span className="text-sm">{t.notifyOutcomes}</span>
+                <p className="text-xs text-zinc-500">{t.notifyOutcomesDesc}</p>
+              </div>
+              <Switch
+                checked={settings.preferences?.notify_sniper_outcomes ?? true}
+                onCheckedChange={(v) => updatePref('notify_sniper_outcomes', v)}
+                data-testid="notify-sniper-outcomes"
+              />
+            </div>
+          </div>
+
+          {/* HUNTER Section */}
+          <div className="bg-zinc-900/40 border border-zinc-700/50 rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-3">
+              <Crosshair className="w-5 h-5 text-[#FF6B35]" />
+              <h4 className="font-semibold text-[#FF6B35]">{t.hunterSection}</h4>
+            </div>
+            
+            <div className="flex items-center justify-between p-2 bg-zinc-800/30 rounded">
+              <div>
+                <span className="text-sm">{t.notifyHunter}</span>
+                <p className="text-xs text-zinc-500">{t.notifyHunterDesc}</p>
+              </div>
+              <Switch
+                checked={settings.preferences?.notify_hunter_signals ?? true}
+                onCheckedChange={(v) => updatePref('notify_hunter_signals', v)}
+                data-testid="notify-hunter-signals"
+              />
+            </div>
+            
+            <div className="flex items-center justify-between p-2 bg-zinc-800/30 rounded">
+              <div>
+                <span className="text-sm">{t.notifyOutcomes}</span>
+                <p className="text-xs text-zinc-500">{t.notifyOutcomesDesc}</p>
+              </div>
+              <Switch
+                checked={settings.preferences?.notify_hunter_outcomes ?? true}
+                onCheckedChange={(v) => updatePref('notify_hunter_outcomes', v)}
+                data-testid="notify-hunter-outcomes"
+              />
+            </div>
+          </div>
+        </div>
+
+        <Separator className="bg-zinc-700/50" />
+
+        {/* Direction Filters & Quality Threshold */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-400">{t.notifyLong}:</span>
+              <Switch
+                checked={settings.preferences?.notify_long_signals ?? true}
+                onCheckedChange={(v) => updatePref('notify_long_signals', v)}
+                data-testid="notify-long"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-400">{t.notifyShort}:</span>
+              <Switch
+                checked={settings.preferences?.notify_short_signals ?? true}
+                onCheckedChange={(v) => updatePref('notify_short_signals', v)}
+                data-testid="notify-short"
+              />
+            </div>
+          </div>
+
+          {/* Quality Threshold Slider */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-zinc-400">{t.qualityThreshold}</label>
+              <span className="text-sm font-mono text-[#00D4FF]">
+                ≥ {settings.preferences?.min_quality_threshold ?? 50}%
+              </span>
+            </div>
+            <Slider
+              value={[settings.preferences?.min_quality_threshold ?? 50]}
+              onValueChange={(v) => updatePref('min_quality_threshold', v[0])}
+              min={0}
+              max={100}
+              step={5}
+              className="w-full"
+              data-testid="quality-threshold-slider"
+            />
+            <p className="text-xs text-zinc-500">{t.qualityHint}</p>
+          </div>
+        </div>
+
+        <Separator className="bg-zinc-700/50" />
+
+        {/* Statistics */}
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="bg-zinc-900/50 rounded p-3">
+            <p className="text-2xl font-mono font-bold text-white">{settings.total_notifications_sent || 0}</p>
+            <p className="text-xs text-zinc-500">{t.totalSent}</p>
+          </div>
+          <div className="bg-zinc-900/50 rounded p-3">
+            <p className="text-2xl font-mono font-bold text-[#00FF9D]">{settings.sniper_notifications_sent || 0}</p>
+            <p className="text-xs text-zinc-500">{t.sniperSent}</p>
+          </div>
+          <div className="bg-zinc-900/50 rounded p-3">
+            <p className="text-2xl font-mono font-bold text-[#FF6B35]">{settings.hunter_notifications_sent || 0}</p>
+            <p className="text-xs text-zinc-500">{t.hunterSent}</p>
+          </div>
+        </div>
+
+        <Separator className="bg-zinc-700/50" />
+
+        {/* Actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-[#0088cc] text-white hover:bg-[#0088cc]/90"
+            data-testid="save-telegram-v4"
+          >
+            {saving ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            {t.save}
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={handleTestSniper}
+            disabled={testingSniper}
+            className="border-[#00FF9D]/50 text-[#00FF9D] hover:bg-[#00FF9D]/10"
+            data-testid="test-sniper-btn"
+          >
+            {testingSniper ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Target className="w-4 h-4 mr-2" />
+            )}
+            {t.testSniper}
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={handleTestHunter}
+            disabled={testingHunter}
+            className="border-[#FF6B35]/50 text-[#FF6B35] hover:bg-[#FF6B35]/10"
+            data-testid="test-hunter-btn"
+          >
+            {testingHunter ? (
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Crosshair className="w-4 h-4 mr-2" />
+            )}
+            {t.testHunter}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

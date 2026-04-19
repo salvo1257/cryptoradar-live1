@@ -125,10 +125,28 @@ export function AppProvider({ children }) {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_URL}/settings`);
+      const adminToken = localStorage.getItem('cryptoradar_admin_token');
+      const headers = adminToken ? { 'X-Admin-Key': adminToken } : {};
+      const res = await axios.get(`${API_URL}/settings`, { headers });
       setSettings(res.data);
     } catch (error) {
       console.error('Error fetching settings:', error);
+      // Set default settings if fetch fails (e.g., user not admin yet)
+      setSettings({
+        language: localStorage.getItem('cryptoradar_language') || 'it',
+        telegram_enabled: false,
+        telegram_bot_token: '',
+        telegram_chat_id: '',
+        notify_operational_signals: true,
+        notify_signal_invalidations: true,
+        notify_signal_outcomes: true,
+        notify_whale_alerts: true,
+        notify_patterns: false,
+        notify_candlesticks: false,
+        notify_price_alerts: true,
+        notify_sr_breaks: false,
+        alert_sound: true
+      });
     }
   }, []);
 
@@ -281,7 +299,9 @@ export function AppProvider({ children }) {
 
   const updateSettings = useCallback(async (newSettings) => {
     try {
-      await axios.put(`${API_URL}/settings`, newSettings);
+      const adminToken = localStorage.getItem('cryptoradar_admin_token');
+      const headers = adminToken ? { 'X-Admin-Key': adminToken } : {};
+      await axios.put(`${API_URL}/settings`, newSettings, { headers });
       await fetchSettings();
       return true;
     } catch (error) {
@@ -292,7 +312,9 @@ export function AppProvider({ children }) {
 
   const testTelegram = useCallback(async () => {
     try {
-      const res = await axios.post(`${API_URL}/settings/test-telegram`);
+      const adminToken = localStorage.getItem('cryptoradar_admin_token');
+      const headers = adminToken ? { 'X-Admin-Key': adminToken } : {};
+      const res = await axios.post(`${API_URL}/settings/test-telegram`, {}, { headers });
       return res.data;
     } catch (error) {
       console.error('Error testing telegram:', error);
