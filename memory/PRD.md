@@ -600,4 +600,52 @@ The system was generating multiple identical signals (triplets) for the same pai
 **Files Modified**:
 - `/app/backend/server.py` - Added lock functions and cleanup utilities
 
+---
+## Update: April 19, 2025 - V3 FORTRESS & V4 Analytics Suite
+
+### ✅ Completed - V3 FORTRESS Stop Loss Protection
+
+**"STRUCTURE_LOCKED" Rules Implemented**:
+1. **NO_WIDENING**: Stop Loss NON può MAI essere allontanato dall'entry
+2. **TRAILING_ONLY**: Stop può SOLO essere spostato in direzione del profitto
+3. **ENTRY_LOCKED**: Entry Zone BLOCCATA una volta aperto il deal
+4. **TARGETS_LOCKED**: Target BLOCCATI una volta aperto il deal
+
+**Enforcement**:
+- LONG: Stop può solo SALIRE (trailing up)
+- SHORT: Stop può solo SCENDERE (trailing down)
+
+**New API Endpoints**:
+- `GET /api/v4/fortress-rules` - Visualizza regole FORTRESS attive
+- `GET /api/v4/signals/{id}/validate-stop?proposed_stop=X` - Valida modifica stop
+- `POST /api/v4/signals/{id}/trailing-stop?new_stop_loss=X` - Applica trailing stop
+
+### ✅ Completed - V4 Analytics Suite Premium UI
+
+**Signal Journal V4**:
+- Card-based UI con mini sparkline charts
+- Neon P&L glowing (verde profitto, rosso perdita)
+- Tab SNIPER/HUNTER separati
+- Filtri (Esito, Direzione) in italiano
+
+**Analytics Hub V4**:
+- Metrics cards: Segnali Totali, Win Rate, P&L Totale, R:R Medio
+- Equity Curve con gradiente
+- Mentor AI con "Genera Riepilogo" in italiano
+
+**Strategy Lab V4**:
+- Strategy tabs (SNIPER Strategy, HUNTER Strategy)
+- Direction buttons (LONG/SHORT) con neon colors
+- Simulation inputs (Entry, Stop, Target)
+- Timeline eventi per simulazione trade
+
+**Testing Results**:
+- Backend: 100% (19/19 tests passed)
+- Frontend: 100% (all V4 pages verified)
+- Test file: `/app/backend/tests/test_v4_fortress.py`
+
+**Files Modified**:
+- `/app/backend/server.py` - FORTRESS logic, validate_stop_loss_modification(), apply_trailing_stop()
+- `/app/frontend/src/components/Sidebar.js` - V4 Analytics Suite navigation
+
 
