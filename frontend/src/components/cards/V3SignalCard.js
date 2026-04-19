@@ -578,131 +578,254 @@ export function V3SignalCard({ language = 'it' }) {
     );
   };
 
-  // Render Expanded Details
+  // Render Expanded Details - Premium High-Contrast Cockpit Design
   const renderExpandedDetails = () => {
     if (!expanded || !hasSetup) return null;
 
+    // Neon colors for premium look
+    const neonGreen = 'text-[#00FF9D]';
+    const neonRed = 'text-[#FF1E56]';
+    const neonBlue = 'text-[#00D4FF]';
+    const neonYellow = 'text-[#FFD93D]';
+    const coolGrey = 'text-[#CBD5E0]';
+    const pureWhite = 'text-white';
+    
+    // Glow effects
+    const glowGreen = 'drop-shadow-[0_0_8px_rgba(0,255,157,0.6)]';
+    const glowRed = 'drop-shadow-[0_0_8px_rgba(255,30,86,0.6)]';
+
     return (
-      <div className="mt-3 pt-3 border-t border-white/5 space-y-3 text-xs">
-        {/* Structure Details */}
-        <div className="bg-crypto-surface/20 p-3 rounded-sm">
-          <div className="text-zinc-400 font-semibold mb-2 flex items-center gap-2">
-            <BarChart2 className="w-3 h-3" />
-            {t('structureBased')} - Stop Loss Logic
+      <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
+        
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* STRUCTURE SECTION - Stop Loss Logic */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/40 p-4 rounded-lg border border-zinc-700/50 backdrop-blur-sm">
+          <div className={cn("font-bold text-sm mb-3 flex items-center gap-2", coolGrey)}>
+            <BarChart2 className="w-4 h-4 text-purple-400" />
+            <span className="uppercase tracking-wider">Struttura - Stop Loss Logic</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <span className="text-zinc-500">{t('swingHigh')}: </span>
-              <span className="font-mono text-zinc-300">${formatPrice(setup.swing_high)}</span>
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Swing High</span>
+              <div className={cn("font-mono font-bold text-base", pureWhite)}>
+                ${formatPrice(setup.swing_high)}
+              </div>
             </div>
-            <div>
-              <span className="text-zinc-500">{t('swingLow')}: </span>
-              <span className="font-mono text-zinc-300">${formatPrice(setup.swing_low)}</span>
+            <div className="space-y-1">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Swing Low</span>
+              <div className={cn("font-mono font-bold text-base", pureWhite)}>
+                ${formatPrice(setup.swing_low)}
+              </div>
             </div>
-            <div>
-              <span className="text-zinc-500">{t('buffer')}: </span>
-              <span className="font-mono text-zinc-300">{setup.buffer_percent?.toFixed(2)}%</span>
-            </div>
-          </div>
-          <div className="mt-2 text-zinc-500">
-            Stop Type: <span className="text-zinc-300 font-bold">{setup.stop_type?.toUpperCase()}</span>
-          </div>
-        </div>
-
-        {/* Target Details */}
-        <div className="bg-crypto-surface/20 p-3 rounded-sm">
-          <div className="text-zinc-400 font-semibold mb-2 flex items-center gap-2">
-            <Target className="w-3 h-3" />
-            {t('liquidityBased')} - Target Logic
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="text-zinc-500">T1 ({setup.target_1_type}): </span>
-              <span className="font-mono text-green-400">${formatPrice(setup.target_1)}</span>
-            </div>
-            <div>
-              <span className="text-zinc-500">T2 ({setup.target_2_type}): </span>
-              <span className="font-mono text-green-400">${formatPrice(setup.target_2)}</span>
+            <div className="space-y-1">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Buffer</span>
+              <div className={cn("font-mono font-bold text-base", neonBlue)}>
+                {setup.buffer_percent?.toFixed(2)}%
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Liquidity Context */}
-        <div className="bg-crypto-surface/20 p-3 rounded-sm">
-          <div className="text-zinc-400 font-semibold mb-2 flex items-center gap-2">
-            <Zap className="w-3 h-3" />
-            {t('liquidity')} Context
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="text-zinc-500">{t('above')}: </span>
-              <span className="font-mono text-zinc-300">
-                ${(v3Data?.liquidity_context?.above_total / 1000000)?.toFixed(1)}M
-              </span>
-            </div>
-            <div>
-              <span className="text-zinc-500">{t('below')}: </span>
-              <span className="font-mono text-zinc-300">
-                ${(v3Data?.liquidity_context?.below_total / 1000000)?.toFixed(1)}M
-              </span>
-            </div>
-          </div>
-          <div className="mt-2 text-zinc-500">
-            Imbalance: <span className={cn(
-              "font-bold",
-              v3Data?.liquidity_context?.imbalance_direction === 'UP' ? "text-green-400" :
-              v3Data?.liquidity_context?.imbalance_direction === 'DOWN' ? "text-red-400" : "text-zinc-400"
-            )}>
-              {v3Data?.liquidity_context?.imbalance_direction}
+          
+          <div className="mt-3 pt-3 border-t border-zinc-700/30 flex items-center gap-2">
+            <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Stop Type:</span>
+            <span className={cn("font-bold text-sm px-2 py-0.5 rounded bg-purple-500/20 border border-purple-500/30", pureWhite)}>
+              {setup.stop_type?.toUpperCase() || 'STRUCTURE'}
             </span>
           </div>
         </div>
 
-        {/* Whale Context */}
-        {v3Data?.whale_context && (
-          <div className="bg-crypto-surface/20 p-3 rounded-sm">
-            <div className="text-zinc-400 font-semibold mb-2">Whale Context</div>
-            <div className="flex items-center gap-3">
-              <span className={cn(
-                "font-bold",
-                v3Data.whale_context.direction === 'BUY' ? "text-green-400" :
-                v3Data.whale_context.direction === 'SELL' ? "text-red-400" : "text-zinc-400"
-              )}>
-                {v3Data.whale_context.direction}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* TARGET SECTION - Liquidity-Based Logic */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/40 p-4 rounded-lg border border-zinc-700/50 backdrop-blur-sm">
+          <div className={cn("font-bold text-sm mb-3 flex items-center gap-2", coolGrey)}>
+            <Target className="w-4 h-4 text-green-400" />
+            <span className="uppercase tracking-wider">Target - Liquidity Based</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-green-500/10 p-3 rounded-lg border border-green-500/20">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>
+                Target 1 ({setup.target_1_type || 'ZONE'})
               </span>
-              <span className="text-zinc-500">
-                Strength: {v3Data.whale_context.strength?.toFixed(0)}%
+              <div className={cn("font-mono font-bold text-lg mt-1", neonGreen, glowGreen)}>
+                ${formatPrice(setup.target_1)}
+              </div>
+            </div>
+            <div className="bg-green-500/10 p-3 rounded-lg border border-green-500/20">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>
+                Target 2 ({setup.target_2_type || 'MAGNET'})
               </span>
+              <div className={cn("font-mono font-bold text-lg mt-1", neonGreen, glowGreen)}>
+                ${formatPrice(setup.target_2)}
+              </div>
+            </div>
+          </div>
+          
+          {setup.target_3 && (
+            <div className="mt-3 bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">
+              <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>
+                Target 3 ({setup.target_3_type || 'EXTENSION'})
+              </span>
+              <div className={cn("font-mono font-bold text-lg mt-1 text-emerald-400")}>
+                ${formatPrice(setup.target_3)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* LIQUIDITY CONTEXT SECTION */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/40 p-4 rounded-lg border border-zinc-700/50 backdrop-blur-sm">
+          <div className={cn("font-bold text-sm mb-3 flex items-center gap-2", coolGrey)}>
+            <Zap className="w-4 h-4 text-yellow-400" />
+            <span className="uppercase tracking-wider">Liquidità Context</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            {/* Sopra */}
+            <div className="bg-[#00FF9D]/5 p-3 rounded-lg border border-[#00FF9D]/20">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full bg-[#00FF9D] animate-pulse"></div>
+                <span className={cn("text-xs uppercase tracking-wide font-semibold", neonGreen)}>Sopra</span>
+              </div>
+              <div className={cn("font-mono font-bold text-xl", neonGreen, glowGreen)}>
+                ${((v3Data?.liquidity_context?.above_total || setup.liquidity_above || 0) / 1000000).toFixed(1)}M
+              </div>
+            </div>
+            
+            {/* Sotto */}
+            <div className="bg-[#FF1E56]/5 p-3 rounded-lg border border-[#FF1E56]/20">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full bg-[#FF1E56] animate-pulse"></div>
+                <span className={cn("text-xs uppercase tracking-wide font-semibold", neonRed)}>Sotto</span>
+              </div>
+              <div className={cn("font-mono font-bold text-xl", neonRed, glowRed)}>
+                ${((v3Data?.liquidity_context?.below_total || setup.liquidity_below || 0) / 1000000).toFixed(1)}M
+              </div>
+            </div>
+          </div>
+          
+          {/* Imbalance Direction */}
+          <div className="flex items-center justify-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+            <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Imbalance:</span>
+            <span className={cn(
+              "font-bold text-lg px-3 py-1 rounded-full",
+              (v3Data?.liquidity_context?.imbalance_direction || setup.imbalance_direction) === 'UP' 
+                ? `${neonGreen} bg-[#00FF9D]/10 border border-[#00FF9D]/30 ${glowGreen}` 
+                : (v3Data?.liquidity_context?.imbalance_direction || setup.imbalance_direction) === 'DOWN'
+                  ? `${neonRed} bg-[#FF1E56]/10 border border-[#FF1E56]/30 ${glowRed}`
+                  : `${coolGrey} bg-zinc-700/30`
+            )}>
+              {v3Data?.liquidity_context?.imbalance_direction || setup.imbalance_direction || 'NEUTRAL'}
+            </span>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* WHALE CONTEXT SECTION */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {(v3Data?.whale_context || intelligenceState?.whale_activity) && (
+          <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/40 p-4 rounded-lg border border-zinc-700/50 backdrop-blur-sm">
+            <div className={cn("font-bold text-sm mb-3 flex items-center gap-2", coolGrey)}>
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="uppercase tracking-wider">Whale Flow Context</span>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              {/* Direction */}
+              <div className="flex items-center gap-3">
+                <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Direzione:</span>
+                <span className={cn(
+                  "font-bold text-lg px-4 py-1.5 rounded-lg",
+                  (v3Data?.whale_context?.direction || intelligenceState?.whale_activity?.direction) === 'BUY' 
+                    ? `${neonGreen} bg-[#00FF9D]/10 border border-[#00FF9D]/30 ${glowGreen}` 
+                    : (v3Data?.whale_context?.direction || intelligenceState?.whale_activity?.direction) === 'SELL'
+                      ? `${neonRed} bg-[#FF1E56]/10 border border-[#FF1E56]/30 ${glowRed}`
+                      : `${coolGrey} bg-zinc-700/30`
+                )}>
+                  {v3Data?.whale_context?.direction || intelligenceState?.whale_activity?.direction || 'N/A'}
+                </span>
+              </div>
+              
+              {/* Strength */}
+              <div className="flex items-center gap-3">
+                <span className={cn("text-xs uppercase tracking-wide", coolGrey)}>Forza:</span>
+                <span className={cn(
+                  "font-mono font-black text-2xl",
+                  (v3Data?.whale_context?.strength || intelligenceState?.whale_activity?.buy_pressure || 50) > 60 
+                    ? neonGreen 
+                    : (v3Data?.whale_context?.strength || intelligenceState?.whale_activity?.buy_pressure || 50) < 40
+                      ? neonRed
+                      : neonYellow
+                )}>
+                  {(v3Data?.whale_context?.strength || intelligenceState?.whale_activity?.buy_pressure || 50).toFixed(0)}%
+                </span>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Phase History (if available) */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* PHASE HISTORY SECTION */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
         {setup.phase_history && setup.phase_history.length > 0 && (
-          <div className="bg-crypto-surface/20 p-3 rounded-sm">
-            <div className="text-zinc-400 font-semibold mb-2">Phase History</div>
-            <div className="space-y-1">
-              {setup.phase_history.slice(-3).map((ph, idx) => (
-                <div key={idx} className="flex items-center justify-between text-[11px]">
-                  <span className={cn(
-                    "font-bold",
-                    PHASE_CONFIG[ph.phase]?.color || 'text-zinc-400'
+          <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/40 p-4 rounded-lg border border-zinc-700/50 backdrop-blur-sm">
+            <div className={cn("font-bold text-sm mb-3 flex items-center gap-2", coolGrey)}>
+              <Clock className="w-4 h-4 text-blue-400" />
+              <span className="uppercase tracking-wider">Phase History</span>
+            </div>
+            
+            <div className="space-y-2">
+              {setup.phase_history.slice(-4).map((ph, idx) => (
+                <div 
+                  key={idx} 
+                  className="flex items-start justify-between p-2 bg-zinc-800/40 rounded-lg border border-zinc-700/30"
+                >
+                  {/* Phase Badge */}
+                  <div className={cn(
+                    "font-bold text-xs px-2 py-1 rounded uppercase tracking-wide",
+                    ph.phase === 'SETUP_DETECTED' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                    ph.phase === 'WAITING_FOR_RETEST' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                    ph.phase === 'PREPARE_ENTRY' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                    ph.phase === 'ENTRY_READY' ? `bg-[#00FF9D]/20 ${neonGreen} border border-[#00FF9D]/30` :
+                    'bg-zinc-700/30 text-zinc-400'
                   )}>
-                    {ph.phase}
-                  </span>
-                  <span className="text-zinc-500">{ph.reason?.substring(0, 40)}</span>
+                    {PHASE_CONFIG[ph.phase]?.shortLabel?.[language] || ph.phase?.replace(/_/g, ' ')}
+                  </div>
+                  
+                  {/* Reason - Full text, no truncation */}
+                  <div className={cn("text-sm leading-relaxed text-right max-w-[60%]", pureWhite)}>
+                    {ph.reason || 'Phase transition'}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Reasoning */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* FINAL CONCLUSION FOOTER */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
         {setup.reasoning && (
-          <div className="text-zinc-500 text-[11px] italic">
-            {setup.reasoning}
+          <div className="mt-4 p-4 bg-gradient-to-r from-purple-900/20 via-zinc-900/40 to-cyan-900/20 rounded-lg border border-purple-500/20">
+            <div className={cn("text-xs uppercase tracking-wide mb-2", coolGrey)}>
+              V3 Setup - Conclusione Finale
+            </div>
+            <p className={cn("text-sm italic leading-relaxed font-medium", pureWhite)}>
+              "{setup.reasoning}"
+            </p>
           </div>
         )}
+        
+        {/* V3 Technical Context Summary */}
+        <div className="text-center pt-2">
+          <p className={cn("text-xs italic", coolGrey)}>
+            V3 Signal Engine • Struttura 4H + Retest 5M + Liquidità 5-Exchange
+          </p>
+        </div>
       </div>
     );
   };
