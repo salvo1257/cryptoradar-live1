@@ -181,3 +181,40 @@ Educational Layer (ISOLATED)
     └── Visual/Educational only
     └── No influence on V3 or Final Action
 ```
+
+---
+## Update: April 19, 2025 - V3SignalCard High-Contrast UI Redesign
+
+### ✅ "Mostra dettagli" Premium Cockpit Design
+Redesigned the expandable details section with high-contrast, premium aesthetics.
+
+### Visual Elements Implemented:
+1. **Neon Color Palette**
+   - Green: `#00FF9D` (targets, bullish data)
+   - Red: `#FF1E56` (stop loss, bearish data)
+   - Blue: `#00D4FF` (buffer, neutral metrics)
+   - Yellow: `#FFD93D` (warnings)
+
+2. **Glow Effects**
+   - `drop-shadow-[0_0_8px_rgba(0,255,157,0.6)]` for green elements
+   - `drop-shadow-[0_0_8px_rgba(255,30,86,0.6)]` for red elements
+
+3. **Structural Grouping (Card-in-Card)**
+   - Each section wrapped in `bg-gradient-to-br from-zinc-900/80 to-zinc-800/40`
+   - Borders: `border-zinc-700/50 backdrop-blur-sm`
+
+4. **Sections Redesigned**
+   - **STRUTTURA - STOP LOSS LOGIC**: Swing High/Low, Buffer, Stop Type badge
+   - **TARGET - LIQUIDITY BASED**: Target 1/2/3 with type labels
+   - **LIQUIDITÀ CONTEXT**: Sopra/Sotto with animated dots, Imbalance direction
+   - **WHALE FLOW CONTEXT**: Direction + Strength percentage
+   - **PHASE HISTORY**: Color-coded phase badges
+
+5. **Footer**
+   - Italicized V3 Setup conclusion with purple gradient background
+   - Technical context: "V3 Signal Engine • Struttura 4H + Retest 5M + Liquidità 5-Exchange"
+
+### Result:
+- High legibility with clear visual hierarchy
+- Premium aesthetic matching CryptoRadar brand
+- Consistent neon theming across all data points
