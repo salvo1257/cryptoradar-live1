@@ -64,40 +64,89 @@ TIMEFRAME_WEIGHTS = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class PatternType(str, Enum):
-    # Reversal Patterns
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # REVERSAL PATTERNS (15+)
+    # ═══════════════════════════════════════════════════════════════════════════════
     HEAD_AND_SHOULDERS = "head_and_shoulders"
     INVERSE_HEAD_AND_SHOULDERS = "inverse_head_and_shoulders"
     DOUBLE_TOP = "double_top"
     DOUBLE_BOTTOM = "double_bottom"
     TRIPLE_TOP = "triple_top"
     TRIPLE_BOTTOM = "triple_bottom"
+    DIAMOND_TOP = "diamond_top"
+    DIAMOND_BOTTOM = "diamond_bottom"
+    ROUNDING_BOTTOM = "rounding_bottom"
+    ROUNDING_TOP = "rounding_top"
+    BUMP_AND_RUN = "bump_and_run"
+    ISLAND_REVERSAL_TOP = "island_reversal_top"
+    ISLAND_REVERSAL_BOTTOM = "island_reversal_bottom"
+    V_TOP = "v_top"
+    V_BOTTOM = "v_bottom"
     
-    # Continuation Patterns
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CONTINUATION PATTERNS (15+)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    BULL_FLAG = "bull_flag"
+    BEAR_FLAG = "bear_flag"
+    PENNANT = "pennant"
+    CUP_AND_HANDLE = "cup_and_handle"
+    INVERTED_CUP_AND_HANDLE = "inverted_cup_and_handle"
+    RECTANGLE_TOP = "rectangle_top"
+    RECTANGLE_BOTTOM = "rectangle_bottom"
+    PRICE_CHANNEL_UP = "price_channel_up"
+    PRICE_CHANNEL_DOWN = "price_channel_down"
+    SCALLOP_UP = "scallop_up"
+    SCALLOP_DOWN = "scallop_down"
+    MEASURED_MOVE_UP = "measured_move_up"
+    MEASURED_MOVE_DOWN = "measured_move_down"
+    THREE_DRIVES_UP = "three_drives_up"
+    THREE_DRIVES_DOWN = "three_drives_down"
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BILATERAL / TRIANGLE PATTERNS (10+)
+    # ═══════════════════════════════════════════════════════════════════════════════
     SYMMETRICAL_TRIANGLE = "symmetrical_triangle"
     ASCENDING_TRIANGLE = "ascending_triangle"
     DESCENDING_TRIANGLE = "descending_triangle"
     RISING_WEDGE = "rising_wedge"
     FALLING_WEDGE = "falling_wedge"
-    BULL_FLAG = "bull_flag"
-    BEAR_FLAG = "bear_flag"
-    PENNANT = "pennant"
+    EXPANDING_TRIANGLE = "expanding_triangle"
+    MEGAPHONE_BULLISH = "megaphone_bullish"
+    MEGAPHONE_BEARISH = "megaphone_bearish"
+    BROADENING_WEDGE_UP = "broadening_wedge_up"
+    BROADENING_WEDGE_DOWN = "broadening_wedge_down"
     
-    # Support/Resistance
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SUPPORT/RESISTANCE
+    # ═══════════════════════════════════════════════════════════════════════════════
     SUPPORT_LINE = "support_line"
     RESISTANCE_LINE = "resistance_line"
     TRENDLINE_UP = "trendline_up"
     TRENDLINE_DOWN = "trendline_down"
     
-    # Candlestick Patterns
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ADVANCED CANDLESTICK PATTERNS (10+)
+    # ═══════════════════════════════════════════════════════════════════════════════
     BULLISH_ENGULFING = "bullish_engulfing"
     BEARISH_ENGULFING = "bearish_engulfing"
     DOJI = "doji"
     HAMMER = "hammer"
+    INVERTED_HAMMER = "inverted_hammer"
     SHOOTING_STAR = "shooting_star"
     MORNING_STAR = "morning_star"
     EVENING_STAR = "evening_star"
+    THREE_WHITE_SOLDIERS = "three_white_soldiers"
+    THREE_BLACK_CROWS = "three_black_crows"
+    ABANDONED_BABY_BULL = "abandoned_baby_bull"
+    ABANDONED_BABY_BEAR = "abandoned_baby_bear"
+    TWEEZER_TOP = "tweezer_top"
+    TWEEZER_BOTTOM = "tweezer_bottom"
+    PIERCING_LINE = "piercing_line"
+    DARK_CLOUD_COVER = "dark_cloud_cover"
     
-    # Elliott Wave Patterns
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ELLIOTT WAVE PATTERNS
+    # ═══════════════════════════════════════════════════════════════════════════════
     ELLIOTT_WAVE_1 = "elliott_wave_1"
     ELLIOTT_WAVE_2 = "elliott_wave_2"
     ELLIOTT_WAVE_3 = "elliott_wave_3"
@@ -106,10 +155,10 @@ class PatternType(str, Enum):
     ELLIOTT_WAVE_A = "elliott_wave_a"
     ELLIOTT_WAVE_B = "elliott_wave_b"
     ELLIOTT_WAVE_C = "elliott_wave_c"
-    ELLIOTT_IMPULSE = "elliott_impulse"      # Complete 1-2-3-4-5
-    ELLIOTT_CORRECTIVE = "elliott_corrective"  # Complete A-B-C
+    ELLIOTT_IMPULSE = "elliott_impulse"
+    ELLIOTT_CORRECTIVE = "elliott_corrective"
     
-    # Fractal Sub-Waves (waves inside waves)
+    # Fractal Sub-Waves
     ELLIOTT_SUBWAVE_1 = "elliott_subwave_1"
     ELLIOTT_SUBWAVE_2 = "elliott_subwave_2"
     ELLIOTT_SUBWAVE_3 = "elliott_subwave_3"
@@ -118,42 +167,95 @@ class PatternType(str, Enum):
     ELLIOTT_SUBWAVE_A = "elliott_subwave_a"
     ELLIOTT_SUBWAVE_B = "elliott_subwave_b"
     ELLIOTT_SUBWAVE_C = "elliott_subwave_c"
-    ELLIOTT_FRACTAL_COMPLETE = "elliott_fractal_complete"  # Full fractal structure
-    ELLIOTT_FRACTAL_INSIGHT = "elliott_fractal_insight"    # Fractal timing insight
+    ELLIOTT_FRACTAL_COMPLETE = "elliott_fractal_complete"
+    ELLIOTT_FRACTAL_INSIGHT = "elliott_fractal_insight"
 
 PATTERN_BIAS = {
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # REVERSAL PATTERNS
+    # ═══════════════════════════════════════════════════════════════════════════════
     PatternType.HEAD_AND_SHOULDERS: "BEARISH",
     PatternType.INVERSE_HEAD_AND_SHOULDERS: "BULLISH",
     PatternType.DOUBLE_TOP: "BEARISH",
     PatternType.DOUBLE_BOTTOM: "BULLISH",
     PatternType.TRIPLE_TOP: "BEARISH",
     PatternType.TRIPLE_BOTTOM: "BULLISH",
+    PatternType.DIAMOND_TOP: "BEARISH",
+    PatternType.DIAMOND_BOTTOM: "BULLISH",
+    PatternType.ROUNDING_BOTTOM: "BULLISH",
+    PatternType.ROUNDING_TOP: "BEARISH",
+    PatternType.BUMP_AND_RUN: "BEARISH",
+    PatternType.ISLAND_REVERSAL_TOP: "BEARISH",
+    PatternType.ISLAND_REVERSAL_BOTTOM: "BULLISH",
+    PatternType.V_TOP: "BEARISH",
+    PatternType.V_BOTTOM: "BULLISH",
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CONTINUATION PATTERNS
+    # ═══════════════════════════════════════════════════════════════════════════════
+    PatternType.BULL_FLAG: "BULLISH",
+    PatternType.BEAR_FLAG: "BEARISH",
+    PatternType.PENNANT: "NEUTRAL",
+    PatternType.CUP_AND_HANDLE: "BULLISH",
+    PatternType.INVERTED_CUP_AND_HANDLE: "BEARISH",
+    PatternType.RECTANGLE_TOP: "NEUTRAL",
+    PatternType.RECTANGLE_BOTTOM: "NEUTRAL",
+    PatternType.PRICE_CHANNEL_UP: "BULLISH",
+    PatternType.PRICE_CHANNEL_DOWN: "BEARISH",
+    PatternType.SCALLOP_UP: "BULLISH",
+    PatternType.SCALLOP_DOWN: "BEARISH",
+    PatternType.MEASURED_MOVE_UP: "BULLISH",
+    PatternType.MEASURED_MOVE_DOWN: "BEARISH",
+    PatternType.THREE_DRIVES_UP: "BEARISH",  # Reversal after 3rd drive
+    PatternType.THREE_DRIVES_DOWN: "BULLISH",
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BILATERAL / TRIANGLES
+    # ═══════════════════════════════════════════════════════════════════════════════
     PatternType.SYMMETRICAL_TRIANGLE: "NEUTRAL",
     PatternType.ASCENDING_TRIANGLE: "BULLISH",
     PatternType.DESCENDING_TRIANGLE: "BEARISH",
     PatternType.RISING_WEDGE: "BEARISH",
     PatternType.FALLING_WEDGE: "BULLISH",
-    PatternType.BULL_FLAG: "BULLISH",
-    PatternType.BEAR_FLAG: "BEARISH",
-    PatternType.PENNANT: "NEUTRAL",
+    PatternType.EXPANDING_TRIANGLE: "NEUTRAL",
+    PatternType.MEGAPHONE_BULLISH: "BULLISH",
+    PatternType.MEGAPHONE_BEARISH: "BEARISH",
+    PatternType.BROADENING_WEDGE_UP: "BEARISH",
+    PatternType.BROADENING_WEDGE_DOWN: "BULLISH",
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CANDLESTICK PATTERNS
+    # ═══════════════════════════════════════════════════════════════════════════════
     PatternType.BULLISH_ENGULFING: "BULLISH",
     PatternType.BEARISH_ENGULFING: "BEARISH",
+    PatternType.DOJI: "NEUTRAL",
     PatternType.HAMMER: "BULLISH",
+    PatternType.INVERTED_HAMMER: "BULLISH",
     PatternType.SHOOTING_STAR: "BEARISH",
     PatternType.MORNING_STAR: "BULLISH",
     PatternType.EVENING_STAR: "BEARISH",
-    # Elliott Waves - Bias depends on wave direction
+    PatternType.THREE_WHITE_SOLDIERS: "BULLISH",
+    PatternType.THREE_BLACK_CROWS: "BEARISH",
+    PatternType.ABANDONED_BABY_BULL: "BULLISH",
+    PatternType.ABANDONED_BABY_BEAR: "BEARISH",
+    PatternType.TWEEZER_TOP: "BEARISH",
+    PatternType.TWEEZER_BOTTOM: "BULLISH",
+    PatternType.PIERCING_LINE: "BULLISH",
+    PatternType.DARK_CLOUD_COVER: "BEARISH",
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ELLIOTT WAVES
+    # ═══════════════════════════════════════════════════════════════════════════════
     PatternType.ELLIOTT_WAVE_1: "BULLISH",
-    PatternType.ELLIOTT_WAVE_2: "BEARISH",  # Corrective
-    PatternType.ELLIOTT_WAVE_3: "BULLISH",  # Strongest wave
-    PatternType.ELLIOTT_WAVE_4: "BEARISH",  # Corrective
-    PatternType.ELLIOTT_WAVE_5: "BULLISH",  # Final impulse
-    PatternType.ELLIOTT_WAVE_A: "BEARISH",  # Correction start
-    PatternType.ELLIOTT_WAVE_B: "BULLISH",  # Counter-trend
-    PatternType.ELLIOTT_WAVE_C: "BEARISH",  # Final correction
+    PatternType.ELLIOTT_WAVE_2: "BEARISH",
+    PatternType.ELLIOTT_WAVE_3: "BULLISH",
+    PatternType.ELLIOTT_WAVE_4: "BEARISH",
+    PatternType.ELLIOTT_WAVE_5: "BULLISH",
+    PatternType.ELLIOTT_WAVE_A: "BEARISH",
+    PatternType.ELLIOTT_WAVE_B: "BULLISH",
+    PatternType.ELLIOTT_WAVE_C: "BEARISH",
     PatternType.ELLIOTT_IMPULSE: "BULLISH",
     PatternType.ELLIOTT_CORRECTIVE: "BEARISH",
-    # Fractal Sub-Waves inherit direction from parent
     PatternType.ELLIOTT_SUBWAVE_1: "BULLISH",
     PatternType.ELLIOTT_SUBWAVE_2: "BEARISH",
     PatternType.ELLIOTT_SUBWAVE_3: "BULLISH",
@@ -571,6 +673,429 @@ PATTERN_PSYCHOLOGY = {
             "cosa_succede": "Fractal Insight: Lower timeframe is confirming higher timeframe structure.",
             "perche": "When fractal waves align, move probability increases exponentially. Self-similarity in action.",
             "azione": "Trade in confirmed direction with high confidence. Use lower TF for entry, higher for target."
+        }
+    },
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ADDITIONAL REVERSAL PATTERNS (50+ Library)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    PatternType.DIAMOND_TOP: {
+        "it": {
+            "cosa_succede": "Il prezzo forma un pattern a diamante in cima: prima espande poi contrae. Massimi crescenti poi decrescenti.",
+            "perche": "Volatilità che segnala distribuzione. Gli istituzionali stanno uscendo mentre i retail entrano.",
+            "azione": "SHORT al breakdown della trendline inferiore. Stop sopra il diamante. Target: altezza del diamante."
+        },
+        "en": {
+            "cosa_succede": "Price forms diamond pattern at top: first expanding then contracting.",
+            "perche": "Volatility signaling distribution. Institutions exiting while retail enters.",
+            "azione": "SHORT on lower trendline breakdown. Stop above diamond. Target: diamond height."
+        }
+    },
+    PatternType.DIAMOND_BOTTOM: {
+        "it": {
+            "cosa_succede": "Il prezzo forma un pattern a diamante in basso: prima espande poi contrae.",
+            "perche": "Capitolazione seguita da accumulazione. Smart money che accumula durante il caos.",
+            "azione": "LONG al breakout della trendline superiore. Stop sotto il diamante. Target: altezza del diamante."
+        },
+        "en": {
+            "cosa_succede": "Price forms diamond pattern at bottom: first expanding then contracting.",
+            "perche": "Capitulation followed by accumulation. Smart money accumulating during chaos.",
+            "azione": "LONG on upper trendline breakout. Stop below diamond. Target: diamond height."
+        }
+    },
+    PatternType.ROUNDING_BOTTOM: {
+        "it": {
+            "cosa_succede": "Il prezzo forma una 'U' graduale. Cambio lento di sentiment da bearish a bullish.",
+            "perche": "Accumulazione graduale. Il pessimismo si trasforma lentamente in ottimismo.",
+            "azione": "LONG al breakout della neckline. Stop sotto il punto più basso. Target significativo."
+        },
+        "en": {
+            "cosa_succede": "Price forms gradual 'U' shape. Slow sentiment change from bearish to bullish.",
+            "perche": "Gradual accumulation. Pessimism slowly transforming to optimism.",
+            "azione": "LONG on neckline breakout. Stop below lowest point. Significant target."
+        }
+    },
+    PatternType.ROUNDING_TOP: {
+        "it": {
+            "cosa_succede": "Il prezzo forma una 'n' graduale. Cambio lento di sentiment da bullish a bearish.",
+            "perche": "Distribuzione graduale. L'ottimismo si trasforma lentamente in pessimismo.",
+            "azione": "SHORT al breakdown della neckline. Stop sopra il massimo. Target significativo."
+        },
+        "en": {
+            "cosa_succede": "Price forms gradual 'n' shape. Slow sentiment change from bullish to bearish.",
+            "perche": "Gradual distribution. Optimism slowly transforming to pessimism.",
+            "azione": "SHORT on neckline breakdown. Stop above highest point. Significant target."
+        }
+    },
+    PatternType.BUMP_AND_RUN: {
+        "it": {
+            "cosa_succede": "Trend accelerato (bump) seguito da crollo rapido dopo rottura della trendline.",
+            "perche": "Speculazione eccessiva. Il mercato è diventato parabolico. Euforia seguita da panico.",
+            "azione": "SHORT aggressivo quando il prezzo rompe la trendline. Stop sopra l'ultimo massimo."
+        },
+        "en": {
+            "cosa_succede": "Accelerated trend (bump) followed by rapid collapse after trendline break.",
+            "perche": "Excessive speculation. Market became parabolic. Euphoria followed by panic.",
+            "azione": "Aggressive SHORT when price breaks trendline. Stop above last high."
+        }
+    },
+    PatternType.ISLAND_REVERSAL_TOP: {
+        "it": {
+            "cosa_succede": "Gap up seguito da consolidamento, poi gap down. Il prezzo è 'intrappolato' su un'isola.",
+            "perche": "Tutti i compratori sono intrappolati. Capitolazione immediata.",
+            "azione": "SHORT immediato dopo il gap down. Stop sopra l'isola. Pattern raro ma affidabile."
+        },
+        "en": {
+            "cosa_succede": "Gap up followed by consolidation, then gap down. Price 'trapped' on island.",
+            "perche": "All buyers trapped. Immediate capitulation.",
+            "azione": "Immediate SHORT after gap down. Stop above island. Rare but reliable."
+        }
+    },
+    PatternType.ISLAND_REVERSAL_BOTTOM: {
+        "it": {
+            "cosa_succede": "Gap down seguito da consolidamento, poi gap up. Il prezzo è 'intrappolato' su un'isola.",
+            "perche": "Tutti i venditori sono intrappolati. Short squeeze immediato.",
+            "azione": "LONG immediato dopo il gap up. Stop sotto l'isola. Pattern raro ma affidabile."
+        },
+        "en": {
+            "cosa_succede": "Gap down followed by consolidation, then gap up. Price 'trapped' on island.",
+            "perche": "All sellers trapped. Immediate short squeeze.",
+            "azione": "Immediate LONG after gap up. Stop below island. Rare but reliable."
+        }
+    },
+    PatternType.V_TOP: {
+        "it": {
+            "cosa_succede": "Inversione improvvisa a V invertita. Nessuna consolidazione.",
+            "perche": "Evento shock. Il mercato non ha tempo di processare. Reazione emotiva pura.",
+            "azione": "SHORT con stop sopra il massimo. Gestisci il rischio - difficile da tradare."
+        },
+        "en": {
+            "cosa_succede": "Sudden inverted V reversal. No consolidation.",
+            "perche": "Shock event. Market has no time to process. Pure emotional reaction.",
+            "azione": "SHORT with stop above high. Manage risk - difficult to trade."
+        }
+    },
+    PatternType.V_BOTTOM: {
+        "it": {
+            "cosa_succede": "Inversione improvvisa a V. Nessuna consolidazione.",
+            "perche": "Evento shock positivo o short squeeze violento. Reazione emotiva pura.",
+            "azione": "LONG con stop sotto il minimo. Gestisci il rischio - difficile da tradare."
+        },
+        "en": {
+            "cosa_succede": "Sudden V reversal. No consolidation.",
+            "perche": "Positive shock event or violent short squeeze. Pure emotional reaction.",
+            "azione": "LONG with stop below low. Manage risk - difficult to trade."
+        }
+    },
+    PatternType.CUP_AND_HANDLE: {
+        "it": {
+            "cosa_succede": "Il prezzo forma una 'tazza' arrotondata seguita da piccolo consolidamento (manico).",
+            "perche": "Accumulazione graduale nella tazza. Il manico è l'ultimo shakeout prima del breakout.",
+            "azione": "LONG al breakout del manico. Stop sotto il fondo del manico. Target: profondità della tazza."
+        },
+        "en": {
+            "cosa_succede": "Price forms rounded 'cup' followed by small consolidation (handle).",
+            "perche": "Gradual accumulation in cup. Handle is last shakeout before breakout.",
+            "azione": "LONG on handle breakout. Stop below handle bottom. Target: cup depth."
+        }
+    },
+    PatternType.INVERTED_CUP_AND_HANDLE: {
+        "it": {
+            "cosa_succede": "Il prezzo forma una 'tazza' invertita seguita da piccolo consolidamento.",
+            "perche": "Distribuzione graduale nella tazza invertita. Pattern di continuazione ribassista.",
+            "azione": "SHORT al breakdown del manico. Stop sopra il top del manico. Target: profondità della tazza."
+        },
+        "en": {
+            "cosa_succede": "Price forms inverted 'cup' followed by small consolidation.",
+            "perche": "Gradual distribution in inverted cup. Bearish continuation.",
+            "azione": "SHORT on handle breakdown. Stop above handle top. Target: cup depth."
+        }
+    },
+    PatternType.RECTANGLE_TOP: {
+        "it": {
+            "cosa_succede": "Il prezzo oscilla tra S/R orizzontali dopo un uptrend. Distribuzione in corso.",
+            "perche": "Gli istituzionali stanno scaricando posizioni ai retail.",
+            "azione": "Attendi il breakdown per SHORT. Oppure compra supporto/vendi resistenza."
+        },
+        "en": {
+            "cosa_succede": "Price oscillates between horizontal S/R after uptrend. Distribution.",
+            "perche": "Institutions unloading to retail.",
+            "azione": "Wait for breakdown to SHORT. Or buy support/sell resistance."
+        }
+    },
+    PatternType.RECTANGLE_BOTTOM: {
+        "it": {
+            "cosa_succede": "Il prezzo oscilla tra S/R orizzontali dopo un downtrend. Accumulazione in corso.",
+            "perche": "Gli istituzionali stanno accumulando posizioni dai retail in panico.",
+            "azione": "Attendi il breakout per LONG. Oppure compra supporto/vendi resistenza."
+        },
+        "en": {
+            "cosa_succede": "Price oscillates between horizontal S/R after downtrend. Accumulation.",
+            "perche": "Institutions accumulating from panicking retail.",
+            "azione": "Wait for breakout to LONG. Or buy support/sell resistance."
+        }
+    },
+    PatternType.PRICE_CHANNEL_UP: {
+        "it": {
+            "cosa_succede": "Il prezzo si muove all'interno di due trendline parallele ascendenti.",
+            "perche": "Trend sano e controllato. Equilibrio dinamico tra compratori e venditori.",
+            "azione": "LONG ai test della trendline inferiore. Stop sotto. Target: trendline superiore."
+        },
+        "en": {
+            "cosa_succede": "Price moves within two parallel ascending trendlines.",
+            "perche": "Healthy controlled trend. Dynamic equilibrium.",
+            "azione": "LONG on lower trendline tests. Stop below. Target: upper trendline."
+        }
+    },
+    PatternType.PRICE_CHANNEL_DOWN: {
+        "it": {
+            "cosa_succede": "Il prezzo si muove all'interno di due trendline parallele discendenti.",
+            "perche": "Trend sano e controllato. Equilibrio dinamico tra venditori e compratori.",
+            "azione": "SHORT ai test della trendline superiore. Stop sopra. Target: trendline inferiore."
+        },
+        "en": {
+            "cosa_succede": "Price moves within two parallel descending trendlines.",
+            "perche": "Healthy controlled trend. Dynamic equilibrium.",
+            "azione": "SHORT on upper trendline tests. Stop above. Target: lower trendline."
+        }
+    },
+    PatternType.SCALLOP_UP: {
+        "it": {
+            "cosa_succede": "Serie di minimi arrotondati crescenti. Continuazione rialzista organica.",
+            "perche": "Accumulazione ritmica. Ogni pullback è più alto del precedente.",
+            "azione": "LONG sui pullback arrotondati. Stop sotto l'ultimo minimo."
+        },
+        "en": {
+            "cosa_succede": "Series of rising rounded lows. Organic bullish continuation.",
+            "perche": "Rhythmic accumulation. Each pullback higher than previous.",
+            "azione": "LONG on rounded pullbacks. Stop below last low."
+        }
+    },
+    PatternType.SCALLOP_DOWN: {
+        "it": {
+            "cosa_succede": "Serie di massimi arrotondati decrescenti. Continuazione ribassista organica.",
+            "perche": "Distribuzione ritmica. Ogni rimbalzo è più basso del precedente.",
+            "azione": "SHORT sui rimbalzi arrotondati. Stop sopra l'ultimo massimo."
+        },
+        "en": {
+            "cosa_succede": "Series of falling rounded highs. Organic bearish continuation.",
+            "perche": "Rhythmic distribution. Each bounce lower than previous.",
+            "azione": "SHORT on rounded bounces. Stop above last high."
+        }
+    },
+    PatternType.MEASURED_MOVE_UP: {
+        "it": {
+            "cosa_succede": "Due leg rialziste simmetriche separate da una correzione. AB = CD.",
+            "perche": "Il mercato si muove in onde simmetriche. La seconda gamba 'misura' la prima.",
+            "azione": "LONG all'inizio della seconda gamba. Target: lunghezza della prima gamba."
+        },
+        "en": {
+            "cosa_succede": "Two symmetric bullish legs separated by correction. AB = CD.",
+            "perche": "Market moves in symmetric waves. Second leg 'measures' the first.",
+            "azione": "LONG at second leg start. Target: first leg length projected."
+        }
+    },
+    PatternType.MEASURED_MOVE_DOWN: {
+        "it": {
+            "cosa_succede": "Due leg ribassiste simmetriche separate da una correzione. AB = CD.",
+            "perche": "Il mercato si muove in onde simmetriche. La seconda gamba 'misura' la prima.",
+            "azione": "SHORT all'inizio della seconda gamba. Target: lunghezza della prima gamba."
+        },
+        "en": {
+            "cosa_succede": "Two symmetric bearish legs separated by correction. AB = CD.",
+            "perche": "Market moves in symmetric waves. Second leg 'measures' the first.",
+            "azione": "SHORT at second leg start. Target: first leg length projected."
+        }
+    },
+    PatternType.THREE_DRIVES_UP: {
+        "it": {
+            "cosa_succede": "Tre massimi crescenti simmetrici. Spesso segnala esaurimento rialzista.",
+            "perche": "Ogni drive rappresenta compratori sempre più deboli. Il terzo è l'ultimo sforzo.",
+            "azione": "Attendi il terzo drive per SHORT. Stop sopra il terzo massimo."
+        },
+        "en": {
+            "cosa_succede": "Three symmetric rising highs. Often signals bullish exhaustion.",
+            "perche": "Each drive represents weaker buyers. Third is last effort.",
+            "azione": "Wait for third drive to SHORT. Stop above third high."
+        }
+    },
+    PatternType.THREE_DRIVES_DOWN: {
+        "it": {
+            "cosa_succede": "Tre minimi decrescenti simmetrici. Spesso segnala esaurimento ribassista.",
+            "perche": "Ogni drive rappresenta venditori sempre più deboli. Il terzo è l'ultimo sforzo.",
+            "azione": "Attendi il terzo drive per LONG. Stop sotto il terzo minimo."
+        },
+        "en": {
+            "cosa_succede": "Three symmetric falling lows. Often signals bearish exhaustion.",
+            "perche": "Each drive represents weaker sellers. Third is last effort.",
+            "azione": "Wait for third drive to LONG. Stop below third low."
+        }
+    },
+    PatternType.EXPANDING_TRIANGLE: {
+        "it": {
+            "cosa_succede": "Il prezzo forma massimi crescenti e minimi decrescenti. Volatilità in espansione.",
+            "perche": "Incertezza crescente. Né compratori né venditori hanno il controllo.",
+            "azione": "Attendi il breakout/breakdown confermato. Difficile tradare all'interno."
+        },
+        "en": {
+            "cosa_succede": "Price forms higher highs and lower lows. Expanding volatility.",
+            "perche": "Growing uncertainty. Neither buyers nor sellers in control.",
+            "azione": "Wait for confirmed breakout/breakdown. Difficult to trade inside."
+        }
+    },
+    PatternType.MEGAPHONE_BULLISH: {
+        "it": {
+            "cosa_succede": "Triangolo espansivo che si risolve verso l'alto. Ultimo massimo supera tutti.",
+            "perche": "Dopo l'incertezza, i compratori vincono. L'ultimo swing attira FOMO.",
+            "azione": "LONG al breakout del massimo precedente. Stop sotto l'ultimo minimo."
+        },
+        "en": {
+            "cosa_succede": "Expanding triangle resolving upward. Last high exceeds all previous.",
+            "perche": "After uncertainty, buyers win. Last swing attracts FOMO.",
+            "azione": "LONG on previous high breakout. Stop below last low."
+        }
+    },
+    PatternType.MEGAPHONE_BEARISH: {
+        "it": {
+            "cosa_succede": "Triangolo espansivo che si risolve verso il basso. Ultimo minimo rompe tutti.",
+            "perche": "Dopo l'incertezza, i venditori vincono. L'ultimo swing attira panico.",
+            "azione": "SHORT al breakdown del minimo precedente. Stop sopra l'ultimo massimo."
+        },
+        "en": {
+            "cosa_succede": "Expanding triangle resolving downward. Last low breaks all previous.",
+            "perche": "After uncertainty, sellers win. Last swing attracts panic.",
+            "azione": "SHORT on previous low breakdown. Stop above last high."
+        }
+    },
+    PatternType.BROADENING_WEDGE_UP: {
+        "it": {
+            "cosa_succede": "Cuneo che si espande verso l'alto. I massimi crescono più rapidamente dei minimi.",
+            "perche": "Euforia crescente ma instabile. I compratori senza controllo.",
+            "azione": "Prepara SHORT - pattern spesso precede inversione. Attendi esaurimento."
+        },
+        "en": {
+            "cosa_succede": "Wedge expanding upward. Highs rising faster than lows.",
+            "perche": "Growing but unstable euphoria. Buyers without control.",
+            "azione": "Prepare SHORT - pattern often precedes reversal. Wait for exhaustion."
+        }
+    },
+    PatternType.BROADENING_WEDGE_DOWN: {
+        "it": {
+            "cosa_succede": "Cuneo che si espande verso il basso. I minimi scendono più rapidamente dei massimi.",
+            "perche": "Panico crescente ma instabile. I venditori senza controllo.",
+            "azione": "Prepara LONG - pattern spesso precede inversione. Attendi esaurimento."
+        },
+        "en": {
+            "cosa_succede": "Wedge expanding downward. Lows falling faster than highs.",
+            "perche": "Growing but unstable panic. Sellers without control.",
+            "azione": "Prepare LONG - pattern often precedes reversal. Wait for exhaustion."
+        }
+    },
+    PatternType.INVERTED_HAMMER: {
+        "it": {
+            "cosa_succede": "Candela con corpo piccolo in basso e lunga ombra superiore, dopo downtrend.",
+            "perche": "I compratori hanno provato a spingere su ma sono stati respinti. Però mostra interesse.",
+            "azione": "LONG se confermato dalla candela successiva verde. Stop sotto il minimo."
+        },
+        "en": {
+            "cosa_succede": "Candle with small body at bottom and long upper shadow, after downtrend.",
+            "perche": "Buyers tried to push up but were pushed back. Shows interest though.",
+            "azione": "LONG if confirmed by next green candle. Stop below low."
+        }
+    },
+    PatternType.THREE_WHITE_SOLDIERS: {
+        "it": {
+            "cosa_succede": "Tre candele verdi consecutive con corpi pieni, ognuna chiude sopra la precedente.",
+            "perche": "Dominio totale dei compratori per tre sessioni. Momentum inarrestabile.",
+            "azione": "LONG aggressivo. Cerca pullback per entrare. Stop sotto la prima candela."
+        },
+        "en": {
+            "cosa_succede": "Three consecutive green candles with full bodies, each closing above previous.",
+            "perche": "Total buyer dominance for three sessions. Unstoppable momentum.",
+            "azione": "Aggressive LONG. Look for pullbacks. Stop below first candle."
+        }
+    },
+    PatternType.THREE_BLACK_CROWS: {
+        "it": {
+            "cosa_succede": "Tre candele rosse consecutive con corpi pieni, ognuna chiude sotto la precedente.",
+            "perche": "Dominio totale dei venditori per tre sessioni. Panico inarrestabile.",
+            "azione": "SHORT aggressivo. Cerca rimbalzi per entrare. Stop sopra la prima candela."
+        },
+        "en": {
+            "cosa_succede": "Three consecutive red candles with full bodies, each closing below previous.",
+            "perche": "Total seller dominance for three sessions. Unstoppable panic.",
+            "azione": "Aggressive SHORT. Look for bounces. Stop above first candle."
+        }
+    },
+    PatternType.ABANDONED_BABY_BULL: {
+        "it": {
+            "cosa_succede": "Candela rossa, seguita da doji in gap down, seguita da candela verde in gap up.",
+            "perche": "Pattern molto raro. I gap mostrano cambio improvviso di sentiment.",
+            "azione": "LONG immediato dopo conferma. Stop sotto il doji. Pattern estremamente affidabile."
+        },
+        "en": {
+            "cosa_succede": "Red candle, gapped down doji, gapped up green candle.",
+            "perche": "Very rare pattern. Gaps show sudden sentiment change.",
+            "azione": "Immediate LONG after confirmation. Stop below doji. Extremely reliable."
+        }
+    },
+    PatternType.ABANDONED_BABY_BEAR: {
+        "it": {
+            "cosa_succede": "Candela verde, seguita da doji in gap up, seguita da candela rossa in gap down.",
+            "perche": "Pattern molto raro. I gap mostrano cambio improvviso di sentiment.",
+            "azione": "SHORT immediato dopo conferma. Stop sopra il doji. Pattern estremamente affidabile."
+        },
+        "en": {
+            "cosa_succede": "Green candle, gapped up doji, gapped down red candle.",
+            "perche": "Very rare pattern. Gaps show sudden sentiment change.",
+            "azione": "Immediate SHORT after confirmation. Stop above doji. Extremely reliable."
+        }
+    },
+    PatternType.TWEEZER_TOP: {
+        "it": {
+            "cosa_succede": "Due o più candele con massimi identici o quasi. Resistenza forte testata.",
+            "perche": "Il livello è difeso aggressivamente dai venditori.",
+            "azione": "SHORT se il prezzo non riesce a superare. Stop sopra i massimi."
+        },
+        "en": {
+            "cosa_succede": "Two or more candles with identical highs. Strong resistance tested.",
+            "perche": "Level is aggressively defended by sellers.",
+            "azione": "SHORT if price fails to break. Stop above highs."
+        }
+    },
+    PatternType.TWEEZER_BOTTOM: {
+        "it": {
+            "cosa_succede": "Due o più candele con minimi identici o quasi. Supporto forte testato.",
+            "perche": "Il livello è difeso aggressivamente dai compratori.",
+            "azione": "LONG se il prezzo non riesce a rompere. Stop sotto i minimi."
+        },
+        "en": {
+            "cosa_succede": "Two or more candles with identical lows. Strong support tested.",
+            "perche": "Level is aggressively defended by buyers.",
+            "azione": "LONG if price fails to break. Stop below lows."
+        }
+    },
+    PatternType.PIERCING_LINE: {
+        "it": {
+            "cosa_succede": "Candela rossa grande seguita da candela verde che chiude sopra la metà della rossa.",
+            "perche": "I compratori hanno assorbito la pressione di vendita. Cambio di momentum.",
+            "azione": "LONG se confermato. Stop sotto il minimo. Efficace a supporti chiave."
+        },
+        "en": {
+            "cosa_succede": "Large red candle followed by green closing above red's midpoint.",
+            "perche": "Buyers absorbed selling pressure. Momentum change.",
+            "azione": "LONG if confirmed. Stop below low. Effective at key supports."
+        }
+    },
+    PatternType.DARK_CLOUD_COVER: {
+        "it": {
+            "cosa_succede": "Candela verde grande seguita da candela rossa che chiude sotto la metà della verde.",
+            "perche": "I venditori hanno assorbito la pressione di acquisto. Cambio di momentum.",
+            "azione": "SHORT se confermato. Stop sopra il massimo. Efficace a resistenze chiave."
+        },
+        "en": {
+            "cosa_succede": "Large green candle followed by red closing below green's midpoint.",
+            "perche": "Sellers absorbed buying pressure. Momentum change.",
+            "azione": "SHORT if confirmed. Stop above high. Effective at key resistances."
         }
     }
 }
