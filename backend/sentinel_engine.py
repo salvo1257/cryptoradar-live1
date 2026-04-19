@@ -1189,6 +1189,248 @@ def detect_double_bottom(lows: List[float], low_indices: List[int], tolerance: f
     
     return None
 
+
+def detect_head_and_shoulders(highs: List[float], lows: List[float], high_indices: List[int], low_indices: List[int]) -> Optional[Dict]:
+    """
+    Detect Head & Shoulders pattern (bearish reversal).
+    Structure: Left Shoulder (LS) -> Head (H) -> Right Shoulder (RS)
+    Neckline connects the two troughs between LS-H and H-RS.
+    """
+    if len(high_indices) < 3 or len(low_indices) < 2:
+        return None
+    
+    # Need at least 3 peaks
+    for i in range(len(high_indices) - 2):
+        ls_idx = high_indices[i]
+        ls_price = highs[ls_idx]
+        
+        # Find potential head (must be higher than left shoulder)
+        for j in range(i + 1, len(high_indices) - 1):
+            h_idx = high_indices[j]
+            h_price = highs[h_idx]
+            
+            if h_price <= ls_price:
+                continue  # Head must be higher
+            
+            # Find potential right shoulder (should be ~similar to left shoulder)
+            for k in range(j + 1, len(high_indices)):
+                rs_idx = high_indices[k]
+                rs_price = highs[rs_idx]
+                
+                # Right shoulder should be within 15% of left shoulder height
+                ls_rs_diff = abs(ls_price - rs_price) / ls_price
+                if ls_rs_diff > 0.15:
+                    continue
+                
+                # Right shoulder must be lower than head
+                if rs_price >= h_price:
+                    continue
+                
+                # Find neckline (lowest points between LS-H and H-RS)
+                trough1_prices = [lows[idx] for idx in low_indices if ls_idx < idx < h_idx]
+                trough2_prices = [lows[idx] for idx in low_indices if h_idx < idx < rs_idx]
+                
+                if not trough1_prices or not trough2_prices:
+                    continue
+                
+                neckline_left = min(trough1_prices)
+                neckline_right = min(trough2_prices)
+                neckline = (neckline_left + neckline_right) / 2
+                
+                # Calculate target (pattern height projected from neckline)
+                pattern_height = h_price - neckline
+                target = neckline - pattern_height
+                
+                return {
+                    "type": PatternType.HEAD_AND_SHOULDERS,
+                    "left_shoulder": {"index": ls_idx, "price": ls_price},
+                    "head": {"index": h_idx, "price": h_price},
+                    "right_shoulder": {"index": rs_idx, "price": rs_price},
+                    "neckline": neckline,
+                    "target": target,
+                    "completion": 100 if rs_idx < high_indices[-1] else 85,
+                    "bias": "BEARISH"
+                }
+    
+    return None
+
+
+def detect_inverse_head_and_shoulders(highs: List[float], lows: List[float], high_indices: List[int], low_indices: List[int]) -> Optional[Dict]:
+    """
+    Detect Inverse Head & Shoulders pattern (bullish reversal).
+    Structure: Left Shoulder (LS) -> Head (H, lowest) -> Right Shoulder (RS)
+    """
+    if len(low_indices) < 3 or len(high_indices) < 2:
+        return None
+    
+    for i in range(len(low_indices) - 2):
+        ls_idx = low_indices[i]
+        ls_price = lows[ls_idx]
+        
+        for j in range(i + 1, len(low_indices) - 1):
+            h_idx = low_indices[j]
+            h_price = lows[h_idx]
+            
+            if h_price >= ls_price:
+                continue  # Head must be lower
+            
+            for k in range(j + 1, len(low_indices)):
+                rs_idx = low_indices[k]
+                rs_price = lows[rs_idx]
+                
+                ls_rs_diff = abs(ls_price - rs_price) / ls_price
+                if ls_rs_diff > 0.15:
+                    continue
+                
+                if rs_price <= h_price:
+                    continue
+                
+                # Find neckline (highest points between troughs)
+                peak1_prices = [highs[idx] for idx in high_indices if ls_idx < idx < h_idx]
+                peak2_prices = [highs[idx] for idx in high_indices if h_idx < idx < rs_idx]
+                
+                if not peak1_prices or not peak2_prices:
+                    continue
+                
+                neckline = (max(peak1_prices) + max(peak2_prices)) / 2
+                pattern_height = neckline - h_price
+                target = neckline + pattern_height
+                
+                return {
+                    "type": PatternType.INVERSE_HEAD_AND_SHOULDERS,
+                    "left_shoulder": {"index": ls_idx, "price": ls_price},
+                    "head": {"index": h_idx, "price": h_price},
+                    "right_shoulder": {"index": rs_idx, "price": rs_price},
+                    "neckline": neckline,
+                    "target": target,
+                    "completion": 100 if rs_idx < low_indices[-1] else 85,
+                    "bias": "BULLISH"
+                }
+    
+    return None
+
+
+def detect_flag_patterns(candles: List[Dict], lookback: int = 50) -> List[Dict]:
+    """
+    Detect Bull Flag and Bear Flag patterns.
+    Flag = Strong impulsive move (pole) followed by a tight consolidation channel.
+    """
+    patterns = []
+    
+    if len(candles) < lookback:
+        return patterns
+    
+    recent = candles[-lookback:]
+    closes = [c['close'] for c in recent]
+    
+    # Find strong moves (potential flag poles)
+    for i in range(10, len(closes) - 10):
+        # Calculate the move before index i (the pole)
+        pole_start = max(0, i - 15)
+        pole_prices = closes[pole_start:i]
+        
+        if len(pole_prices) < 5:
+            continue
+        
+        pole_change = (pole_prices[-1] - pole_prices[0]) / pole_prices[0]
+        
+        # Need significant move for the pole (>3%)
+        if abs(pole_change) < 0.03:
+            continue
+        
+        # Now check if there's a consolidation after the pole
+        flag_prices = closes[i:min(i + 15, len(closes))]
+        if len(flag_prices) < 5:
+            continue
+        
+        flag_range = (max(flag_prices) - min(flag_prices)) / min(flag_prices)
+        flag_slope = (flag_prices[-1] - flag_prices[0]) / flag_prices[0]
+        
+        # Flag should be tight consolidation (range < 3%)
+        if flag_range > 0.03:
+            continue
+        
+        if pole_change > 0.03:
+            # Bull Flag: pole up, flag drifts down or sideways
+            if flag_slope < 0.02:  # Slight down or sideways
+                patterns.append({
+                    "type": PatternType.BULL_FLAG,
+                    "pole_start": {"index": lookback - pole_start, "price": pole_prices[0]},
+                    "pole_end": {"index": lookback - i, "price": pole_prices[-1]},
+                    "flag_end": {"index": lookback - min(i + 15, len(closes) - 1), "price": flag_prices[-1]},
+                    "pole_height": pole_prices[-1] - pole_prices[0],
+                    "target": flag_prices[-1] + (pole_prices[-1] - pole_prices[0]),
+                    "completion": 70 if len(flag_prices) < 10 else 90,
+                    "bias": "BULLISH"
+                })
+        
+        elif pole_change < -0.03:
+            # Bear Flag: pole down, flag drifts up or sideways
+            if flag_slope > -0.02:  # Slight up or sideways
+                patterns.append({
+                    "type": PatternType.BEAR_FLAG,
+                    "pole_start": {"index": lookback - pole_start, "price": pole_prices[0]},
+                    "pole_end": {"index": lookback - i, "price": pole_prices[-1]},
+                    "flag_end": {"index": lookback - min(i + 15, len(closes) - 1), "price": flag_prices[-1]},
+                    "pole_height": pole_prices[0] - pole_prices[-1],
+                    "target": flag_prices[-1] - (pole_prices[0] - pole_prices[-1]),
+                    "completion": 70 if len(flag_prices) < 10 else 90,
+                    "bias": "BEARISH"
+                })
+    
+    return patterns[:1]  # Return only best match
+
+
+def detect_wedge_patterns(highs: List[float], lows: List[float], high_indices: List[int], low_indices: List[int]) -> Optional[Dict]:
+    """
+    Detect Rising Wedge (bearish) and Falling Wedge (bullish) patterns.
+    Wedge = Two converging trendlines, both pointing in the same direction.
+    """
+    if len(high_indices) < 3 or len(low_indices) < 3:
+        return None
+    
+    recent_highs = [(high_indices[i], highs[high_indices[i]]) for i in range(-4, 0) if i + len(high_indices) >= 0]
+    recent_lows = [(low_indices[i], lows[low_indices[i]]) for i in range(-4, 0) if i + len(low_indices) >= 0]
+    
+    if len(recent_highs) < 2 or len(recent_lows) < 2:
+        return None
+    
+    # Calculate slopes
+    high_slope = (recent_highs[-1][1] - recent_highs[0][1]) / (recent_highs[-1][0] - recent_highs[0][0] + 1)
+    low_slope = (recent_lows[-1][1] - recent_lows[0][1]) / (recent_lows[-1][0] - recent_lows[0][0] + 1)
+    
+    # Rising Wedge: both slopes positive but converging (high slope < low slope)
+    if high_slope > 0.0005 and low_slope > 0.0005:
+        if high_slope < low_slope:  # Converging
+            return {
+                "type": PatternType.RISING_WEDGE,
+                "upper_line": {"start": recent_highs[0], "end": recent_highs[-1]},
+                "lower_line": {"start": recent_lows[0], "end": recent_lows[-1]},
+                "start_index": min(recent_highs[0][0], recent_lows[0][0]),
+                "end_index": max(recent_highs[-1][0], recent_lows[-1][0]),
+                "start_price": recent_lows[0][1],
+                "end_price": recent_highs[-1][1],
+                "completion": 75,
+                "bias": "BEARISH"
+            }
+    
+    # Falling Wedge: both slopes negative but converging (high slope > low slope)
+    if high_slope < -0.0005 and low_slope < -0.0005:
+        if high_slope > low_slope:  # Converging
+            return {
+                "type": PatternType.FALLING_WEDGE,
+                "upper_line": {"start": recent_highs[0], "end": recent_highs[-1]},
+                "lower_line": {"start": recent_lows[0], "end": recent_lows[-1]},
+                "start_index": min(recent_highs[0][0], recent_lows[0][0]),
+                "end_index": max(recent_highs[-1][0], recent_lows[-1][0]),
+                "start_price": recent_highs[0][1],
+                "end_price": recent_lows[-1][1],
+                "completion": 75,
+                "bias": "BULLISH"
+            }
+    
+    return None
+
 def detect_triangle(highs: List[float], lows: List[float], high_indices: List[int], low_indices: List[int]) -> Optional[Dict]:
     """Detect triangle patterns (symmetrical, ascending, descending)"""
     if len(high_indices) < 2 or len(low_indices) < 2:
@@ -2175,6 +2417,37 @@ class SentinelEngine:
             double_bottom['weight'] = TIMEFRAME_WEIGHTS[timeframe]
             patterns.append(double_bottom)
         
+        # Detect Head & Shoulders patterns
+        h_and_s = detect_head_and_shoulders(closes, closes, high_indices, low_indices)
+        if h_and_s:
+            h_and_s['timeframe'] = timeframe.value
+            h_and_s['color'] = TIMEFRAME_COLORS[timeframe]
+            h_and_s['weight'] = TIMEFRAME_WEIGHTS[timeframe] * 2  # Higher weight for H&S
+            patterns.append(h_and_s)
+        
+        inv_h_and_s = detect_inverse_head_and_shoulders(closes, closes, high_indices, low_indices)
+        if inv_h_and_s:
+            inv_h_and_s['timeframe'] = timeframe.value
+            inv_h_and_s['color'] = TIMEFRAME_COLORS[timeframe]
+            inv_h_and_s['weight'] = TIMEFRAME_WEIGHTS[timeframe] * 2
+            patterns.append(inv_h_and_s)
+        
+        # Detect Wedge patterns
+        wedge = detect_wedge_patterns(closes, closes, high_indices, low_indices)
+        if wedge:
+            wedge['timeframe'] = timeframe.value
+            wedge['color'] = TIMEFRAME_COLORS[timeframe]
+            wedge['weight'] = TIMEFRAME_WEIGHTS[timeframe]
+            patterns.append(wedge)
+        
+        # Detect Flag patterns
+        flags = detect_flag_patterns(candles)
+        for flag in flags:
+            flag['timeframe'] = timeframe.value
+            flag['color'] = TIMEFRAME_COLORS[timeframe]
+            flag['weight'] = TIMEFRAME_WEIGHTS[timeframe]
+            patterns.append(flag)
+        
         triangle = detect_triangle(closes, closes, high_indices, low_indices)
         if triangle:
             triangle['timeframe'] = timeframe.value
@@ -2336,6 +2609,41 @@ class SentinelEngine:
                 draw_data["start"] = {"index": peaks[0].get("index"), "price": peaks[0].get("price")}
                 draw_data["end"] = {"index": peaks[-1].get("index"), "price": peaks[-1].get("price")}
                 draw_data["price"] = pattern.get('neckline')
+        
+        elif ptype in [PatternType.HEAD_AND_SHOULDERS, PatternType.INVERSE_HEAD_AND_SHOULDERS]:
+            # H&S patterns have left shoulder, head, right shoulder
+            ls = pattern.get('left_shoulder')
+            head = pattern.get('head')
+            rs = pattern.get('right_shoulder')
+            
+            draw_data["left_shoulder"] = ls
+            draw_data["head"] = head
+            draw_data["right_shoulder"] = rs
+            draw_data["neckline"] = pattern.get('neckline')
+            draw_data["target"] = pattern.get('target')
+            draw_data["shape"] = "head_and_shoulders"
+            
+            if ls and rs:
+                draw_data["start"] = {"index": ls.get("index"), "price": ls.get("price")}
+                draw_data["end"] = {"index": rs.get("index"), "price": rs.get("price")}
+                draw_data["price"] = pattern.get('neckline')
+        
+        elif ptype in [PatternType.BULL_FLAG, PatternType.BEAR_FLAG]:
+            # Flag patterns have pole and flag components
+            pole_start = pattern.get('pole_start')
+            pole_end = pattern.get('pole_end')
+            flag_end = pattern.get('flag_end')
+            
+            draw_data["pole_start"] = pole_start
+            draw_data["pole_end"] = pole_end
+            draw_data["flag_end"] = flag_end
+            draw_data["pole_height"] = pattern.get('pole_height')
+            draw_data["target"] = pattern.get('target')
+            draw_data["shape"] = "flag"
+            
+            if pole_start and flag_end:
+                draw_data["start"] = {"index": pole_start.get("index"), "price": pole_start.get("price")}
+                draw_data["end"] = {"index": flag_end.get("index"), "price": flag_end.get("price")}
         
         elif ptype in [PatternType.SYMMETRICAL_TRIANGLE, PatternType.ASCENDING_TRIANGLE, PatternType.DESCENDING_TRIANGLE]:
             upper_line = pattern.get('upper_line')

@@ -517,4 +517,50 @@ Every pattern card displays:
 - `/app/backend/server.py` - Noise reduction logic in pattern endpoints
 - `/app/frontend/src/components/TradingChartWithSentinel.js` - Italian toggle labels
 
+---
+## Update: April 19, 2025 - "Glued-to-Chart" SVG Anchoring Fix
+
+### ✅ Completed - Precise Chart Anchoring for SVG Overlays
+
+**Problem Solved**:
+SVG pattern drawings were "floating" when users zoomed or panned the TradingView chart. Lines needed to be mathematically anchored to candle coordinates.
+
+**Frontend Implementation** (`TradingChartWithSentinel.js`):
+1. **`priceToY()`**: Uses `candleSeries.priceToCoordinate(price)` for precise Y-axis mapping
+2. **`timeToX()`**: Uses `chart.timeScale().timeToCoordinate(timestamp)` for precise X-axis mapping
+3. **`indexToX()`**: Converts candle index to timestamp then to X coordinate
+4. **Zoom/Pan Sync**: Subscribed to `visibleLogicalRangeChange` and `visibleTimeRangeChange` events
+5. **`chartUpdateTrigger`**: State variable that forces SVG re-render on chart interaction
+
+**Backend Implementation** (`sentinel_engine.py`):
+1. Updated `_extract_draw_data()` to include `start.index`, `start.price`, `end.index`, `end.price` for ALL pattern types
+2. Double Top/Bottom: Extracts from `first_top`/`second_top`
+3. Head & Shoulders: Extracts from `left_shoulder`, `head`, `right_shoulder`
+4. Triangles/Wedges: Extracts from `upper_line`/`lower_line` endpoints
+5. Elliott Waves: Already had `start`/`end` coordinates
+
+### ✅ Completed - Extended Pattern Library (25+ Patterns)
+
+**New Detection Functions Added**:
+- `detect_head_and_shoulders()` - Classic bearish reversal
+- `detect_inverse_head_and_shoulders()` - Bullish reversal
+- `detect_flag_patterns()` - Bull Flag and Bear Flag continuation
+- `detect_wedge_patterns()` - Rising Wedge (bearish) and Falling Wedge (bullish)
+
+**Current Pattern Coverage**:
+- **Reversal Patterns**: Double Top, Double Bottom, Head & Shoulders, Inverse H&S
+- **Continuation Patterns**: Bull Flag, Bear Flag
+- **Bilateral Patterns**: Symmetrical Triangle, Ascending Triangle, Descending Triangle, Rising Wedge, Falling Wedge
+- **Candlestick Patterns**: Engulfing, Hammer, Shooting Star, Doji, Morning Star, Evening Star
+- **Elliott Waves**: Wave 1-5, A-B-C, Impulse, Corrective, Fractal sub-waves
+
+**Testing Results**:
+- Backend: 100% (13/13 tests passed)
+- Frontend: All UI components verified
+- Test file: `/app/backend/tests/test_sentinel_glued_chart.py`
+
+**Files Modified**:
+- `/app/frontend/src/components/TradingChartWithSentinel.js` - Glued-to-chart coordinate conversion
+- `/app/backend/sentinel_engine.py` - Pattern detection + draw_data extraction
+
 
