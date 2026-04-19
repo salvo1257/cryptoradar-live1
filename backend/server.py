@@ -1084,24 +1084,38 @@ class V4MentorSummary(BaseModel):
 
 class TelegramNotificationPreferences(BaseModel):
     """User preferences for Telegram notifications"""
+    # V3 SNIPER Notifications
+    notify_sniper_signals: bool = True
+    notify_sniper_entry_ready: bool = True
+    notify_sniper_outcomes: bool = True
+    
+    # V3 HUNTER Notifications  
+    notify_hunter_signals: bool = True
+    notify_hunter_leg_fills: bool = True
+    notify_hunter_outcomes: bool = True
+    
+    # General preferences
     notify_long_signals: bool = True
     notify_short_signals: bool = True
     notify_invalidated: bool = True
     notify_expired: bool = True
     notify_outcomes: bool = True
-    min_confidence_threshold: int = 50  # Only notify if confidence >= this
+    min_quality_threshold: int = 50  # Only notify if quality >= this
 
 
 class TelegramSettings(BaseModel):
     """Telegram bot configuration"""
     enabled: bool = False
     bot_token: str = ""
-    chat_id: str = ""
+    chat_id: str = ""  # Primary chat ID
+    additional_chat_ids: List[str] = []  # Additional chat IDs (groups, channels)
     language: str = "it"
     preferences: TelegramNotificationPreferences = TelegramNotificationPreferences()
     last_test_sent: Optional[datetime] = None
     last_notification_sent: Optional[datetime] = None
     total_notifications_sent: int = 0
+    sniper_notifications_sent: int = 0
+    hunter_notifications_sent: int = 0
 
 
 class SignalHistoryResponse(BaseModel):
@@ -3206,6 +3220,279 @@ async def send_private_signal_to_whitelist(template_key: str, data: dict, force_
         return {"success": False, "error": str(e), "sent_to": []}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# V4 TELEGRAM NOTIFICATIONS - Separate SNIPER and HUNTER alerts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def send_v4_sniper_notification(signal_data: dict) -> bool:
+    """
+    🎯 V3 SNIPER - Send Telegram notification for ENTRY_READY signal
+    
+    Notifies when a SNIPER signal is generated with full context.
+    """
+    try:
+        settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+        if not settings or not settings.get("enabled"):
+            return False
+        
+        bot_token = settings.get("bot_token", "")
+        chat_id = settings.get("chat_id", "")
+        additional_ids = settings.get("additional_chat_ids", [])
+        prefs = settings.get("preferences", {})
+        
+        if not bot_token or not chat_id:
+            return False
+        
+        # Check if SNIPER notifications enabled
+        if not prefs.get("notify_sniper_signals", True):
+            return False
+        
+        # Check quality threshold
+        quality = signal_data.get("quality_score", 0)
+        min_quality = prefs.get("min_quality_threshold", 50)
+        if quality < min_quality:
+            logger.debug(f"[V4 Telegram] SNIPER quality {quality} below threshold {min_quality}")
+            return False
+        
+        direction = signal_data.get("direction", "UNKNOWN")
+        entry = signal_data.get("entry_price", 0)
+        stop = signal_data.get("stop_loss", 0)
+        target1 = signal_data.get("target_1", 0)
+        target2 = signal_data.get("target_2", 0)
+        rr = signal_data.get("risk_reward_ratio", 0)
+        regime = signal_data.get("market_regime", "UNKNOWN")
+        bias = signal_data.get("market_bias", "NEUTRAL")
+        
+        # Build message
+        emoji_dir = "🟢" if direction == "LONG" else "🔴"
+        message = f"""
+🎯 <b>V3 SNIPER - ENTRY READY</b>
+
+{emoji_dir} <b>{direction}</b> | Quality: <b>{quality}/100</b>
+
+📍 <b>Entry:</b> ${entry:,.0f}
+🛑 <b>Stop:</b> ${stop:,.0f}
+🎯 <b>Target 1:</b> ${target1:,.0f}
+🎯 <b>Target 2:</b> ${target2:,.0f}
+
+📊 <b>R:R:</b> {rr:.2f}
+📈 <b>Regime:</b> {regime}
+🧭 <b>Bias:</b> {bias}
+
+⏰ {datetime.now(timezone.utc).strftime('%H:%M UTC')}
+"""
+        
+        # Send to all chat IDs
+        all_chat_ids = [chat_id] + additional_ids
+        sent_count = 0
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for cid in all_chat_ids:
+                if not cid:
+                    continue
+                try:
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": cid, "text": message.strip(), "parse_mode": "HTML"}
+                    )
+                    if resp.status_code == 200:
+                        sent_count += 1
+                except Exception as e:
+                    logger.error(f"[V4 Telegram] Error sending to {cid}: {e}")
+        
+        # Update stats
+        if sent_count > 0:
+            await telegram_settings_collection.update_one(
+                {},
+                {
+                    "$inc": {"total_notifications_sent": 1, "sniper_notifications_sent": 1},
+                    "$set": {"last_notification_sent": datetime.now(timezone.utc)}
+                }
+            )
+            logger.info(f"[V4 Telegram] 🎯 SNIPER {direction} sent to {sent_count} chat(s)")
+        
+        return sent_count > 0
+        
+    except Exception as e:
+        logger.error(f"[V4 Telegram] SNIPER notification error: {e}")
+        return False
+
+
+async def send_v4_hunter_notification(deal_data: dict) -> bool:
+    """
+    🏹 V3 HUNTER - Send Telegram notification for 10-20-70 deal activation
+    
+    Notifies when a HUNTER deal is activated with all 3 legs.
+    """
+    try:
+        settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+        if not settings or not settings.get("enabled"):
+            return False
+        
+        bot_token = settings.get("bot_token", "")
+        chat_id = settings.get("chat_id", "")
+        additional_ids = settings.get("additional_chat_ids", [])
+        prefs = settings.get("preferences", {})
+        
+        if not bot_token or not chat_id:
+            return False
+        
+        # Check if HUNTER notifications enabled
+        if not prefs.get("notify_hunter_signals", True):
+            return False
+        
+        direction = deal_data.get("direction", "UNKNOWN")
+        leg1 = deal_data.get("leg_1", {})
+        leg2 = deal_data.get("leg_2", {})
+        leg3 = deal_data.get("leg_3", {})
+        tp = deal_data.get("take_profit", 0)
+        sl = deal_data.get("stop_loss")
+        quality = deal_data.get("quality_score", 0)
+        confidence = deal_data.get("hunter_confidence", "LOW")
+        
+        # Build message
+        emoji_dir = "🟢" if direction == "LONG" else "🔴"
+        sl_text = f"${sl:,.0f}" if sl else "Macro Invalidation"
+        
+        message = f"""
+🏹 <b>V3 HUNTER - 10-20-70 ACTIVATED</b>
+
+{emoji_dir} <b>{direction} HUNT</b> | Confidence: <b>{confidence}</b>
+
+📍 <b>Leg 1 (10%):</b> ${leg1.get('price', 0):,.0f}
+📍 <b>Leg 2 (20%):</b> ${leg2.get('price', 0):,.0f}
+📍 <b>Leg 3 (70%):</b> ${leg3.get('price', 0):,.0f}
+
+🎯 <b>Take Profit:</b> ${tp:,.0f}
+🛑 <b>Stop Loss:</b> {sl_text}
+
+📊 <b>Quality:</b> {quality}/100
+💰 <b>Leverage:</b> {deal_data.get('leverage', 1)}x
+
+⏰ {datetime.now(timezone.utc).strftime('%H:%M UTC')}
+"""
+        
+        # Send to all chat IDs
+        all_chat_ids = [chat_id] + additional_ids
+        sent_count = 0
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for cid in all_chat_ids:
+                if not cid:
+                    continue
+                try:
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": cid, "text": message.strip(), "parse_mode": "HTML"}
+                    )
+                    if resp.status_code == 200:
+                        sent_count += 1
+                except Exception as e:
+                    logger.error(f"[V4 Telegram] Error sending to {cid}: {e}")
+        
+        # Update stats
+        if sent_count > 0:
+            await telegram_settings_collection.update_one(
+                {},
+                {
+                    "$inc": {"total_notifications_sent": 1, "hunter_notifications_sent": 1},
+                    "$set": {"last_notification_sent": datetime.now(timezone.utc)}
+                }
+            )
+            logger.info(f"[V4 Telegram] 🏹 HUNTER {direction} sent to {sent_count} chat(s)")
+        
+        return sent_count > 0
+        
+    except Exception as e:
+        logger.error(f"[V4 Telegram] HUNTER notification error: {e}")
+        return False
+
+
+async def send_v4_outcome_notification(signal_data: dict, signal_type: str) -> bool:
+    """
+    ✅❌ V4 OUTCOME - Send Telegram notification when signal closes
+    
+    Notifies WIN/LOSS/PARTIAL outcomes for both SNIPER and HUNTER.
+    """
+    try:
+        settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+        if not settings or not settings.get("enabled"):
+            return False
+        
+        bot_token = settings.get("bot_token", "")
+        chat_id = settings.get("chat_id", "")
+        additional_ids = settings.get("additional_chat_ids", [])
+        prefs = settings.get("preferences", {})
+        
+        if not bot_token or not chat_id:
+            return False
+        
+        # Check if outcome notifications enabled
+        notify_key = f"notify_{signal_type}_outcomes"
+        if not prefs.get(notify_key, True) and not prefs.get("notify_outcomes", True):
+            return False
+        
+        outcome = signal_data.get("outcome", "pending")
+        direction = signal_data.get("direction", "UNKNOWN")
+        pnl = signal_data.get("pnl_percent") or signal_data.get("final_pnl_percent") or 0
+        
+        # Outcome emoji
+        if outcome == "win":
+            emoji = "✅"
+            result = "VINCITA"
+        elif outcome == "loss":
+            emoji = "❌"
+            result = "PERDITA"
+        elif outcome == "partial":
+            emoji = "⚠️"
+            result = "PARZIALE"
+        else:
+            return False
+        
+        type_label = "SNIPER" if signal_type == "sniper" else "HUNTER"
+        type_emoji = "🎯" if signal_type == "sniper" else "🏹"
+        
+        message = f"""
+{emoji} <b>V3 {type_label} - {result}</b>
+
+{type_emoji} <b>{direction}</b>
+💰 <b>P&L:</b> {pnl:+.2f}%
+
+⏰ {datetime.now(timezone.utc).strftime('%H:%M UTC')}
+"""
+        
+        # Send to all chat IDs
+        all_chat_ids = [chat_id] + additional_ids
+        sent_count = 0
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for cid in all_chat_ids:
+                if not cid:
+                    continue
+                try:
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": cid, "text": message.strip(), "parse_mode": "HTML"}
+                    )
+                    if resp.status_code == 200:
+                        sent_count += 1
+                except Exception as e:
+                    logger.error(f"[V4 Telegram] Error sending to {cid}: {e}")
+        
+        if sent_count > 0:
+            await telegram_settings_collection.update_one(
+                {},
+                {"$inc": {"total_notifications_sent": 1}}
+            )
+            logger.info(f"[V4 Telegram] {emoji} {type_label} {outcome.upper()} sent to {sent_count} chat(s)")
+        
+        return sent_count > 0
+        
+    except Exception as e:
+        logger.error(f"[V4 Telegram] Outcome notification error: {e}")
+        return False
+
+
 async def notify_operational_signal(signal_data: dict):
     """
     Send Telegram notification for a new operational signal.
@@ -4024,6 +4311,19 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
                 notes=f"V3 ENTRY_READY: {event_type}"
             )
             logger.info(f"[V4 Analytics] ✅ Auto-recorded SNIPER signal: {v4_signal_id[:8]} - {direction}")
+            
+            # Send Telegram notification for SNIPER
+            await send_v4_sniper_notification({
+                "direction": direction,
+                "entry_price": current_price,
+                "stop_loss": stop_loss,
+                "target_1": target_1,
+                "target_2": target_2,
+                "quality_score": int(setup_data.get("quality_score", 70)),
+                "risk_reward_ratio": risk_reward_ratio,
+                "market_regime": market_context.get("regime", "UNKNOWN") if market_context else "UNKNOWN",
+                "market_bias": market_context.get("bias", "NEUTRAL") if market_context else "NEUTRAL"
+            })
         except Exception as v4_err:
             logger.error(f"[V4 Analytics] Error auto-recording SNIPER: {v4_err}")
         
@@ -14171,6 +14471,13 @@ async def check_v4_signal_outcomes():
                         )
                         updated_count += 1
                         logger.info(f"[V4 Outcome] ✅ {signal_type.upper()} {signal_id[:8]}: {outcome.upper()} ({pnl:+.2f}%)")
+                        
+                        # Send outcome notification
+                        await send_v4_outcome_notification({
+                            "outcome": outcome,
+                            "direction": direction,
+                            "pnl_percent": pnl
+                        }, "sniper")
                     elif target_1_hit:
                         # Just update target_1_hit status
                         await v4_signals_collection.update_one(
@@ -14253,6 +14560,13 @@ async def check_v4_signal_outcomes():
                         )
                         updated_count += 1
                         logger.info(f"[V4 Outcome] ✅ {signal_type.upper()} {signal_id[:8]}: {outcome.upper()} ({pnl:+.2f}%), {legs_filled}/3 legs")
+                        
+                        # Send outcome notification
+                        await send_v4_outcome_notification({
+                            "outcome": outcome,
+                            "direction": direction,
+                            "final_pnl_percent": pnl
+                        }, "hunter")
             
             except Exception as sig_err:
                 logger.error(f"[V4 Outcome] Error checking signal {signal_id}: {sig_err}")
@@ -20141,6 +20455,19 @@ async def activate_hunter_deal(
                 notes=f"Hunter {direction}: 10-20-70 activated"
             )
             logger.info(f"[V4 Analytics] ✅ Auto-recorded HUNTER signal: {v4_signal_id[:8]} - {direction}")
+            
+            # Send Telegram notification for HUNTER
+            await send_v4_hunter_notification({
+                "direction": direction,
+                "leg_1": {"price": deal.leg_1.price},
+                "leg_2": {"price": deal.leg_2.price},
+                "leg_3": {"price": deal.leg_3.price},
+                "take_profit": deal.take_profit,
+                "stop_loss": deal.stop_loss,
+                "quality_score": deal.setup_quality,
+                "hunter_confidence": deal.hunter_confidence,
+                "leverage": deal.leverage
+            })
         except Exception as v4_err:
             logger.error(f"[V4 Analytics] Error auto-recording HUNTER: {v4_err}")
         
@@ -24475,6 +24802,232 @@ async def update_settings(settings: Settings, _: bool = Depends(verify_admin_acc
     """Update user settings"""
     await db.settings.update_one({}, {"$set": settings.model_dump()}, upsert=True)
     return settings
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V4 TELEGRAM SETTINGS ENDPOINTS - Complete configuration for SNIPER/HUNTER alerts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_router.get("/telegram/v4-settings")
+async def get_v4_telegram_settings(_: bool = Depends(verify_admin_access)):
+    """
+    Get V4 Telegram settings for SNIPER/HUNTER notifications.
+    Returns current configuration with all preferences.
+    """
+    settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+    
+    if not settings:
+        # Return default settings
+        return {
+            "enabled": False,
+            "bot_token": "",
+            "chat_id": "",
+            "additional_chat_ids": [],
+            "language": "it",
+            "preferences": {
+                "notify_sniper_signals": True,
+                "notify_sniper_entry_ready": True,
+                "notify_sniper_outcomes": True,
+                "notify_hunter_signals": True,
+                "notify_hunter_leg_fills": True,
+                "notify_hunter_outcomes": True,
+                "notify_long_signals": True,
+                "notify_short_signals": True,
+                "notify_outcomes": True,
+                "min_quality_threshold": 50
+            },
+            "total_notifications_sent": 0,
+            "sniper_notifications_sent": 0,
+            "hunter_notifications_sent": 0
+        }
+    
+    # Mask bot token for security (show only last 8 chars)
+    if settings.get("bot_token"):
+        token = settings["bot_token"]
+        settings["bot_token_masked"] = f"***{token[-8:]}" if len(token) > 8 else "***"
+        settings["bot_token_configured"] = True
+    else:
+        settings["bot_token_masked"] = ""
+        settings["bot_token_configured"] = False
+    
+    # Convert datetime to string
+    for key in ["last_test_sent", "last_notification_sent"]:
+        if key in settings and settings[key]:
+            settings[key] = settings[key].isoformat() if hasattr(settings[key], 'isoformat') else str(settings[key])
+    
+    return settings
+
+
+@api_router.post("/telegram/v4-settings")
+async def save_v4_telegram_settings(
+    enabled: bool = Query(...),
+    bot_token: str = Query(default=""),
+    chat_id: str = Query(default=""),
+    additional_chat_ids: str = Query(default=""),  # Comma-separated
+    language: str = Query(default="it"),
+    notify_sniper_signals: bool = Query(default=True),
+    notify_sniper_outcomes: bool = Query(default=True),
+    notify_hunter_signals: bool = Query(default=True),
+    notify_hunter_outcomes: bool = Query(default=True),
+    notify_long_signals: bool = Query(default=True),
+    notify_short_signals: bool = Query(default=True),
+    min_quality_threshold: int = Query(default=50),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Save V4 Telegram settings for SNIPER/HUNTER notifications.
+    Stores bot token and all preferences.
+    """
+    # Parse additional chat IDs
+    add_ids = [cid.strip() for cid in additional_chat_ids.split(",") if cid.strip()]
+    
+    settings_data = {
+        "enabled": enabled,
+        "chat_id": chat_id,
+        "additional_chat_ids": add_ids,
+        "language": language,
+        "preferences": {
+            "notify_sniper_signals": notify_sniper_signals,
+            "notify_sniper_entry_ready": notify_sniper_signals,
+            "notify_sniper_outcomes": notify_sniper_outcomes,
+            "notify_hunter_signals": notify_hunter_signals,
+            "notify_hunter_leg_fills": notify_hunter_signals,
+            "notify_hunter_outcomes": notify_hunter_outcomes,
+            "notify_long_signals": notify_long_signals,
+            "notify_short_signals": notify_short_signals,
+            "notify_outcomes": notify_sniper_outcomes or notify_hunter_outcomes,
+            "min_quality_threshold": min_quality_threshold
+        }
+    }
+    
+    # Only update bot_token if provided (not empty)
+    if bot_token and bot_token.strip():
+        settings_data["bot_token"] = bot_token.strip()
+    
+    # Upsert settings
+    await telegram_settings_collection.update_one(
+        {},
+        {"$set": settings_data},
+        upsert=True
+    )
+    
+    logger.info(f"[V4 Telegram] Settings saved: enabled={enabled}, chat_id={chat_id[:6] if chat_id else 'N/A'}...")
+    
+    return {"success": True, "enabled": enabled}
+
+
+@api_router.post("/telegram/v4-test-sniper")
+async def test_v4_sniper_notification(_: bool = Depends(verify_admin_access)):
+    """
+    Test V4 SNIPER Telegram notification with sample data.
+    """
+    test_data = {
+        "direction": "LONG",
+        "entry_price": 75000,
+        "stop_loss": 73500,
+        "target_1": 77000,
+        "target_2": 79000,
+        "quality_score": 85,
+        "risk_reward_ratio": 2.67,
+        "market_regime": "TREND",
+        "market_bias": "BULLISH"
+    }
+    
+    # Temporarily enable for test
+    settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+    if not settings or not settings.get("bot_token") or not settings.get("chat_id"):
+        return {"success": False, "error": "Telegram non configurato. Inserisci Bot Token e Chat ID."}
+    
+    # Force send (bypass enabled check)
+    try:
+        bot_token = settings.get("bot_token", "")
+        chat_id = settings.get("chat_id", "")
+        
+        message = f"""
+🎯 <b>V3 SNIPER - TEST</b>
+
+🟢 <b>LONG</b> | Quality: <b>85/100</b>
+
+📍 <b>Entry:</b> $75,000
+🛑 <b>Stop:</b> $73,500
+🎯 <b>Target 1:</b> $77,000
+🎯 <b>Target 2:</b> $79,000
+
+📊 <b>R:R:</b> 2.67
+📈 <b>Regime:</b> TREND
+🧭 <b>Bias:</b> BULLISH
+
+✅ <i>Notifica di test - Sistema funzionante!</i>
+"""
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": message.strip(), "parse_mode": "HTML"}
+            )
+            if resp.status_code == 200:
+                await telegram_settings_collection.update_one(
+                    {},
+                    {"$set": {"last_test_sent": datetime.now(timezone.utc)}}
+                )
+                return {"success": True, "message": "Test SNIPER inviato!"}
+            else:
+                error_data = resp.json() if resp.text else {}
+                return {"success": False, "error": f"Telegram error: {error_data.get('description', resp.status_code)}"}
+                
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/telegram/v4-test-hunter")
+async def test_v4_hunter_notification(_: bool = Depends(verify_admin_access)):
+    """
+    Test V4 HUNTER Telegram notification with sample data.
+    """
+    settings = await telegram_settings_collection.find_one({}, {"_id": 0})
+    if not settings or not settings.get("bot_token") or not settings.get("chat_id"):
+        return {"success": False, "error": "Telegram non configurato. Inserisci Bot Token e Chat ID."}
+    
+    try:
+        bot_token = settings.get("bot_token", "")
+        chat_id = settings.get("chat_id", "")
+        
+        message = f"""
+🏹 <b>V3 HUNTER - TEST</b>
+
+🔴 <b>SHORT HUNT</b> | Confidence: <b>HIGH</b>
+
+📍 <b>Leg 1 (10%):</b> $75,500
+📍 <b>Leg 2 (20%):</b> $76,200
+📍 <b>Leg 3 (70%):</b> $77,000
+
+🎯 <b>Take Profit:</b> $73,000
+🛑 <b>Stop Loss:</b> $77,385
+
+📊 <b>Quality:</b> 78/100
+💰 <b>Leverage:</b> 1x
+
+✅ <i>Notifica di test - Sistema funzionante!</i>
+"""
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": message.strip(), "parse_mode": "HTML"}
+            )
+            if resp.status_code == 200:
+                await telegram_settings_collection.update_one(
+                    {},
+                    {"$set": {"last_test_sent": datetime.now(timezone.utc)}}
+                )
+                return {"success": True, "message": "Test HUNTER inviato!"}
+            else:
+                error_data = resp.json() if resp.text else {}
+                return {"success": False, "error": f"Telegram error: {error_data.get('description', resp.status_code)}"}
+                
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 
 @api_router.post("/telegram/test")
 async def test_telegram(message: TelegramMessage, _: bool = Depends(verify_admin_access)):
