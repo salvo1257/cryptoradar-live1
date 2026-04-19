@@ -13960,6 +13960,119 @@ async def process_v3_signal(
 
 # ============== V4 ANALYTICS SUITE ENGINE ==============
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SINGLE ACTIVE DEAL LOCK - Prevents duplicate signals
+# Only one active SNIPER and one active HUNTER signal allowed at a time per direction
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def has_active_sniper_signal(direction: str = None) -> dict:
+    """
+    Check if there's already an active SNIPER signal.
+    
+    Args:
+        direction: Optional - if specified, check only for that direction (LONG/SHORT)
+                   If None, check for any active signal
+    
+    Returns:
+        dict with {"has_active": bool, "active_signal": dict or None, "signal_id": str or None}
+    """
+    query = {
+        "signal_type": "sniper",
+        "outcome": "pending"
+    }
+    
+    if direction:
+        query["direction"] = direction
+    
+    active_signal = await v4_signals_collection.find_one(query, {"_id": 0})
+    
+    if active_signal:
+        logger.info(f"[V4 Lock] Found active SNIPER signal: {active_signal.get('signal_id', 'unknown')[:8]} - {active_signal.get('direction')}")
+        return {
+            "has_active": True,
+            "active_signal": active_signal,
+            "signal_id": active_signal.get("signal_id")
+        }
+    
+    return {"has_active": False, "active_signal": None, "signal_id": None}
+
+
+async def has_active_hunter_signal(direction: str = None) -> dict:
+    """
+    Check if there's already an active HUNTER signal.
+    
+    Args:
+        direction: Optional - if specified, check only for that direction (LONG/SHORT)
+                   If None, check for any active signal
+    
+    Returns:
+        dict with {"has_active": bool, "active_signal": dict or None, "signal_id": str or None}
+    """
+    query = {
+        "signal_type": "hunter",
+        "outcome": "pending"
+    }
+    
+    if direction:
+        query["direction"] = direction
+    
+    active_signal = await v4_signals_collection.find_one(query, {"_id": 0})
+    
+    if active_signal:
+        logger.info(f"[V4 Lock] Found active HUNTER signal: {active_signal.get('signal_id', 'unknown')[:8]} - {active_signal.get('direction')}")
+        return {
+            "has_active": True,
+            "active_signal": active_signal,
+            "signal_id": active_signal.get("signal_id")
+        }
+    
+    return {"has_active": False, "active_signal": None, "signal_id": None}
+
+
+async def cleanup_duplicate_signals():
+    """
+    Remove duplicate signals from v4_signals collection.
+    Keeps only one instance per unique (signal_type, direction, created_at minute).
+    """
+    try:
+        # Find all signals
+        all_signals = await v4_signals_collection.find({}, {"_id": 1, "signal_id": 1, "signal_type": 1, "direction": 1, "created_at": 1}).to_list(length=1000)
+        
+        # Group by (signal_type, direction, created_at minute)
+        signal_groups = {}
+        for sig in all_signals:
+            # Create a key based on type, direction, and minute-level timestamp
+            created_at = sig.get("created_at")
+            if created_at:
+                # Truncate to minute level
+                minute_key = created_at.strftime("%Y-%m-%d %H:%M") if hasattr(created_at, 'strftime') else str(created_at)[:16]
+            else:
+                minute_key = "unknown"
+            
+            group_key = f"{sig.get('signal_type')}_{sig.get('direction')}_{minute_key}"
+            
+            if group_key not in signal_groups:
+                signal_groups[group_key] = []
+            signal_groups[group_key].append(sig)
+        
+        # Delete duplicates (keep the first one in each group)
+        duplicates_removed = 0
+        for group_key, signals in signal_groups.items():
+            if len(signals) > 1:
+                # Keep the first, delete the rest
+                for dup_signal in signals[1:]:
+                    await v4_signals_collection.delete_one({"_id": dup_signal["_id"]})
+                    duplicates_removed += 1
+                    logger.info(f"[V4 Cleanup] Removed duplicate signal: {dup_signal.get('signal_id', 'unknown')[:8]}")
+        
+        logger.info(f"[V4 Cleanup] Removed {duplicates_removed} duplicate signals")
+        return {"removed_count": duplicates_removed}
+        
+    except Exception as e:
+        logger.error(f"[V4 Cleanup] Error cleaning duplicates: {e}")
+        return {"error": str(e)}
+
+
 async def record_v4_sniper_signal(
     direction: str,
     setup_type: str,
@@ -13976,9 +14089,32 @@ async def record_v4_sniper_signal(
     bias_confidence: float,
     btc_price: float,
     target_3: float = None,
-    notes: str = ""
+    notes: str = "",
+    force_create: bool = False  # Skip lock check for manual entries
 ) -> str:
-    """Record a new SNIPER signal to V4 Analytics"""
+    """
+    Record a new SNIPER signal to V4 Analytics.
+    
+    SINGLE ACTIVE DEAL LOCK: Will NOT create a new signal if there's already
+    an active (pending) SNIPER signal for the same direction.
+    
+    Args:
+        force_create: If True, skip the lock check (for manual admin entries)
+    
+    Returns:
+        signal_id if created, or existing signal_id if blocked by lock
+    """
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SINGLE ACTIVE DEAL LOCK - Check if already have an active signal
+    # ═══════════════════════════════════════════════════════════════════
+    if not force_create:
+        lock_check = await has_active_sniper_signal(direction)
+        if lock_check["has_active"]:
+            existing_id = lock_check["signal_id"]
+            logger.warning(f"[V4 Lock] 🔒 BLOCKED new SNIPER {direction} signal - Active signal exists: {existing_id[:8]}")
+            return existing_id  # Return existing signal ID instead of creating new one
+    
     signal = {
         "signal_id": str(uuid.uuid4()),
         "signal_type": "sniper",
@@ -14006,7 +14142,7 @@ async def record_v4_sniper_signal(
     }
     
     await v4_signals_collection.insert_one(signal)
-    logger.info(f"[V4 Analytics] Recorded SNIPER signal: {signal['signal_id']} - {direction}")
+    logger.info(f"[V4 Analytics] ✅ Recorded SNIPER signal: {signal['signal_id']} - {direction}")
     return signal["signal_id"]
 
 
@@ -14023,9 +14159,32 @@ async def record_v4_hunter_signal(
     market_bias: str,
     btc_price: float,
     leverage: float = 1.0,
-    notes: str = ""
+    notes: str = "",
+    force_create: bool = False  # Skip lock check for manual entries
 ) -> str:
-    """Record a new HUNTER signal to V4 Analytics"""
+    """
+    Record a new HUNTER signal to V4 Analytics.
+    
+    SINGLE ACTIVE DEAL LOCK: Will NOT create a new signal if there's already
+    an active (pending) HUNTER signal for the same direction.
+    
+    Args:
+        force_create: If True, skip the lock check (for manual admin entries)
+    
+    Returns:
+        signal_id if created, or existing signal_id if blocked by lock
+    """
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SINGLE ACTIVE DEAL LOCK - Check if already have an active signal
+    # ═══════════════════════════════════════════════════════════════════
+    if not force_create:
+        lock_check = await has_active_hunter_signal(direction)
+        if lock_check["has_active"]:
+            existing_id = lock_check["signal_id"]
+            logger.warning(f"[V4 Lock] 🔒 BLOCKED new HUNTER {direction} signal - Active signal exists: {existing_id[:8]}")
+            return existing_id  # Return existing signal ID instead of creating new one
+    
     signal = {
         "signal_id": str(uuid.uuid4()),
         "signal_type": "hunter",
@@ -14052,7 +14211,7 @@ async def record_v4_hunter_signal(
     }
     
     await v4_signals_collection.insert_one(signal)
-    logger.info(f"[V4 Analytics] Recorded HUNTER signal: {signal['signal_id']} - {direction}")
+    logger.info(f"[V4 Analytics] ✅ Recorded HUNTER signal: {signal['signal_id']} - {direction}")
     return signal["signal_id"]
 
 
@@ -20643,6 +20802,65 @@ async def record_hunter_signal(
     )
     
     return {"success": True, "signal_id": signal_id}
+
+
+@api_router.post("/v4/signals/cleanup-duplicates")
+async def cleanup_duplicate_signals_endpoint(_: bool = Depends(verify_admin_access)):
+    """
+    Remove duplicate signals from v4_signals collection.
+    Keeps only one instance per unique (signal_type, direction, created_at minute).
+    """
+    result = await cleanup_duplicate_signals()
+    return {
+        "success": "error" not in result,
+        "removed_count": result.get("removed_count", 0),
+        "error": result.get("error")
+    }
+
+
+@api_router.get("/v4/signals/lock-status")
+async def get_signal_lock_status(_: bool = Depends(verify_admin_access)):
+    """
+    Get current status of the Single Active Deal lock for both SNIPER and HUNTER.
+    Shows if there are any active (pending) signals that would block new signal creation.
+    """
+    sniper_long = await has_active_sniper_signal("LONG")
+    sniper_short = await has_active_sniper_signal("SHORT")
+    hunter_long = await has_active_hunter_signal("LONG")
+    hunter_short = await has_active_hunter_signal("SHORT")
+    
+    return {
+        "sniper": {
+            "long": {
+                "locked": sniper_long["has_active"],
+                "active_signal_id": sniper_long["signal_id"]
+            },
+            "short": {
+                "locked": sniper_short["has_active"],
+                "active_signal_id": sniper_short["signal_id"]
+            }
+        },
+        "hunter": {
+            "long": {
+                "locked": hunter_long["has_active"],
+                "active_signal_id": hunter_long["signal_id"]
+            },
+            "short": {
+                "locked": hunter_short["has_active"],
+                "active_signal_id": hunter_short["signal_id"]
+            }
+        },
+        "summary": {
+            "sniper_locked": sniper_long["has_active"] or sniper_short["has_active"],
+            "hunter_locked": hunter_long["has_active"] or hunter_short["has_active"],
+            "total_active_signals": sum([
+                sniper_long["has_active"],
+                sniper_short["has_active"],
+                hunter_long["has_active"],
+                hunter_short["has_active"]
+            ])
+        }
+    }
 
 
 @api_router.patch("/v4/signals/{signal_id}/outcome")

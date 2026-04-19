@@ -563,4 +563,41 @@ SVG pattern drawings were "floating" when users zoomed or panned the TradingView
 - `/app/frontend/src/components/TradingChartWithSentinel.js` - Glued-to-chart coordinate conversion
 - `/app/backend/sentinel_engine.py` - Pattern detection + draw_data extraction
 
+---
+## Update: April 19, 2025 - "Single Active Deal" Lock Implementation
+
+### ✅ Completed - V3 Sniper & Hunter Duplicate Prevention
+
+**Problem Solved**:
+The system was generating multiple identical signals (triplets) for the same pair at the same time, causing duplicate entries and skewed statistics.
+
+**Solution Implemented**:
+
+1. **Active Signal Lock Functions**:
+   - `has_active_sniper_signal(direction)` - Checks for pending SNIPER signals
+   - `has_active_hunter_signal(direction)` - Checks for pending HUNTER signals
+   - Returns existing signal ID if lock is active
+
+2. **Modified Record Functions**:
+   - `record_v4_sniper_signal()` - Now checks lock before creating new signal
+   - `record_v4_hunter_signal()` - Now checks lock before creating new signal
+   - Both return existing signal_id if blocked (no duplicate created)
+
+3. **New API Endpoints**:
+   - `POST /api/v4/signals/cleanup-duplicates` - Remove historical duplicates
+   - `GET /api/v4/signals/lock-status` - View current lock state for both engines
+
+4. **Database Cleanup**:
+   - Removed 2 duplicate signals from v4_signals collection
+   - Signals now unique per (signal_type, direction, minute)
+
+**Lock Rules**:
+- **SNIPER**: 1 active deal per direction (LONG/SHORT)
+- **HUNTER**: 1 active deal per direction (LONG/SHORT)
+- New signal only created after previous one is RESOLVED (win/loss/expired)
+- `force_create=True` parameter available for manual admin overrides
+
+**Files Modified**:
+- `/app/backend/server.py` - Added lock functions and cleanup utilities
+
 
