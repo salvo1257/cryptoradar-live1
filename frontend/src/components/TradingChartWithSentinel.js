@@ -8,6 +8,14 @@ import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHART COORDINATE SYSTEM - "Glued-to-Chart" Anchoring
+// ═══════════════════════════════════════════════════════════════════════════════
+// This hook synchronizes SVG coordinates with TradingView's internal coordinate system.
+// It uses chart.timeScale().timeToCoordinate() and series.priceToCoordinate() to ensure
+// that all drawn elements (patterns, projections) stay "glued" to the candles during
+// zoom/pan operations.
+
 // Timeframe colors (Premium Palette)
 const TIMEFRAME_COLORS = {
   "15m": "#00F0FF",  // Cyan
@@ -105,6 +113,14 @@ export function TradingChartWithSentinel({
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [chartDimensions, setChartDimensions] = useState({ width: 800, height: 400 });
   const [priceRange, setPriceRange] = useState({ min: 0, max: 100000 });
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GLUED-TO-CHART: Force re-render on zoom/pan
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const [chartUpdateTrigger, setChartUpdateTrigger] = useState(0);
+  
+  // Build a lookup map from timestamp -> candle index for O(1) access
+  const candleTimeMapRef = useRef(new Map());
 
   // Fetch overlay data from Sentinel
   useEffect(() => {
@@ -161,6 +177,13 @@ export function TradingChartWithSentinel({
       min: min - padding,
       max: max + padding
     });
+    
+    // Build timestamp -> index map for O(1) lookups
+    const timeMap = new Map();
+    candles.forEach((c, idx) => {
+      timeMap.set(c.time, idx);
+    });
+    candleTimeMapRef.current = timeMap;
   }, [candles]);
 
   // Update chart dimensions on resize
@@ -179,19 +202,69 @@ export function TradingChartWithSentinel({
     return () => window.removeEventListener('resize', updateDimensions);
   }, [height]);
 
-  // Convert price to Y coordinate
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GLUED-TO-CHART: Convert price to Y coordinate using TradingView's native API
+  // ═══════════════════════════════════════════════════════════════════════════════
   const priceToY = useCallback((price) => {
+    // Use TradingView's native priceToCoordinate for precise anchoring
+    if (candleSeriesRef.current && chartRef.current) {
+      const coord = candleSeriesRef.current.priceToCoordinate(price);
+      if (coord !== null && !isNaN(coord)) {
+        return coord;
+      }
+    }
+    
+    // Fallback to manual calculation (only when chart not ready)
     const { min, max } = priceRange;
     if (max === min) return chartDimensions.height / 2;
     
-    // Chart has margins (10% top, 20% bottom for volume)
     const chartTop = chartDimensions.height * 0.1;
     const chartBottom = chartDimensions.height * 0.8;
     const chartHeight = chartBottom - chartTop;
     
     const percent = (price - min) / (max - min);
     return chartBottom - (percent * chartHeight);
-  }, [priceRange, chartDimensions]);
+  }, [priceRange, chartDimensions, chartUpdateTrigger]); // Depend on chartUpdateTrigger for re-render
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GLUED-TO-CHART: Convert timestamp to X coordinate using TradingView's native API
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const timeToX = useCallback((timestamp) => {
+    // Use TradingView's native timeToCoordinate for precise anchoring
+    if (chartRef.current) {
+      const coord = chartRef.current.timeScale().timeToCoordinate(timestamp);
+      if (coord !== null && !isNaN(coord)) {
+        return coord;
+      }
+    }
+    
+    // Fallback: use index-based calculation
+    if (!candles?.length) return chartDimensions.width / 2;
+    
+    const firstTime = candles[0]?.time || 0;
+    const lastTime = candles[candles.length - 1]?.time || 1;
+    const timeRange = lastTime - firstTime;
+    
+    if (timeRange === 0) return chartDimensions.width / 2;
+    
+    const percent = (timestamp - firstTime) / timeRange;
+    const margin = 70; // Right margin for price scale
+    return 50 + percent * (chartDimensions.width - margin - 50);
+  }, [candles, chartDimensions, chartUpdateTrigger]);
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GLUED-TO-CHART: Convert candle index to X coordinate
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const indexToX = useCallback((index) => {
+    if (!candles?.length || index < 0 || index >= candles.length) {
+      return chartDimensions.width / 2;
+    }
+    
+    const timestamp = candles[index]?.time;
+    if (!timestamp) return chartDimensions.width / 2;
+    
+    return timeToX(timestamp);
+  }, [candles, timeToX, chartDimensions]);
 
   // Handle hover on SVG elements
   const handleElementHover = (element, event) => {
@@ -307,6 +380,28 @@ export function TradingChartWithSentinel({
     volumeSeriesRef.current = volumeSeries;
     priceLinesRef.current = [];
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // GLUED-TO-CHART: Subscribe to visible range changes for SVG re-sync
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // When the user zooms or pans, we need to recalculate SVG coordinates
+    const timeScale = chart.timeScale();
+    
+    // Subscribe to visible time range changes (pan/zoom on X-axis)
+    timeScale.subscribeVisibleLogicalRangeChange(() => {
+      setChartUpdateTrigger(prev => prev + 1);
+    });
+    
+    // Subscribe to visible time range (alternative trigger)
+    timeScale.subscribeVisibleTimeRangeChange(() => {
+      setChartUpdateTrigger(prev => prev + 1);
+    });
+    
+    // Subscribe to crosshair move (optional, for smoother updates during drag)
+    chart.subscribeCrosshairMove(() => {
+      // Throttled update - only trigger every 100ms max during drag
+      // This is handled by React's batching, no explicit throttle needed
+    });
+
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({
@@ -316,6 +411,8 @@ export function TradingChartWithSentinel({
           width: chartContainerRef.current.clientWidth,
           height: height
         });
+        // Trigger SVG re-render on resize
+        setChartUpdateTrigger(prev => prev + 1);
       }
     };
 
@@ -455,16 +552,44 @@ export function TradingChartWithSentinel({
             return null;
           }
           
-          // Calculate Y positions
+          // ═══════════════════════════════════════════════════════════════════════════════
+          // GLUED-TO-CHART: Calculate Y positions using TradingView's native API
+          // ═══════════════════════════════════════════════════════════════════════════════
           const startY = startPrice ? priceToY(startPrice) : priceToY(drawData.price);
           const endY = endPrice ? priceToY(endPrice) : startY;
           
-          // Calculate X positions (simplified)
-          const totalCandles = 100;
-          const startIndex = drawData.start?.index || 20;
-          const endIndex = drawData.end?.index || 80;
-          const startX = Math.max(50, (startIndex / totalCandles) * (width - 100));
-          const endX = Math.min(width - 70, (endIndex / totalCandles) * (width - 100));
+          // Validate Y coordinates - skip rendering if outside visible range
+          if (startY === null || endY === null || isNaN(startY) || isNaN(endY)) {
+            return null;
+          }
+          
+          // ═══════════════════════════════════════════════════════════════════════════════
+          // GLUED-TO-CHART: Calculate X positions using timestamps or indices
+          // ═══════════════════════════════════════════════════════════════════════════════
+          let startX, endX;
+          
+          // Try to use timestamps first (most accurate)
+          if (drawData.start?.time && drawData.end?.time) {
+            startX = timeToX(drawData.start.time);
+            endX = timeToX(drawData.end.time);
+          } 
+          // Fall back to indices
+          else if (drawData.start?.index !== undefined && drawData.end?.index !== undefined) {
+            startX = indexToX(drawData.start.index);
+            endX = indexToX(drawData.end.index);
+          }
+          // Ultimate fallback: percentage-based (legacy)
+          else {
+            const totalCandles = candles?.length || 100;
+            const startIdx = drawData.start?.index || Math.floor(totalCandles * 0.2);
+            const endIdx = drawData.end?.index || Math.floor(totalCandles * 0.8);
+            startX = indexToX(startIdx);
+            endX = indexToX(endIdx);
+          }
+          
+          // Clamp X values to valid range
+          startX = Math.max(0, Math.min(width - 70, startX || 50));
+          endX = Math.max(0, Math.min(width - 70, endX || width - 100));
           
           const midX = (startX + endX) / 2;
           const midY = (startY + endY) / 2;
@@ -818,13 +943,33 @@ export function TradingChartWithSentinel({
           
           if (!startPrice || !targetPrice) return null;
           
-          // Calculate Y positions
+          // ═══════════════════════════════════════════════════════════════════════════════
+          // GLUED-TO-CHART: Calculate Y positions using TradingView's native API
+          // ═══════════════════════════════════════════════════════════════════════════════
           const startY = priceToY(startPrice);
           const targetY = priceToY(targetPrice);
           
-          // X positions - project into the future (right side of chart)
-          const startX = width - 200;  // Start from near right edge
-          const targetX = width - 80;  // End near price axis
+          // Validate Y coordinates
+          if (startY === null || targetY === null || isNaN(startY) || isNaN(targetY)) {
+            return null;
+          }
+          
+          // ═══════════════════════════════════════════════════════════════════════════════
+          // GLUED-TO-CHART: X positions for ghost projections (future area)
+          // Use last candle timestamp + offset for proper anchoring
+          // ═══════════════════════════════════════════════════════════════════════════════
+          let startX, targetX;
+          
+          if (candles?.length > 0) {
+            const lastCandle = candles[candles.length - 1];
+            const lastX = timeToX(lastCandle.time);
+            // Project ghost lines from last candle into the future
+            startX = Math.max(lastX, width - 200);
+            targetX = width - 80;
+          } else {
+            startX = width - 200;
+            targetX = width - 80;
+          }
           
           const color = direction === "BULLISH" ? "#00FF9D" : "#FF1E56";
           const filter = direction === "BULLISH" ? "url(#ghost-glow-bullish)" : "url(#ghost-glow-bearish)";

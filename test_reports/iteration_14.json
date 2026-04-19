@@ -1,0 +1,88 @@
+{
+  "summary": "Sentinel v4.5 'Glued-to-Chart' SVG Overlay Anchoring - All tests passed. Backend API returns patterns with proper draw_data.start and draw_data.end coordinates (index + price) for TradingView chart anchoring. Frontend /patterns page loads correctly with TradingView chart, Italian UI text, and functional toggle buttons.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/sentinel/patterns/chart - Returns 200 with patterns",
+    "GET /api/sentinel/patterns/chart - All patterns have draw_data field",
+    "GET /api/sentinel/patterns/chart - draw_data has valid shape (horizontal_line, diagonal_line, etc.)",
+    "GET /api/sentinel/patterns/chart - double_top/double_bottom have start/end with index and price",
+    "GET /api/sentinel/patterns/chart - trendline patterns have start/end coordinates",
+    "GET /api/sentinel/patterns/chart - support/resistance have price for horizontal line",
+    "GET /api/sentinel/chart-overlay - Returns 200 with chart_data and legend",
+    "GET /api/sentinel/ghost-projections - Returns 200 with projections",
+    "GET /api/sentinel/status - Scanner running with patterns detected",
+    "Italian localization - Patterns have cosa_succede, perche, azione in Italian",
+    "Frontend: TradingView chart container renders with data-testid='trading-chart-with-sentinel'",
+    "Frontend: 'Ancoraggi ON/OFF' toggle functional",
+    "Frontend: 'Proiezioni ON/OFF' toggle functional",
+    "Frontend: Pattern cards display 'COSA SUCCEDE', 'PERCHÉ', 'AZIONE' in Italian",
+    "Frontend: Italian pattern names (Doppio Massimo, Doppio Minimo, Supporto, Trendline)",
+    "Frontend: Timeframe filters in Italian (15 Min, 1 Ora, 4 Ore, Giornaliero, Settimanale)",
+    "Frontend: Zoom and pan interactions work on chart",
+    "Frontend: Support/Resistance price lines visible on chart"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_sentinel_glued_chart.py",
+    "/app/test_reports/pytest/pytest_glued_chart.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TradingChartWithSentinel.js correctly implements timeToX() and indexToX() functions using TradingView's native timeToCoordinate API",
+    "priceToY() function uses series.priceToCoordinate() for precise Y-axis anchoring",
+    "Chart subscribes to visibleLogicalRangeChange and visibleTimeRangeChange events to trigger SVG re-renders on zoom/pan",
+    "Backend _extract_draw_data() function correctly extracts start/end indices for all pattern types",
+    "Italian localization is complete with COSA SUCCEDE, PERCHÉ, AZIONE sections"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sentinel_glued_chart.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 tests passed)",
+    "frontend": "100% (all UI components verified)"
+  },
+  "test_credentials": "No auth required - Sentinel endpoints are public",
+  "seed_data_creation": "None - Sentinel uses live Kraken API data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sentinel v4.5 'Glued-to-Chart' feature is fully functional. Backend API /api/sentinel/patterns/chart returns patterns with draw_data containing start/end coordinates (index + price) for proper chart anchoring. Frontend TradingChartWithSentinel.js uses TradingView's native timeToCoordinate() and priceToCoordinate() APIs for SVG overlay positioning. Zoom/pan operations trigger SVG re-renders via visibleLogicalRangeChange subscription. All UI text is in Italian. Test file: /app/backend/tests/test_sentinel_glued_chart.py",
+  "features_verified": {
+    "glued_to_chart_anchoring": {
+      "backend_draw_data": {
+        "double_top_bottom": "start/end with index and price",
+        "trendlines": "start/end with index and price for diagonal lines",
+        "support_resistance": "price for horizontal lines",
+        "triangles_wedges": "start/end extracted from line endpoints"
+      },
+      "frontend_coordinate_conversion": {
+        "timeToX": "Uses chart.timeScale().timeToCoordinate()",
+        "indexToX": "Converts candle index to timestamp then to X",
+        "priceToY": "Uses series.priceToCoordinate()"
+      },
+      "zoom_pan_sync": {
+        "subscriptions": ["visibleLogicalRangeChange", "visibleTimeRangeChange"],
+        "trigger": "setChartUpdateTrigger increments to force SVG re-render"
+      }
+    },
+    "italian_localization": {
+      "pattern_names": ["Doppio Massimo", "Doppio Minimo", "Supporto", "Trendline"],
+      "psychology_sections": ["COSA SUCCEDE", "PERCHÉ", "AZIONE"],
+      "ui_labels": ["Completamento", "Pattern Grafici", "Ancoraggi", "Proiezioni"],
+      "timeframes": ["15 Min", "1 Ora", "4 Ore", "Giornaliero", "Settimanale"]
+    },
+    "toggle_buttons": {
+      "overlay_toggle": "data-testid='sentinel-overlay-toggle' - Ancoraggi ON/OFF",
+      "ghost_toggle": "data-testid='ghost-projections-toggle' - Proiezioni ON/OFF"
+    }
+  },
+  "mocked_apis": {
+    "CoinGlass Liquidation API": "Falls back to orderbook-based detection (rate limited 429 errors observed in logs)"
+  }
+}

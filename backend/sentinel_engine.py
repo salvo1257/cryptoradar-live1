@@ -2309,24 +2309,73 @@ class SentinelEngine:
         draw_data = {"type": str(ptype)}
         
         if ptype in [PatternType.DOUBLE_TOP, PatternType.DOUBLE_BOTTOM]:
-            draw_data["points"] = [
-                pattern.get('first_top') or pattern.get('first_bottom'),
-                pattern.get('second_top') or pattern.get('second_bottom')
-            ]
+            # Extract start/end for proper chart anchoring
+            first_point = pattern.get('first_top') or pattern.get('first_bottom')
+            second_point = pattern.get('second_top') or pattern.get('second_bottom')
+            
+            draw_data["points"] = [first_point, second_point]
             draw_data["neckline"] = pattern.get('neckline')
             draw_data["target"] = pattern.get('target')
             draw_data["shape"] = "horizontal_line"
+            
+            # Add start/end for "glued-to-chart" anchoring
+            if first_point and second_point:
+                draw_data["start"] = {"index": first_point.get("index"), "price": first_point.get("price")}
+                draw_data["end"] = {"index": second_point.get("index"), "price": second_point.get("price")}
+                draw_data["price"] = pattern.get('neckline')  # Horizontal line at neckline
+        
+        elif ptype in [PatternType.TRIPLE_TOP, PatternType.TRIPLE_BOTTOM]:
+            # Triple formations have 3 peaks
+            peaks = pattern.get('peaks') or pattern.get('troughs') or []
+            draw_data["peaks"] = peaks
+            draw_data["neckline"] = pattern.get('neckline')
+            draw_data["target"] = pattern.get('target')
+            draw_data["shape"] = "horizontal_line"
+            
+            if len(peaks) >= 3:
+                draw_data["start"] = {"index": peaks[0].get("index"), "price": peaks[0].get("price")}
+                draw_data["end"] = {"index": peaks[-1].get("index"), "price": peaks[-1].get("price")}
+                draw_data["price"] = pattern.get('neckline')
         
         elif ptype in [PatternType.SYMMETRICAL_TRIANGLE, PatternType.ASCENDING_TRIANGLE, PatternType.DESCENDING_TRIANGLE]:
-            draw_data["upper_line"] = pattern.get('upper_line')
-            draw_data["lower_line"] = pattern.get('lower_line')
+            upper_line = pattern.get('upper_line')
+            lower_line = pattern.get('lower_line')
+            
+            draw_data["upper_line"] = upper_line
+            draw_data["lower_line"] = lower_line
             draw_data["resistance"] = pattern.get('resistance')
             draw_data["support"] = pattern.get('support')
             draw_data["shape"] = "converging_lines"
+            
+            # Extract start/end from line endpoints for anchoring
+            if upper_line and lower_line:
+                start_idx = min(
+                    upper_line.get("start", [0])[0] if isinstance(upper_line.get("start"), list) else upper_line.get("start", {}).get("index", 0),
+                    lower_line.get("start", [0])[0] if isinstance(lower_line.get("start"), list) else lower_line.get("start", {}).get("index", 0)
+                )
+                end_idx = max(
+                    upper_line.get("end", [0])[0] if isinstance(upper_line.get("end"), list) else upper_line.get("end", {}).get("index", 0),
+                    lower_line.get("end", [0])[0] if isinstance(lower_line.get("end"), list) else lower_line.get("end", {}).get("index", 0)
+                )
+                draw_data["start"] = {"index": start_idx, "price": pattern.get('resistance') or pattern.get('upper_line', {}).get('start', [0, 0])[1] if isinstance(pattern.get('upper_line', {}).get('start'), list) else 0}
+                draw_data["end"] = {"index": end_idx, "price": pattern.get('support') or pattern.get('lower_line', {}).get('end', [0, 0])[1] if isinstance(pattern.get('lower_line', {}).get('end'), list) else 0}
+        
+        elif ptype in [PatternType.RISING_WEDGE, PatternType.FALLING_WEDGE]:
+            upper_line = pattern.get('upper_line')
+            lower_line = pattern.get('lower_line')
+            
+            draw_data["upper_line"] = upper_line
+            draw_data["lower_line"] = lower_line
+            draw_data["shape"] = "converging_lines"
+            
+            if upper_line and lower_line:
+                draw_data["start"] = {"index": pattern.get('start_index', 0), "price": pattern.get('start_price', 0)}
+                draw_data["end"] = {"index": pattern.get('end_index', 0), "price": pattern.get('end_price', 0)}
         
         elif ptype in [PatternType.SUPPORT_LINE, PatternType.RESISTANCE_LINE]:
             draw_data["price"] = pattern.get('price')
             draw_data["shape"] = "horizontal_line"
+            # Full width horizontal line - no specific start/end needed
         
         elif ptype in [PatternType.TRENDLINE_UP, PatternType.TRENDLINE_DOWN]:
             draw_data["start"] = {"index": pattern.get('start_index'), "price": pattern.get('start_price')}
@@ -2334,10 +2383,15 @@ class SentinelEngine:
             draw_data["shape"] = "diagonal_line"
         
         elif ptype in [PatternType.BULLISH_ENGULFING, PatternType.BEARISH_ENGULFING, 
-                       PatternType.HAMMER, PatternType.SHOOTING_STAR, PatternType.DOJI]:
+                       PatternType.HAMMER, PatternType.SHOOTING_STAR, PatternType.DOJI,
+                       PatternType.MORNING_STAR, PatternType.EVENING_STAR,
+                       PatternType.THREE_WHITE_SOLDIERS, PatternType.THREE_BLACK_CROWS]:
             draw_data["index"] = pattern.get('index')
             draw_data["price"] = pattern.get('price')
             draw_data["shape"] = "marker"
+            # For markers, start = end (single candle position)
+            draw_data["start"] = {"index": pattern.get('index'), "price": pattern.get('price')}
+            draw_data["end"] = {"index": pattern.get('index'), "price": pattern.get('price')}
         
         # Elliott Wave patterns
         elif ptype in [PatternType.ELLIOTT_WAVE_1, PatternType.ELLIOTT_WAVE_2, 
