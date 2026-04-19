@@ -20,23 +20,28 @@ import {
   TrendingUp,
   Crosshair,
   BookMarked,
-  PieChart
+  PieChart,
+  GraduationCap
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { useAccess } from '../contexts/AccessContext';
 import { cn } from '../lib/utils';
 
-// PUBLIC items - visible to everyone
+// PUBLIC items - visible to everyone (OPERATIONAL)
 const publicNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'dashboard' },
   { path: '/support-resistance', icon: Activity, label: 'supportResistance' },
   { path: '/whale-alerts', icon: Zap, label: 'whaleAlerts' },
   { path: '/liquidity', icon: Waves, label: 'liquidity' },
+  { path: '/news', icon: Newspaper, label: 'news' },
+  { path: '/manual', icon: BookOpen, label: 'manual' },
+];
+
+// EDUCATIONAL items - Learning Zone (ISOLATED from signal generation)
+const educationalNavItems = [
   { path: '/patterns', icon: Search, label: 'patterns' },
   { path: '/candlesticks', icon: CandlestickChart, label: 'candlesticks' },
   { path: '/elliott-waves', icon: TrendingUp, label: 'elliottWaves' },
-  { path: '/news', icon: Newspaper, label: 'news' },
-  { path: '/manual', icon: BookOpen, label: 'manual' },
 ];
 
 // ADMIN-ONLY items - require authentication
@@ -92,7 +97,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto">
-          {/* PUBLIC navigation items */}
+          {/* PUBLIC navigation items (OPERATIONAL) */}
           <ul className="space-y-1 px-3">
             {publicNavItems.map(({ path, icon: Icon, label }) => (
               <li key={path}>
@@ -113,6 +118,36 @@ export function Sidebar() {
               </li>
             ))}
           </ul>
+
+          {/* LEARNING ZONE - Educational modules (ISOLATED from signal generation) */}
+          <div className="mt-4 pt-4 border-t border-crypto-border/30">
+            <div className="px-3 mb-2 flex items-center gap-2">
+              <GraduationCap className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-[10px] uppercase tracking-wider font-bold text-purple-400">
+                Learning Zone
+              </span>
+            </div>
+            <ul className="space-y-1 px-3">
+              {educationalNavItems.map(({ path, icon: Icon, label }) => (
+                <li key={path}>
+                  <NavLink
+                    to={path}
+                    onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) => cn(
+                      "flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                      isActive 
+                        ? "bg-purple-500/10 text-purple-400 border-l-2 border-purple-500" 
+                        : "text-zinc-500 hover:text-purple-400 hover:bg-purple-500/5"
+                    )}
+                    data-testid={`nav-${label}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{t(label)}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
 
           {/* ADMIN navigation items - shown but locked for non-admin */}
           <AdminNavSection />

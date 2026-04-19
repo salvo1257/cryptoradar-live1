@@ -14,6 +14,7 @@ export { MarketEnergyCard } from './MarketEnergyCard';
 export { LiquidityMagnetCard } from './LiquidityMagnetCard';
 export { PriceMeasurementTool } from './PriceMeasurementTool';
 export { V3SignalCard } from './V3SignalCard';
+export { V3HunterCard } from './V3HunterCard';
 export { DataFreshnessIndicator, DataFreshnessBadge } from './DataFreshnessIndicator';
 export { DecisionEngineCard } from './DecisionEngineCard';
 export { SentinelPatternFeed } from './SentinelPatternFeed';

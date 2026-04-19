@@ -395,4 +395,37 @@ Full UI integration for autonomous Telegram configuration:
 }
 ```
 
+---
+## Update: April 19, 2025 - Global Engine Decoupling v4.2
+
+### ✅ Completed - SNIPER & HUNTER Independence
+
+**V3 SNIPER Independence (Verified)**:
+- Uses ONLY: `current_price`, `candles_4h`, `candles_5m`, `supports`, `resistances`, `market_regime`, `market_bias`, `whale_direction`, `liquidity_above/below`
+- NO reference to Sentinel, Pattern, Elliott, or Candlestick modules
+- Logic: 4H Structure Break → 5M Retest Confirmation
+
+**V3 HUNTER Independence (Verified)**:
+- Uses ONLY: `current_price`, `market_regime`, `market_bias`, `candles_4h`, `aggregated_orderbook`, `liquidity_clusters`, `liquidation_heatmap`
+- NO reference to Sentinel, Pattern, Elliott, or Candlestick modules
+- Logic: 10-20-70 allocation based on Order Book Walls + Liquidation Clusters
+
+**Unified Educational Hub - "Learning Zone"**:
+- Sidebar reorganized with dedicated "🎓 LEARNING ZONE" section (purple)
+- Contains: Pattern, Candele, Onde di Elliott
+- Visually separated from operational navigation
+- Data completely isolated from signal generation code
+
+**Dashboard Integrity**:
+- Shows BOTH V3 Sniper and V3 Hunter as dual "Final Action" sources
+- Side-by-side layout for clear comparison
+- Each engine shows its specific methodology:
+  - SNIPER: "4H Structure + 5M Retest"
+  - HUNTER: "10-20-70 Liquidity Hunt"
+
+**Files Modified**:
+- `/app/frontend/src/components/Sidebar.js` - Added Learning Zone section
+- `/app/frontend/src/components/pages/DashboardPage.js` - Dual signal cards layout
+- `/app/frontend/src/components/cards/index.js` - Added V3HunterCard export
+
 

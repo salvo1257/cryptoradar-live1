@@ -17,6 +17,7 @@ import {
   LiquidityMagnetCard,
   PriceMeasurementTool,
   V3SignalCard,
+  V3HunterCard,
   DecisionEngineCard
 } from '../cards';
 import MarketRegimeCard from '../cards/MarketRegimeCard';
@@ -131,25 +132,46 @@ export function DashboardPage() {
       <DataFreshnessIndicator />
       
       {/* ═══════════════════════════════════════════════════════════════════
-          TOP ROW: V3 Signal (ADMIN) + Market Regime (PUBLIC)
+          TOP ROW: V3 SNIPER + V3 HUNTER (ADMIN) - DUAL SIGNAL ENGINES
+          Both operate INDEPENDENTLY - No Sentinel/Pattern influence
       ═══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* V3 - ADMIN ONLY - Primary Operational Signal */}
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* V3 SNIPER - 4H Structure + 5M Retest Logic */}
+        <div>
           {isAdmin ? (
             <V3SignalCard language={language} />
           ) : (
             <div className="premium-card rounded-lg p-8 h-full flex items-center justify-center min-h-[280px]">
               <div className="text-center">
                 <Lock className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
-                <p className="text-zinc-500 text-base">Segnale V3 - Solo Admin</p>
+                <p className="text-zinc-500 text-base">V3 SNIPER - Solo Admin</p>
+                <p className="text-zinc-600 text-xs mt-1">4H Structure + 5M Retest</p>
               </div>
             </div>
           )}
         </div>
         
-        {/* Market Regime - PUBLIC - Quick Context */}
-        <div className="lg:col-span-1">
+        {/* V3 HUNTER - 10-20-70 Liquidity-Driven Logic */}
+        <div>
+          {isAdmin ? (
+            <V3HunterCard language={language} />
+          ) : (
+            <div className="premium-card rounded-lg p-8 h-full flex items-center justify-center min-h-[280px]">
+              <div className="text-center">
+                <Lock className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
+                <p className="text-zinc-500 text-base">V3 HUNTER - Solo Admin</p>
+                <p className="text-zinc-600 text-xs mt-1">10-20-70 Liquidity Hunt</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MARKET CONTEXT ROW - Public Overview
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-3">
           <MarketRegimeCard language={language} />
         </div>
       </div>
