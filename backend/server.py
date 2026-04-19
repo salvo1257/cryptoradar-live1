@@ -4000,6 +4000,33 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
         except Exception as cluster_err:
             logger.error(f"[Cluster Validate] Error registering for validation: {cluster_err}")
         
+        # ═══════════════════════════════════════════════════════════════════
+        # V4 ANALYTICS SUITE - Auto-record SNIPER signal
+        # Records every ENTRY_READY signal with full market context
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            v4_signal_id = await record_v4_sniper_signal(
+                direction=direction,
+                setup_type=event_type,
+                entry_price=current_price,
+                entry_zone_low=entry_zone_low,
+                entry_zone_high=entry_zone_high,
+                stop_loss=stop_loss,
+                target_1=target_1,
+                target_2=target_2,
+                quality_score=int(setup_data.get("quality_score", 70)),
+                risk_reward_ratio=risk_reward_ratio,
+                market_regime=market_context.get("regime", "UNKNOWN") if market_context else "UNKNOWN",
+                market_bias=market_context.get("bias", "NEUTRAL") if market_context else "NEUTRAL",
+                bias_confidence=market_context.get("bias_confidence", 0) if market_context else 0,
+                btc_price=current_price,
+                target_3=setup_data.get("target_3"),
+                notes=f"V3 ENTRY_READY: {event_type}"
+            )
+            logger.info(f"[V4 Analytics] ✅ Auto-recorded SNIPER signal: {v4_signal_id[:8]} - {direction}")
+        except Exception as v4_err:
+            logger.error(f"[V4 Analytics] Error auto-recording SNIPER: {v4_err}")
+        
         return {
             "recorded": True, 
             "signal_id": signal_id,
@@ -4008,7 +4035,8 @@ async def record_v3_entry_signal(setup_data: dict, current_price: float, market_
             "direction": direction,
             "engine": "v3",
             "shadow_tracking": True,
-            "cluster_validation": True
+            "cluster_validation": True,
+            "v4_analytics": True
         }
         
     except Exception as e:
@@ -14025,6 +14053,219 @@ Rispondi in formato JSON:
         }
 
 
+async def check_v4_signal_outcomes():
+    """
+    V4 Analytics - Automatic outcome tracking.
+    
+    Monitors all PENDING signals and updates them based on price action:
+    - Checks if stop loss or targets were hit
+    - Updates signal outcome (WIN/LOSS/PARTIAL)
+    - Calculates final PnL
+    
+    Called periodically by the background scheduler.
+    """
+    try:
+        # Get current price
+        ticker = await fetch_kraken_ticker()
+        current_price = ticker.get("price", 0) if ticker else 0
+        
+        if current_price == 0:
+            logger.warning("[V4 Outcome] Cannot fetch current price")
+            return {"checked": 0, "updated": 0}
+        
+        # Get 4H OHLC for accurate outcome detection
+        candles_4h = await fetch_kraken_ohlc(240)
+        if not candles_4h or len(candles_4h) < 2:
+            logger.warning("[V4 Outcome] Cannot fetch candle data")
+            return {"checked": 0, "updated": 0}
+        
+        # Get last 24h of price action for analysis
+        recent_highs = [c["high"] for c in candles_4h[-6:]]  # Last 24h (6 x 4H candles)
+        recent_lows = [c["low"] for c in candles_4h[-6:]]
+        max_high = max(recent_highs)
+        min_low = min(recent_lows)
+        
+        # Fetch pending V4 signals
+        pending_signals = await v4_signals_collection.find(
+            {"outcome": "pending"},
+            {"_id": 0}
+        ).to_list(length=100)
+        
+        logger.info(f"[V4 Outcome] Checking {len(pending_signals)} pending signals (BTC: ${current_price:,.0f})")
+        
+        updated_count = 0
+        
+        for signal in pending_signals:
+            signal_id = signal.get("signal_id")
+            signal_type = signal.get("signal_type")
+            direction = signal.get("direction")
+            
+            try:
+                if signal_type == "sniper":
+                    # SNIPER outcome logic
+                    entry_price = signal.get("entry_price", 0)
+                    stop_loss = signal.get("stop_loss", 0)
+                    target_1 = signal.get("target_1", 0)
+                    target_2 = signal.get("target_2", 0)
+                    
+                    outcome = None
+                    outcome_price = None
+                    pnl = 0
+                    target_1_hit = False
+                    target_2_hit = False
+                    stop_hit = False
+                    
+                    if direction == "LONG":
+                        # Check if stop was hit
+                        if min_low <= stop_loss:
+                            outcome = "loss"
+                            outcome_price = stop_loss
+                            pnl = ((stop_loss - entry_price) / entry_price) * 100
+                            stop_hit = True
+                        # Check targets
+                        elif max_high >= target_2:
+                            outcome = "win"
+                            outcome_price = target_2
+                            pnl = ((target_2 - entry_price) / entry_price) * 100
+                            target_1_hit = True
+                            target_2_hit = True
+                        elif max_high >= target_1:
+                            target_1_hit = True
+                            # Partial win if T1 hit but then stopped
+                            if min_low <= stop_loss:
+                                outcome = "partial"
+                                outcome_price = (target_1 + stop_loss) / 2  # Approximate
+                                pnl = ((target_1 - entry_price) / entry_price) * 100 * 0.5  # Half position
+                    else:  # SHORT
+                        # Check if stop was hit
+                        if max_high >= stop_loss:
+                            outcome = "loss"
+                            outcome_price = stop_loss
+                            pnl = ((entry_price - stop_loss) / entry_price) * 100
+                            stop_hit = True
+                        # Check targets
+                        elif min_low <= target_2:
+                            outcome = "win"
+                            outcome_price = target_2
+                            pnl = ((entry_price - target_2) / entry_price) * 100
+                            target_1_hit = True
+                            target_2_hit = True
+                        elif min_low <= target_1:
+                            target_1_hit = True
+                            if max_high >= stop_loss:
+                                outcome = "partial"
+                                outcome_price = (target_1 + stop_loss) / 2
+                                pnl = ((entry_price - target_1) / entry_price) * 100 * 0.5
+                    
+                    # Update if outcome determined
+                    if outcome:
+                        await update_v4_signal_outcome(
+                            signal_id=signal_id,
+                            outcome=outcome,
+                            outcome_price=outcome_price,
+                            pnl_percent=pnl,
+                            target_1_hit=target_1_hit,
+                            target_2_hit=target_2_hit,
+                            stop_hit=stop_hit,
+                            notes=f"Auto-closed by V4 tracker"
+                        )
+                        updated_count += 1
+                        logger.info(f"[V4 Outcome] ✅ {signal_type.upper()} {signal_id[:8]}: {outcome.upper()} ({pnl:+.2f}%)")
+                    elif target_1_hit:
+                        # Just update target_1_hit status
+                        await v4_signals_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {"target_1_hit": True}}
+                        )
+                
+                elif signal_type == "hunter":
+                    # HUNTER outcome logic - check leg fills and final outcome
+                    leg_1 = signal.get("leg_1", {})
+                    leg_2 = signal.get("leg_2", {})
+                    leg_3 = signal.get("leg_3", {})
+                    take_profit = signal.get("take_profit", 0)
+                    stop_loss = signal.get("stop_loss")  # Only for shorts
+                    
+                    legs_filled = 0
+                    updated_legs = {}
+                    
+                    # Check leg fills based on price action
+                    for leg_name, leg in [("leg_1", leg_1), ("leg_2", leg_2), ("leg_3", leg_3)]:
+                        if leg.get("status") == "filled":
+                            legs_filled += 1
+                            continue
+                        
+                        leg_price = leg.get("target_price", 0)
+                        if direction == "LONG":
+                            if min_low <= leg_price:
+                                updated_legs[f"{leg_name}.status"] = "filled"
+                                updated_legs[f"{leg_name}.filled_price"] = leg_price
+                                updated_legs[f"{leg_name}.filled_at"] = datetime.now(timezone.utc)
+                                legs_filled += 1
+                        else:  # SHORT
+                            if max_high >= leg_price:
+                                updated_legs[f"{leg_name}.status"] = "filled"
+                                updated_legs[f"{leg_name}.filled_price"] = leg_price
+                                updated_legs[f"{leg_name}.filled_at"] = datetime.now(timezone.utc)
+                                legs_filled += 1
+                    
+                    # Check outcome
+                    outcome = None
+                    outcome_price = None
+                    pnl = 0
+                    
+                    if direction == "LONG":
+                        if max_high >= take_profit:
+                            outcome = "win"
+                            outcome_price = take_profit
+                            avg_entry = signal.get("average_entry_price", leg_1.get("target_price", 0))
+                            pnl = ((take_profit - avg_entry) / avg_entry) * 100 if avg_entry > 0 else 0
+                    else:  # SHORT
+                        if stop_loss and max_high >= stop_loss:
+                            outcome = "loss"
+                            outcome_price = stop_loss
+                            avg_entry = signal.get("average_entry_price", leg_1.get("target_price", 0))
+                            pnl = ((avg_entry - stop_loss) / avg_entry) * 100 if avg_entry > 0 else 0
+                        elif min_low <= take_profit:
+                            outcome = "win"
+                            outcome_price = take_profit
+                            avg_entry = signal.get("average_entry_price", leg_1.get("target_price", 0))
+                            pnl = ((avg_entry - take_profit) / avg_entry) * 100 if avg_entry > 0 else 0
+                    
+                    # Update legs filled
+                    if updated_legs:
+                        updated_legs["legs_filled"] = legs_filled
+                        await v4_signals_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": updated_legs}
+                        )
+                    
+                    # Update outcome if determined
+                    if outcome:
+                        await v4_signals_collection.update_one(
+                            {"signal_id": signal_id},
+                            {"$set": {
+                                "outcome": outcome,
+                                "outcome_timestamp": datetime.now(timezone.utc),
+                                "final_pnl_percent": pnl,
+                                "legs_filled": legs_filled
+                            }}
+                        )
+                        updated_count += 1
+                        logger.info(f"[V4 Outcome] ✅ {signal_type.upper()} {signal_id[:8]}: {outcome.upper()} ({pnl:+.2f}%), {legs_filled}/3 legs")
+            
+            except Exception as sig_err:
+                logger.error(f"[V4 Outcome] Error checking signal {signal_id}: {sig_err}")
+                continue
+        
+        logger.info(f"[V4 Outcome] ✓ Checked {len(pending_signals)}, updated {updated_count}")
+        return {"checked": len(pending_signals), "updated": updated_count}
+        
+    except Exception as e:
+        logger.error(f"[V4 Outcome] Error in outcome check: {e}")
+        return {"checked": 0, "updated": 0, "error": str(e)}
+
+
 # ============== V3 HUNTER ENGINE - THE 10-20-70 PREDATOR ==============
 
 # Hunter Engine Configuration
@@ -19839,7 +20080,7 @@ async def activate_hunter_deal(
         market_bias = calculate_market_bias(candles_4h, aggregated_orderbook, derivatives_context)
         
         clusters, _ = generate_liquidity_clusters_enhanced(candles_4h, current_price, aggregated_orderbook)
-        clusters_list = [{"price": c.price, "value_usd": c.estimated_value, "side": c.side, "distance_pct": c.distance_percent, "source": c.source} for c in clusters]
+        clusters_list = [{"price": c.price, "value_usd": c.estimated_value, "side": c.side, "distance_pct": c.distance_percent, "source": getattr(c, 'source', 'orderbook')} for c in clusters]
         
         # Identify clusters for the requested direction
         identified = identify_liquidation_clusters_for_hunter(
@@ -19879,10 +20120,35 @@ async def activate_hunter_deal(
         
         logger.info(f"[V3 Hunter] Activated {direction} deal: ID={deal.deal_id}, Leg1=${current_price:,.0f}, Leg2=${deal.leg_2.price:,.0f}, Leg3=${deal.leg_3.price:,.0f}")
         
+        # ═══════════════════════════════════════════════════════════════════
+        # V4 ANALYTICS SUITE - Auto-record HUNTER signal
+        # Records every activated hunt with full context
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            v4_signal_id = await record_v4_hunter_signal(
+                direction=direction,
+                leg_1_price=deal.leg_1.price,
+                leg_2_price=deal.leg_2.price,
+                leg_3_price=deal.leg_3.price,
+                take_profit=deal.take_profit,
+                stop_loss=deal.stop_loss,
+                quality_score=deal.setup_quality,
+                hunter_confidence=deal.hunter_confidence,
+                market_regime=deal.market_regime,
+                market_bias=deal.bias_direction,
+                btc_price=current_price,
+                leverage=deal.leverage,
+                notes=f"Hunter {direction}: 10-20-70 activated"
+            )
+            logger.info(f"[V4 Analytics] ✅ Auto-recorded HUNTER signal: {v4_signal_id[:8]} - {direction}")
+        except Exception as v4_err:
+            logger.error(f"[V4 Analytics] Error auto-recording HUNTER: {v4_err}")
+        
         return {
             "success": True,
             "deal_id": deal.deal_id,
-            "deal": deal.model_dump()
+            "deal": deal.model_dump(),
+            "v4_analytics": True
         }
         
     except Exception as e:
@@ -20211,12 +20477,15 @@ async def simulate_strategy(
     target_2: float = Query(default=None),
     leg_2_price: float = Query(default=None),
     leg_3_price: float = Query(default=None),
+    take_profit: float = Query(default=None),
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
     _: bool = Depends(verify_admin_access)
 ):
     """
     V4 Strategy Lab - Simulate a strategy on historical data.
+    
+    Supports both SNIPER (single entry) and HUNTER (10-20-70 legs).
     Returns timeline of events and final outcome.
     """
     # Fetch historical data
@@ -20225,134 +20494,222 @@ async def simulate_strategy(
     if not candles:
         return {"error": "Cannot fetch historical data"}
     
-    # Simulation logic
     events = []
     outcome = "pending"
     final_price = None
     pnl = 0
     
-    # Find entry, stop, and target hits
-    entry_hit = False
-    stop_hit = False
-    target_1_hit = False
-    target_2_hit = False
-    
-    for candle in candles[-200:]:  # Last 200 candles for simulation
-        candle_time = datetime.fromtimestamp(candle["timestamp"], tz=timezone.utc)
-        high = candle["high"]
-        low = candle["low"]
-        close = candle["close"]
+    if strategy == "sniper":
+        # ═══════════════════════════════════════════════════════════════════
+        # SNIPER SIMULATION - Single Entry
+        # ═══════════════════════════════════════════════════════════════════
+        entry_hit = False
+        stop_hit = False
+        target_1_hit = False
+        target_2_hit = False
         
-        if not entry_hit:
-            # Check for entry
-            if direction == "LONG" and low <= entry_price <= high:
-                entry_hit = True
-                events.append({
-                    "timestamp": candle_time.isoformat(),
-                    "type": "entry",
-                    "price": entry_price,
-                    "label": "Entry Eseguito"
-                })
-            elif direction == "SHORT" and low <= entry_price <= high:
-                entry_hit = True
-                events.append({
-                    "timestamp": candle_time.isoformat(),
-                    "type": "entry",
-                    "price": entry_price,
-                    "label": "Entry Eseguito"
-                })
-        elif entry_hit and not stop_hit and not target_1_hit:
-            # Check for stop or target
-            if direction == "LONG":
-                if low <= stop_loss:
-                    stop_hit = True
-                    outcome = "loss"
-                    final_price = stop_loss
-                    pnl = ((stop_loss - entry_price) / entry_price) * 100
-                    events.append({
-                        "timestamp": candle_time.isoformat(),
-                        "type": "stop_hit",
-                        "price": stop_loss,
-                        "label": "Stop Loss"
-                    })
-                elif high >= target_1:
-                    target_1_hit = True
-                    events.append({
-                        "timestamp": candle_time.isoformat(),
-                        "type": "target_1",
-                        "price": target_1,
-                        "label": "Target 1"
-                    })
+        for candle in candles[-200:]:
+            candle_time = datetime.fromtimestamp(candle.get("time", candle.get("timestamp", 0)), tz=timezone.utc)
+            high = candle["high"]
+            low = candle["low"]
+            
+            if not entry_hit:
+                if direction == "LONG" and low <= entry_price <= high:
+                    entry_hit = True
+                    events.append({"timestamp": candle_time.isoformat(), "type": "entry", "price": entry_price, "label": "Entry Eseguito"})
+                elif direction == "SHORT" and low <= entry_price <= high:
+                    entry_hit = True
+                    events.append({"timestamp": candle_time.isoformat(), "type": "entry", "price": entry_price, "label": "Entry Eseguito"})
+            elif entry_hit and not stop_hit and not target_2_hit:
+                if direction == "LONG":
+                    if low <= stop_loss:
+                        stop_hit = True
+                        outcome = "loss"
+                        final_price = stop_loss
+                        pnl = ((stop_loss - entry_price) / entry_price) * 100
+                        events.append({"timestamp": candle_time.isoformat(), "type": "stop_hit", "price": stop_loss, "label": "Stop Loss"})
+                    elif high >= target_1 and not target_1_hit:
+                        target_1_hit = True
+                        events.append({"timestamp": candle_time.isoformat(), "type": "target_1", "price": target_1, "label": "Target 1"})
                     if target_2 and high >= target_2:
                         target_2_hit = True
                         outcome = "win"
                         final_price = target_2
                         pnl = ((target_2 - entry_price) / entry_price) * 100
-                        events.append({
-                            "timestamp": candle_time.isoformat(),
-                            "type": "target_2",
-                            "price": target_2,
-                            "label": "Target 2"
-                        })
-                    else:
-                        outcome = "partial"
-                        final_price = target_1
-                        pnl = ((target_1 - entry_price) / entry_price) * 100
-            else:  # SHORT
-                if high >= stop_loss:
-                    stop_hit = True
-                    outcome = "loss"
-                    final_price = stop_loss
-                    pnl = ((entry_price - stop_loss) / entry_price) * 100
-                    events.append({
-                        "timestamp": candle_time.isoformat(),
-                        "type": "stop_hit",
-                        "price": stop_loss,
-                        "label": "Stop Loss"
-                    })
-                elif low <= target_1:
-                    target_1_hit = True
-                    events.append({
-                        "timestamp": candle_time.isoformat(),
-                        "type": "target_1",
-                        "price": target_1,
-                        "label": "Target 1"
-                    })
+                        events.append({"timestamp": candle_time.isoformat(), "type": "target_2", "price": target_2, "label": "Target 2"})
+                else:  # SHORT
+                    if high >= stop_loss:
+                        stop_hit = True
+                        outcome = "loss"
+                        final_price = stop_loss
+                        pnl = ((entry_price - stop_loss) / entry_price) * 100
+                        events.append({"timestamp": candle_time.isoformat(), "type": "stop_hit", "price": stop_loss, "label": "Stop Loss"})
+                    elif low <= target_1 and not target_1_hit:
+                        target_1_hit = True
+                        events.append({"timestamp": candle_time.isoformat(), "type": "target_1", "price": target_1, "label": "Target 1"})
                     if target_2 and low <= target_2:
                         target_2_hit = True
                         outcome = "win"
                         final_price = target_2
                         pnl = ((entry_price - target_2) / entry_price) * 100
+                        events.append({"timestamp": candle_time.isoformat(), "type": "target_2", "price": target_2, "label": "Target 2"})
+            
+            if outcome not in ["pending"]:
+                break
+        
+        # If T1 hit but not T2, it's partial
+        if target_1_hit and not target_2_hit and not stop_hit:
+            outcome = "partial"
+            final_price = target_1
+            if direction == "LONG":
+                pnl = ((target_1 - entry_price) / entry_price) * 100
+            else:
+                pnl = ((entry_price - target_1) / entry_price) * 100
+        
+        return {
+            "strategy": "sniper",
+            "direction": direction,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "target_1": target_1,
+            "target_2": target_2,
+            "events": events,
+            "outcome": outcome,
+            "final_price": final_price,
+            "pnl_percent": round(pnl, 2),
+            "entry_hit": entry_hit,
+            "target_1_hit": target_1_hit,
+            "target_2_hit": target_2_hit,
+            "stop_hit": stop_hit
+        }
+    
+    else:
+        # ═══════════════════════════════════════════════════════════════════
+        # HUNTER SIMULATION - 10-20-70 Layered Entry
+        # ═══════════════════════════════════════════════════════════════════
+        leg_1 = {"price": entry_price, "allocation": 10, "status": "pending"}
+        leg_2 = {"price": leg_2_price or entry_price * 0.985, "allocation": 20, "status": "pending"}
+        leg_3 = {"price": leg_3_price or entry_price * 0.97, "allocation": 70, "status": "pending"}
+        tp = take_profit or (entry_price * 1.03 if direction == "LONG" else entry_price * 0.97)
+        sl = stop_loss
+        
+        total_allocated = 0
+        weighted_entry = 0
+        legs_filled = 0
+        tp_hit = False
+        sl_hit = False
+        
+        for candle in candles[-200:]:
+            candle_time = datetime.fromtimestamp(candle.get("time", candle.get("timestamp", 0)), tz=timezone.utc)
+            high = candle["high"]
+            low = candle["low"]
+            
+            # Check leg fills
+            for leg_name, leg in [("leg_1", leg_1), ("leg_2", leg_2), ("leg_3", leg_3)]:
+                if leg["status"] == "pending":
+                    leg_price = leg["price"]
+                    if direction == "LONG":
+                        if low <= leg_price:
+                            leg["status"] = "filled"
+                            leg["filled_at"] = candle_time.isoformat()
+                            total_allocated += leg["allocation"]
+                            weighted_entry += leg_price * leg["allocation"]
+                            legs_filled += 1
+                            events.append({
+                                "timestamp": candle_time.isoformat(),
+                                "type": leg_name,
+                                "price": leg_price,
+                                "label": f"{leg_name.replace('_', ' ').title()} Filled ({leg['allocation']}%)"
+                            })
+                    else:  # SHORT
+                        if high >= leg_price:
+                            leg["status"] = "filled"
+                            leg["filled_at"] = candle_time.isoformat()
+                            total_allocated += leg["allocation"]
+                            weighted_entry += leg_price * leg["allocation"]
+                            legs_filled += 1
+                            events.append({
+                                "timestamp": candle_time.isoformat(),
+                                "type": leg_name,
+                                "price": leg_price,
+                                "label": f"{leg_name.replace('_', ' ').title()} Filled ({leg['allocation']}%)"
+                            })
+            
+            # Calculate average entry if any legs filled
+            avg_entry = weighted_entry / total_allocated if total_allocated > 0 else entry_price
+            
+            # Check TP/SL after at least leg 1 is filled
+            if legs_filled > 0 and not tp_hit and not sl_hit:
+                if direction == "LONG":
+                    if high >= tp:
+                        tp_hit = True
+                        outcome = "win"
+                        final_price = tp
+                        pnl = ((tp - avg_entry) / avg_entry) * 100
                         events.append({
                             "timestamp": candle_time.isoformat(),
-                            "type": "target_2",
-                            "price": target_2,
-                            "label": "Target 2"
+                            "type": "take_profit",
+                            "price": tp,
+                            "label": "Take Profit"
                         })
-                    else:
-                        outcome = "partial"
-                        final_price = target_1
-                        pnl = ((entry_price - target_1) / entry_price) * 100
+                    elif sl and low <= sl:
+                        sl_hit = True
+                        outcome = "loss"
+                        final_price = sl
+                        pnl = ((sl - avg_entry) / avg_entry) * 100
+                        events.append({
+                            "timestamp": candle_time.isoformat(),
+                            "type": "stop_hit",
+                            "price": sl,
+                            "label": "Stop Loss"
+                        })
+                else:  # SHORT
+                    if low <= tp:
+                        tp_hit = True
+                        outcome = "win"
+                        final_price = tp
+                        pnl = ((avg_entry - tp) / avg_entry) * 100
+                        events.append({
+                            "timestamp": candle_time.isoformat(),
+                            "type": "take_profit",
+                            "price": tp,
+                            "label": "Take Profit"
+                        })
+                    elif sl and high >= sl:
+                        sl_hit = True
+                        outcome = "loss"
+                        final_price = sl
+                        pnl = ((avg_entry - sl) / avg_entry) * 100
+                        events.append({
+                            "timestamp": candle_time.isoformat(),
+                            "type": "stop_hit",
+                            "price": sl,
+                            "label": "Stop Loss"
+                        })
+            
+            if outcome not in ["pending"]:
+                break
         
-        if outcome not in ["pending"]:
-            break
-    
-    return {
-        "strategy": strategy,
-        "direction": direction,
-        "entry_price": entry_price,
-        "stop_loss": stop_loss,
-        "target_1": target_1,
-        "target_2": target_2,
-        "events": events,
-        "outcome": outcome,
-        "final_price": final_price,
-        "pnl_percent": round(pnl, 2),
-        "entry_hit": entry_hit,
-        "target_1_hit": target_1_hit,
-        "target_2_hit": target_2_hit,
-        "stop_hit": stop_hit
-    }
+        avg_entry = weighted_entry / total_allocated if total_allocated > 0 else entry_price
+        
+        return {
+            "strategy": "hunter",
+            "direction": direction,
+            "leg_1": leg_1,
+            "leg_2": leg_2,
+            "leg_3": leg_3,
+            "take_profit": tp,
+            "stop_loss": sl,
+            "average_entry": round(avg_entry, 2),
+            "total_allocated": total_allocated,
+            "legs_filled": legs_filled,
+            "events": events,
+            "outcome": outcome,
+            "final_price": final_price,
+            "pnl_percent": round(pnl, 2),
+            "tp_hit": tp_hit,
+            "sl_hit": sl_hit
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -29165,6 +29522,15 @@ async def background_check_outcomes():
         scheduler_status["total_updates"] += updated_count
         
         logger.info(f"✅ [SCHEDULER] Outcome check complete: {updated_count}/{len(pending_signals)} signals updated (OHLC method)")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # V4 ANALYTICS SUITE - Automatic outcome tracking
+        # ═══════════════════════════════════════════════════════════════════
+        try:
+            v4_result = await check_v4_signal_outcomes()
+            logger.info(f"✅ [V4 Analytics] Outcome check: {v4_result.get('updated', 0)}/{v4_result.get('checked', 0)} signals updated")
+        except Exception as v4_err:
+            logger.error(f"❌ [V4 Analytics] Error in outcome check: {v4_err}")
         
     except Exception as e:
         logger.error(f"❌ [SCHEDULER] Error during outcome check: {e}")

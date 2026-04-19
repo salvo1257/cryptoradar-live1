@@ -17,12 +17,24 @@ Build a professional BTC market intelligence dashboard with multi-timeframe sign
 ### ✅ Completed - V4 Analytics Suite (April 19, 2025)
 Complete reconstruction of History/Backtest modules:
 
+**AUTO-RECORDING ACTIVE**:
+- V3 Normal (SNIPER): Auto-records every ENTRY_READY signal with full market context
+- V3 Hunter (10-20-70): Auto-records every activated hunt with all legs
+- Context Captured: Bias, Regime, Liquidity, Quality Score, BTC price at signal
+
+**AUTOMATIC OUTCOME TRACKING**:
+- Background scheduler monitors all PENDING signals
+- Checks 4H OHLC for stop/target hits
+- Updates outcomes automatically: WIN, LOSS, PARTIAL
+- Calculates final PnL for equity curve
+
 **Signal Journal V4** (replaces old Storico Segnali):
 - Dual view tabs: SNIPER / HUNTER
 - Interactive Deal Cards with mini-charts (sparklines)
 - Advanced filtering: outcome, direction
 - CSV Export functionality
 - Premium neon color scheme
+- LIVE DATA: Shows real HUNTER signals as they're activated
 
 **Analytics Hub V4** (new unified metrics center):
 - Aggregated metrics: Total Signals, Win Rate, P&L, R:R
@@ -33,10 +45,10 @@ Complete reconstruction of History/Backtest modules:
 
 **Strategy Lab V4** (replaces old Backtest):
 - Static Timeline Replay with event visualization
-- 90 days historical data support (4H candles)
+- 90 days historical data support (540 x 4H candles)
 - SNIPER and HUNTER strategy simulation
-- Auto-filled price inputs from current market
-- Outcome tracking with PnL calculation
+- Full 10-20-70 Simulation: Shows leg fills, average entry, TP/SL hits
+- Visual timeline with colored icons for each event
 
 **Backend V4 Schema**:
 - `v4_signals` collection (MongoDB)
@@ -44,6 +56,7 @@ Complete reconstruction of History/Backtest modules:
 - `v4_equity_curve` collection
 - `v4_mentor_summaries` collection
 - Optimized MongoDB aggregation pipelines
+- `check_v4_signal_outcomes()` background task
 
 ### ✅ Completed - V3 HUNTER Engine (April 19, 2025)
 Professional stop-loss hunting strategy:
