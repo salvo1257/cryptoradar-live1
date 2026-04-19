@@ -14215,6 +14215,136 @@ async def record_v4_hunter_signal(
     return signal["signal_id"]
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3 FORTRESS LOGIC - Stop Loss Protection
+# ═══════════════════════════════════════════════════════════════════════════════
+# Once a deal is active:
+# 1. Stop Loss can NEVER be moved further from entry (no widening)
+# 2. Stop Loss CAN ONLY be moved in profit direction (trailing)
+# 3. Entry Zone and Targets are LOCKED - no in-flight changes
+
+STRUCTURE_LOCKED_RULES = {
+    "stop_loss_widening": "BLOCKED",
+    "trailing_stop": "ALLOWED",
+    "entry_zone_modification": "BLOCKED",
+    "target_modification": "BLOCKED"
+}
+
+
+async def validate_stop_loss_modification(
+    signal_id: str,
+    new_stop_loss: float,
+    signal_type: str = "sniper"
+) -> dict:
+    """
+    FORTRESS RULE: Validate if a stop loss modification is allowed.
+    
+    Rules:
+    - LONG: Stop loss can only be RAISED (never lowered)
+    - SHORT: Stop loss can only be LOWERED (never raised)
+    
+    Returns:
+        {"allowed": bool, "reason": str, "rule": str}
+    """
+    signal = await v4_signals_collection.find_one({"signal_id": signal_id}, {"_id": 0})
+    
+    if not signal:
+        return {"allowed": False, "reason": "Segnale non trovato", "rule": "SIGNAL_NOT_FOUND"}
+    
+    if signal.get("outcome") != "pending":
+        return {"allowed": False, "reason": "Il segnale è già chiuso", "rule": "SIGNAL_CLOSED"}
+    
+    current_stop = signal.get("stop_loss")
+    direction = signal.get("direction")
+    entry_price = signal.get("entry_price") or signal.get("average_entry_price") or signal.get("leg_1", {}).get("target_price")
+    
+    if not current_stop or not direction or not entry_price:
+        return {"allowed": False, "reason": "Dati incompleti", "rule": "DATA_MISSING"}
+    
+    # FORTRESS VALIDATION
+    if direction == "LONG":
+        # LONG: Stop loss must be BELOW entry. Can only move UP (trailing).
+        if new_stop_loss < current_stop:
+            return {
+                "allowed": False,
+                "reason": f"⛔ FORTRESS: Stop Loss non può essere abbassato. Attuale: ${current_stop:,.0f} → Richiesto: ${new_stop_loss:,.0f}",
+                "rule": "STRUCTURE_LOCKED_NO_WIDENING"
+            }
+        if new_stop_loss >= entry_price:
+            return {
+                "allowed": False,
+                "reason": f"⛔ Stop Loss non può essere sopra l'entry ({entry_price:,.0f})",
+                "rule": "STOP_ABOVE_ENTRY"
+            }
+    
+    elif direction == "SHORT":
+        # SHORT: Stop loss must be ABOVE entry. Can only move DOWN (trailing).
+        if new_stop_loss > current_stop:
+            return {
+                "allowed": False,
+                "reason": f"⛔ FORTRESS: Stop Loss non può essere alzato. Attuale: ${current_stop:,.0f} → Richiesto: ${new_stop_loss:,.0f}",
+                "rule": "STRUCTURE_LOCKED_NO_WIDENING"
+            }
+        if new_stop_loss <= entry_price:
+            return {
+                "allowed": False,
+                "reason": f"⛔ Stop Loss non può essere sotto l'entry ({entry_price:,.0f})",
+                "rule": "STOP_BELOW_ENTRY"
+            }
+    
+    # If we get here, the modification is a valid trailing stop
+    return {
+        "allowed": True,
+        "reason": f"✅ Trailing Stop approvato: ${current_stop:,.0f} → ${new_stop_loss:,.0f}",
+        "rule": "TRAILING_STOP_APPROVED"
+    }
+
+
+async def apply_trailing_stop(
+    signal_id: str,
+    new_stop_loss: float
+) -> dict:
+    """
+    Apply a trailing stop loss modification with FORTRESS validation.
+    """
+    validation = await validate_stop_loss_modification(signal_id, new_stop_loss)
+    
+    if not validation["allowed"]:
+        logger.warning(f"[FORTRESS] ⛔ Stop modification blocked for {signal_id[:8]}: {validation['rule']}")
+        return validation
+    
+    # Apply the trailing stop
+    old_signal = await v4_signals_collection.find_one({"signal_id": signal_id}, {"_id": 0})
+    old_stop = old_signal.get("stop_loss")
+    
+    await v4_signals_collection.update_one(
+        {"signal_id": signal_id},
+        {
+            "$set": {
+                "stop_loss": new_stop_loss,
+                "stop_loss_modified_at": datetime.now(timezone.utc),
+                "trailing_active": True
+            },
+            "$push": {
+                "price_history": {
+                    "timestamp": datetime.now(timezone.utc),
+                    "price": new_stop_loss,
+                    "event": f"trailing_stop_{old_stop}_to_{new_stop_loss}"
+                }
+            }
+        }
+    )
+    
+    logger.info(f"[FORTRESS] ✅ Trailing stop applied for {signal_id[:8]}: ${old_stop:,.0f} → ${new_stop_loss:,.0f}")
+    return {
+        "allowed": True,
+        "applied": True,
+        "old_stop": old_stop,
+        "new_stop": new_stop_loss,
+        "rule": "TRAILING_STOP_APPLIED"
+    }
+
+
 async def update_v4_signal_outcome(
     signal_id: str,
     outcome: str,
@@ -14403,7 +14533,7 @@ async def generate_v4_mentor_summary(period: str = "weekly") -> dict:
     Generate AI-powered mentor summary using Claude.
     Uses Emergent LLM Key for Claude integration.
     """
-    from emergentintegrations.llm.chat import chat, Message, Model
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
     
     # Determine period
     if period == "weekly":
@@ -14456,11 +14586,15 @@ Rispondi in formato JSON:
         # Get Emergent LLM Key
         emergent_key = os.environ.get("EMERGENT_LLM_KEY", "")
         
-        response = await chat(
+        # Create LlmChat instance
+        chat = LlmChat(
             api_key=emergent_key,
-            messages=[Message(role="user", content=prompt)],
-            model=Model.CLAUDE_SONNET
+            session_id=f"mentor_summary_{period}_{datetime.now().strftime('%Y%m%d')}"
         )
+        chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
+        
+        # Send message and get response
+        response = await chat.send_message_async(UserMessage(content=prompt))
         
         # Parse response
         import json
@@ -20766,6 +20900,90 @@ async def record_sniper_signal(
     )
     
     return {"success": True, "signal_id": signal_id}
+
+
+@api_router.post("/v4/signals/{signal_id}/trailing-stop")
+async def apply_trailing_stop_endpoint(
+    signal_id: str,
+    new_stop_loss: float = Query(..., description="New stop loss price (must be in profit direction)"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Apply a trailing stop loss to an active signal.
+    
+    FORTRESS RULES:
+    - LONG: Stop can only be RAISED (moved up)
+    - SHORT: Stop can only be LOWERED (moved down)
+    - Stop can NEVER be widened (moved away from entry)
+    """
+    result = await apply_trailing_stop(signal_id, new_stop_loss)
+    
+    return {
+        "success": result.get("allowed", False),
+        "signal_id": signal_id,
+        "old_stop": result.get("old_stop"),
+        "new_stop": result.get("new_stop"),
+        "rule": result.get("rule"),
+        "reason": result.get("reason")
+    }
+
+
+@api_router.get("/v4/signals/{signal_id}/validate-stop")
+async def validate_stop_modification(
+    signal_id: str,
+    proposed_stop: float = Query(..., description="Proposed new stop loss to validate"),
+    _: bool = Depends(verify_admin_access)
+):
+    """
+    Validate if a proposed stop loss modification would be allowed.
+    Does NOT apply the change - just checks FORTRESS rules.
+    """
+    result = await validate_stop_loss_modification(signal_id, proposed_stop)
+    
+    return {
+        "signal_id": signal_id,
+        "proposed_stop": proposed_stop,
+        "allowed": result["allowed"],
+        "rule": result["rule"],
+        "reason": result["reason"]
+    }
+
+
+@api_router.get("/v4/fortress-rules")
+async def get_fortress_rules(_: bool = Depends(verify_admin_access)):
+    """
+    Get the current FORTRESS rules for stop loss management.
+    """
+    return {
+        "name": "V3 FORTRESS - STRUCTURE_LOCKED",
+        "description": "Sistema di protezione stop loss per prevenire errori emotivi di trading",
+        "rules": [
+            {
+                "rule": "NO_WIDENING",
+                "description": "Lo Stop Loss NON può MAI essere allontanato dall'entry",
+                "status": "ACTIVE"
+            },
+            {
+                "rule": "TRAILING_ONLY",
+                "description": "Lo Stop Loss può SOLO essere spostato in direzione del profitto",
+                "status": "ACTIVE"
+            },
+            {
+                "rule": "ENTRY_LOCKED",
+                "description": "L'Entry Zone è BLOCCATA una volta aperto il deal",
+                "status": "ACTIVE"
+            },
+            {
+                "rule": "TARGETS_LOCKED",
+                "description": "I Target sono BLOCCATI una volta aperto il deal",
+                "status": "ACTIVE"
+            }
+        ],
+        "enforcement": {
+            "LONG": "Stop può solo SALIRE (trailing up)",
+            "SHORT": "Stop può solo SCENDERE (trailing down)"
+        }
+    }
 
 
 @api_router.post("/v4/signals/record-hunter")

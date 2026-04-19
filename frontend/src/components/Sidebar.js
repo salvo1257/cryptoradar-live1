@@ -45,6 +45,7 @@ const educationalNavItems = [
 ];
 
 // ADMIN-ONLY items - require authentication
+// V4 ANALYTICS SUITE - Premium Signal Management
 const adminNavItems = [
   { path: '/v3-hunter', icon: Crosshair, label: 'v3Hunter' },
   { path: '/signal-journal', icon: BookMarked, label: 'signalJournal' },
